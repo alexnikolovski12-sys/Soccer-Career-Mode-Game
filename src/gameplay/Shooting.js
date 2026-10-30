@@ -113,6 +113,37 @@ export class Shooting {
     return this.fire(shooter, launch, { kind, power: kind === 'chip' ? 0.4 : eff, pressure, dist });
   }
 
+  /**
+   * Penalty taken off the timing circle. size: 0 = tiny & green (perfect) … 1 = huge & red.
+   *  * green  → buried in the corner, the keeper can't get there
+   *  * yellow → decent penalty, the keeper has a chance
+   *  * red    → skied or dragged wide
+   */
+  penalty(shooter, size, side, aimY) {
+    const g = this.game, ball = g.ball, P = CONFIG.pitch, S = CONFIG.shot;
+    const gx = P.length / 2, hw = P.goalWidth / 2;
+    const start = ball.pos.clone(); start.y = Math.max(start.y, CONFIG.ball.radius);
+    const maxSp = CONFIG.statMap.maxShotSpeed(shooter.stats.shotPower) * S.powerCap;
+    let T, quality;
+    if (size < S.penGreen) {
+      quality = 'perfect';
+      T = new THREE.Vector3(gx, aimY, side * (hw - 0.45));
+    } else if (size < S.penYellow) {
+      quality = 'ok';
+      const e = (size - S.penGreen) / (S.penYellow - S.penGreen);
+      T = new THREE.Vector3(gx, aimY * (1 - e * 0.3), side * (hw - 0.6 - e * 1.4));
+    } else {
+      quality = 'miss';
+      T = g.rng.chance(0.5)
+        ? new THREE.Vector3(gx, P.goalHeight + 0.6 + g.rng.range(0, 1.2), side * (hw - 1) + g.rng.range(-1, 1))
+        : new THREE.Vector3(gx, g.rng.range(0.3, 1.4), side * (hw + 0.5 + g.rng.range(0, 1.4)));
+    }
+    const launch = this.solve(start, T, quality === 'miss' ? maxSp * 0.95 : maxSp * 0.88, 0);
+    launch.result.forceBeat = quality === 'perfect';
+    g.hud.flash(quality === 'perfect' ? 'PERFECT!' : quality === 'ok' ? 'GOOD CONTACT' : 'POOR CONTACT', quality === 'miss' ? 'bad' : 'good');
+    return this.fire(shooter, launch, { kind: 'driven', power: 0.9, pressure: 0, dist: 11 });
+  }
+
   /** Chip: find a lob that clears the keeper and drops under the bar. */
   solveChip(start, T) {
     const yaw = Math.atan2(T.z - start.z, T.x - start.x);

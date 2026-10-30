@@ -197,6 +197,7 @@ export class Keeper {
       prob *= K.difficulty;
       prob = clamp(prob, 0.03, 0.97);
     }
+    if (info.forceBeat) prob = 0; // a perfect penalty
     const save = onTarget && Math.random() < prob;
 
     let type = 'beaten';

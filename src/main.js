@@ -265,7 +265,7 @@ class Game {
     sp.t = S.setupTime;
     sp.shoot = this.shooting.inRange(u);
     this.hud.hideBig();
-    this.hud.flash(sp.penalty ? 'PENALTY — HOLD SHOOT' : sp.shoot ? 'FREE KICK — HOLD SHOOT' : 'FREE KICK', 'good');
+    this.hud.flash(sp.penalty ? 'PENALTY — TIME IT!' : sp.shoot ? 'FREE KICK — HOLD SHOOT' : 'FREE KICK', 'good');
   }
 
   _setPieceUpdate(dt) {
@@ -276,11 +276,44 @@ class Game {
     if (sp.t > 0) return;
     if (sp.phase === 'down') { this._setUpFreeKick(); return; }
     sp.phase = 'ready'; // everyone holds until you take it
+    if (sp.penalty) {
+      sp.side = this.rng.chance(0.5) ? 1 : -1;
+      sp.aimY = this.rng.chance(0.5) ? 0.45 : 1.75;
+      sp.meterT = 0;
+      sp.meterSize = 1;
+    }
+  }
+
+  /** Penalty circle: drawn on the corner you're aiming at, shrinking red → green, then again. */
+  _penaltyMeterFrame(realDt) {
+    const sp = this.setPiece;
+    if (!sp || !sp.penalty || sp.phase !== 'ready') { this.hud.setPenaltyMeter(false); return; }
+    sp.meterT += realDt;
+    const c = CONFIG.shot.penCycle;
+    sp.meterSize = 1 - (sp.meterT % c) / c;
+    const P = CONFIG.pitch;
+    const v = new THREE.Vector3(P.length / 2, sp.aimY, sp.side * (P.goalWidth / 2 - 0.6)).project(this.camRig.camera);
+    const w = this.host.clientWidth, h = this.host.clientHeight;
+    const u = Math.max(0.82, Math.min(1.2, Math.min(w, h) * 0.0025));
+    this.hud.setPenaltyMeter(v.z < 1, (v.x * 0.5 + 0.5) * w, (-v.y * 0.5 + 0.5) * h, sp.meterSize, u);
   }
 
   /** Free kick set: play restarts the moment you touch the stick or a button. */
   _setPieceReady() {
     const inp = this.input, mv = inp.poll();
+    if (this.setPiece.penalty) {
+      // penalty: only the SHOOT button takes it — timed off the shrinking circle
+      inp.consumeGesture('pass'); inp.consumeGesture('through');
+      const sg = inp.consumeGesture('shoot');
+      for (const p of this.players) p.savePrev();
+      this.ball.savePrev();
+      if (!sg) return false;
+      const sp = this.setPiece;
+      this.setPiece = null;
+      this.hud.setPenaltyMeter(false);
+      if (this.shooting.penalty(this.user, sp.meterSize ?? 1, sp.side, sp.aimY) === true) this.sm.change(STATES.SHOT_FLIGHT);
+      return false;
+    }
     const go = mv.mag > 0.3 || inp.gestures.pass || inp.gestures.through || inp.gestures.shoot;
     if (go) { this.setPiece = null; return true; }
     for (const p of this.players) p.savePrev();
@@ -345,6 +378,7 @@ class Game {
 
   resetWorld() {
     this.effects.clear();
+    this.hud.setPenaltyMeter(false);
     this.passing.reset();
     this.shooting.clearFlight();
     if (this.shooting.aim) this.shooting.endAim();
@@ -494,8 +528,21 @@ class Game {
     u.stamina = Math.min(1, u.stamina + M.staminaRecover * dt);
     this._juke(u, wx, wz, mag, dt);
 
-    // assists when the stick is idle
-    if (mag < 0.05) {
+    // you're on the receiver as soon as a pass is played: get to it
+    if (ball.pass && ball.pass.to === u && mag < 0.6) {
+      if (ball.pass.kind && ball.pass.kind !== 'ground') {
+        this.teammateAI._receive(u);
+        speed = u.moveSpeed; wx = u.moveDir.x; wz = u.moveDir.z;
+      } else {
+        const v = ball.vel, sp = Math.hypot(v.x, v.z) || 1;
+        const along = ((u.pos.x - ball.pos.x) * v.x + (u.pos.z - ball.pos.z) * v.z) / sp;
+        const t = Math.max(0, along - CONFIG.pass.meetDistance);
+        const tx = ball.pos.x + (v.x / sp) * t, tz = ball.pos.z + (v.z / sp) * t;
+        wx = tx - u.pos.x; wz = tz - u.pos.z;
+        speed = Math.hypot(wx, wz) > 0.3 ? u.runSpeed : 0;
+        if (speed === 0) u.faceTowards(ball.pos.x, ball.pos.z);
+      }
+    } else if (mag < 0.05) {
       if (ball.owner === u && dist2D(u.pos, ball.pos) > u.attrs.reach * 1.6 && D.autoChaseWhenIdle) {
         wx = ball.pos.x - u.pos.x; wz = ball.pos.z - u.pos.z; speed = u.jogSpeed;
       } else if (ball.pass && ball.pass.to === u) {
@@ -710,9 +757,11 @@ class Game {
         }
         g.simulate(dt);
       },
-      frame() {
+      frame(realDt) {
         const has = g.ball.owner === g.user;
-        g.hud.setShotCharge(has ? g.shooting.chargeFrom(g.input.chargeTime('shoot')) : 0);
+        const pen = g.setPiece && g.setPiece.penalty;
+        g.hud.setShotCharge(has && !pen ? g.shooting.chargeFrom(g.input.chargeTime('shoot')) : 0);
+        g._penaltyMeterFrame(realDt || 1 / 60);
         if (g.setPiece && g.setPiece.phase !== 'ready') {
           g.input.consumeGesture('pass'); g.input.consumeGesture('through'); g.input.consumeGesture('shoot');
           g.hud.setShootAvailable(false); return;
@@ -735,6 +784,7 @@ class Game {
         const k = g.ball.lastKick;
         // after a parry, hand control back so the rebound can be attacked
         if (sm.is(S.SHOT_FLIGHT) && k && k.type === 'save' && sm.time > 1.0) g.backToPlay();
+        if (sm.is(S.SHOT_FLIGHT) && k && k.type === 'block' && sm.time > 0.2) g.backToPlay();
         if (sm.is(S.SHOT_FLIGHT) && sm.time > 5) g.backToPlay();
       },
       exit() {
@@ -853,6 +903,13 @@ class Game {
     this.debug.update();
     this.quality.tick(realDt, this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT));
 
+    this.audio.tick(realDt, this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT));
+    // crowd surges when you drive into the final third / the box
+    if (this.sm.is(STATES.PLAYING) && this.ball.owner && this.ball.owner.team === 'home') {
+      const m = this.moments.current;
+      const x = this.ball.pos.x;
+      if (m && !m.surged && x > CONFIG.pitch.length / 2 - 22) { m.surged = true; this.audio.surge(); }
+    }
     this._crowdT = (this._crowdT || 0) - realDt;
     if (this._crowdT <= 0 && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT, STATES.SHOT_AIM)) {
       this._crowdT = 0.3;

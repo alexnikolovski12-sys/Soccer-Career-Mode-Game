@@ -52,7 +52,7 @@ export class MomentManager {
       const m = this.current;
       if (!m || m.ending) return;
       if (player.team === 'away') {
-        const userLost = (pass && pass.from === g.user) || from === g.user || (kick && kick.by === g.user);
+        const userLost = (pass && pass.from && pass.from.team === 'home') || (from && from.team === 'home') || (kick && kick.by && kick.by.team === 'home');
         if (kick && (kick.type === 'shot' || kick.type === 'block')) { this.end('BLOCKED'); return; }
         if (kick && kick.type === 'save') { this.end('SAVED'); return; }
         const outcome = kick && kick.type === 'pass' ? 'INTERCEPTED' : 'TACKLED';
@@ -60,12 +60,12 @@ export class MomentManager {
         this.end(outcome);
         return;
       }
-      if (pass && pass.from === g.user && player !== g.user) {
+      if (pass && pass.from && pass.from.team === 'home' && player !== pass.from) {
         m.completedPasses++;
         if (m.completedPasses <= 3) this.addRating('Completed pass', R.completedPass);
         const inBox = player.pos.x > CONFIG.pitch.length / 2 - CONFIG.pitch.penaltyDepth &&
           Math.abs(player.pos.z) < CONFIG.pitch.penaltyWidth / 2;
-        const brokeLine = player.pos.x > m.lineAtPass - 0.5 && player.pos.x > g.user.pos.x + 4;
+        const brokeLine = player.pos.x > m.lineAtPass - 0.5 && player.pos.x > pass.from.pos.x + 4;
         if ((inBox || brokeLine) && !m.keyPass) { m.keyPass = true; this.addRating('Key pass', R.keyPass); }
       }
       // rebound regained after a save/block: back to open play
@@ -99,7 +99,8 @@ export class MomentManager {
     ev.on('keeperSmother', () => {
       if (this.current) this.addRating('Keeper smothered it', R.turnover * 0.5);
     });
-    ev.on('blocked', () => { if (this.current && !this.current.ending) this.end('BLOCKED', 0.9); });
+    // a blocked shot doesn't end the moment — only the opposition keeping the ball does (see 'gain')
+    ev.on('blocked', () => { if (this.current && !this.current.ending) g.hud.flash('BLOCKED — PLAY ON!', 'neutral'); });
     ev.on('beatDefender', ({ by }) => {
       const m = this.current;
       if (m && by === g.user && m.beaten < 3) { m.beaten++; this.addRating('Beat a defender', R.beatDefender); }

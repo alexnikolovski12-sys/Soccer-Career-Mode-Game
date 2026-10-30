@@ -157,13 +157,11 @@ Desktop: WASD move · Shift sprint · Space pass (C lofted) · T through · hold
 
 ## Sound credits
 
-All CC0 (public domain). Crowd clips via the CC0 set credited in [chloeeeyan/Claude docs/credits.md](https://github.com/chloeeeyan/Claude/pull/14):
+**Stadium recordings (CC0)** — via [joepio/godot-crowd-sound](https://github.com/joepio/godot-crowd-sound) (`samples/CREDITS.md`), built from Freesound CC0 recordings:
+goal, roar, surge and cheer loop from the *Sound Of Sankt Pauli* Millerntor Stadium crowd reactions by [itmightgetloud](https://freesound.org/people/itmightgetloud/sounds/829455/); chants by [zedkah](https://freesound.org/people/zedkah/sounds/133833/), [D.jones](https://freesound.org/people/D.jones/sounds/528799/), [felix.blume](https://freesound.org/people/felix.blume/sounds/612131/) and itmightgetloud; "ooh" by [Sandermotions](https://freesound.org/people/Sandermotions/sounds/494362/).
 
-| File | Source | Author | Licence |
-|---|---|---|---|
-| cheer | [Crowd Cheering](https://freesound.org/people/SoundsExciting/sounds/365132/) | SoundsExciting | CC0 1.0 |
-| applause | [Large crowd applause](https://freesound.org/people/Bansemer/sounds/160493/) | Bansemer | CC0 1.0 |
-| boo | [To_Be_Booed2_ses1](https://freesound.org/people/freesound/sounds/25270/) | freesound | CC0 1.0 |
-| thud (ball strike) | "Beefy Thud 1", [CC0-Public-Domain-Sounds](https://github.com/lavenderdotpet/CC0-Public-Domain-Sounds) | BB sample pack | CC0 |
+**Crowd ambience (CC BY 4.0, attribution required)** — *Free Crowd Cheering Sounds* by **Gregor Quendel**, https://opengameart.org/content/free-crowd-cheering-sounds , licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Used: stadium bed, murmur, big cheer (via [micahp/gridiron-physics](https://github.com/micahp/gridiron-physics)). Modified: trimmed, mono, resampled, loudness-normalised, re-encoded to MP3.
 
-They're embedded in `src/core/sfxData.js` (mono 64 kbps MP3) and reshaped live into the crowd bed, roars, oohs, awws and boos.
+**Other CC0 clips**: cheer — [SoundsExciting](https://freesound.org/people/SoundsExciting/sounds/365132/); applause — [Bansemer](https://freesound.org/people/Bansemer/sounds/160493/); boo — [freesound](https://freesound.org/people/freesound/sounds/25270/) (via [chloeeeyan/Claude](https://github.com/chloeeeyan/Claude/pull/14)); ball thud — "Beefy Thud 1", [CC0-Public-Domain-Sounds](https://github.com/lavenderdotpet/CC0-Public-Domain-Sounds).
+
+All are embedded in `src/core/sfxData.js` (mono MP3) and mixed live: looping crowd bed, chants, surge on attacks, goal roars, oohs, awws and boos.

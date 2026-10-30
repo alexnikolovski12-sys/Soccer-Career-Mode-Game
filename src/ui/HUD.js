@@ -70,10 +70,11 @@ export class HUD {
     const pad = el('div', 'pad');
     // FC-mobile style cluster: THROUGH / SHOOT on top, PASS / SPRINT below.
     const chev = (dirs) => dirs.map((d) => `<i class="chev ${d}"></i>`).join('');
-    const btn = (cls, label, dirs) => el('button', `act ${cls}`,
-      `<b class="ring"></b><b class="meter"></b>${chev(dirs)}<span>${label}</span>`);
+    const btn = (cls, label, dirs, tips = {}) => el('button', `act ${cls}`,
+      `<b class="ring"></b><b class="meter"></b>${chev(dirs)}${Object.entries(tips).map(([d, t]) => `<i class="tip ${d}">${t}</i>`).join('')}<span>${label}</span>`);
     this.btnThrough = btn('through', 'THROUGH', ['up', 'down']);
-    this.btnShoot = btn('shoot', 'SHOOT', []);
+    this.btnShoot = btn('shoot', 'SHOOT', ['up', 'down', 'left', 'right'],
+      { up: 'CHIP', down: 'DRIVEN', left: 'FAKE', right: 'FINESSE' });
     this.btnPass = btn('pass', 'PASS', ['up', 'down', 'left', 'right']);
     this.btnSprint = btn('sprint', 'SPRINT', ['up', 'down', 'left', 'right']);
     pad.append(this.btnThrough, this.btnShoot, this.btnPass, this.btnSprint);
@@ -83,6 +84,10 @@ export class HUD {
     this.input.bindGesture(this.btnPass, 'pass');
     this.input.bindGesture(this.btnThrough, 'through');
     this.input.bindButton(this.btnSprint, 'sprint');
+
+    // ---- penalty timing circle
+    this.pen = el('div', 'pen-meter', '<div class="pm-ring"></div><div class="pm-dot"></div><div class="pm-hint">TAP SHOOT WHEN IT\'S SMALL &amp; GREEN</div>');
+    r.appendChild(this.pen);
 
     // ---- banners
     this.intro = el('div', 'banner intro', `
@@ -138,6 +143,7 @@ export class HUD {
         <div class="o-help">
           <div><b>Left thumb</b> move · <b>PASS</b> · hold <b>SPRINT</b></div>
           <div><b>SHOOT</b> freezes time — pull back &amp; release</div>
+          <div class="desk credits">Crowd audio: Gregor Quendel — Free Crowd Cheering Sounds (CC BY 4.0); stadium recordings CC0 via Freesound.</div>
           <div class="desk">Desktop: WASD move · Shift sprint · Space pass (C = lofted) · T through · hold F shoot (G driven, H chip, J finesse, K fake)</div>
         </div>
       </div>`);
@@ -202,6 +208,19 @@ export class HUD {
     this.last.charge = r;
     this.btnShoot.style.setProperty('--charge', `${r}%`);
     this.btnShoot.classList.toggle('charging', r > 0);
+  }
+
+  /** Penalty circle at screen point (x, y): size 0 (small, green) .. 1 (big, red). */
+  setPenaltyMeter(on, x = 0, y = 0, size = 1, u = 1) {
+    this.pen.classList.toggle('show', on);
+    if (!on) return;
+    const d = (34 + size * 150) * u;
+    const ring = this.pen.firstElementChild, dot = ring.nextElementSibling, hint = dot.nextElementSibling;
+    const hue = Math.round((1 - size) * 120); // red → green
+    this.pen.style.setProperty('--pm', `hsl(${hue} 95% 55%)`);
+    ring.style.cssText = `left:${x}px;top:${y}px;width:${d}px;height:${d}px;`;
+    dot.style.cssText = `left:${x}px;top:${y}px;`;
+    hint.style.cssText = `left:${x}px;top:${y + 100 * u}px;`;
   }
 
   setPassLabel(txt) {

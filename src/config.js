@@ -143,7 +143,15 @@ export const CONFIG = {
     loseDistance: 4.5,         // safety only — the ball normally never leaves the possession circle
     carryOffset: 0.5,          // possession circle: how far ahead of the body the ball sits (m)
     carrySpeedOffset: 0.03,    // ...plus this much per m/s of running speed
-    carryStiffness: 22,        // how quickly the ball snaps back to the feet after turns
+    carryStiffness: 18,        // how quickly the ball follows the feet
+    circleMax: 1.15,           // the ball can never be further than this from the carrier
+    touchPush: 0.18,           // each touch pushes the ball this far out…
+    touchPushPerSpeed: 0.035,  // …plus this per m/s
+    pushDecay: 0.9,            // how fast the player catches back up to it
+    footSpread: 0.16,          // how far left/right of centre the working foot carries it
+    switchFootChance: 0.35,    // chance a touch switches feet
+    turnRateForCut: 4.5,       // rad/s of turning that counts as a proper turn (cut/hook/drag-back)
+    receiverBonus: 0.9,        // extra reach for the intended receiver of a pass
     stealReach: 0.55,          // an opponent this close to the ball...
     stealTime: 1.0,            // ...for this long wins it
     receiveReach: 0.95,        // ground distance to receive a pass / loose ball
@@ -194,6 +202,10 @@ export const CONFIG = {
 
   // --------------------------------------------------------------- shooting (signature mechanic)
   shot: {
+    // ---- penalty timing circle
+    penCycle: 1.25,            // seconds for the circle to shrink from big/red to small/green
+    penGreen: 0.22,            // circle smaller than this = perfect (scores)
+    penYellow: 0.6,            // smaller than this = on target, keeper can still save; bigger = miss
     // ---- hold-to-shoot (current system)
     chargeTime: 0.9,           // seconds of holding SHOOT for full power
     assist: 0.55,              // 0 = raw power, 1 = power always perfect for the distance

@@ -84,14 +84,16 @@ export class Passing {
       if (t === exclude || t.isKeeper) continue;
       const tx = t.pos.x - passer.pos.x, tz = t.pos.z - passer.pos.z;
       const d = Math.hypot(tx, tz);
-      if (d < 3 || d > range) continue;
+      // every pass goes to somebody: nobody is ruled out, angle and distance just cost score
+      if (d < 2.5 || d > 55) continue;
       const ang = Math.acos(clamp((tx * dx + tz * dz) / d, -1, 1));
-      if (ang > P.maxAngle) continue;
       this.leadPoint(passer, t, lead);
       const lane = this.laneClearance(passer.pos, lead, passer.team).clear;
       let score = 3;
       score -= P.angleWeight * (ang / cone);
       score -= P.distWeight * Math.abs(d - P.idealDist) / P.idealDist;
+      if (ang > P.maxAngle) score -= 2 * (ang - P.maxAngle);
+      if (d > range) score -= (d - range) / 8;
       score -= P.laneWeight * laneAware * Math.max(0, (P.laneClear - lane) / P.laneClear);
       if (lane < 1) score -= 1.2 * laneAware; // a body right in the lane = near-certain interception
       score += ((lead.x - passer.pos.x) / 20) * 0.35;
@@ -269,6 +271,7 @@ export class Passing {
       ball.kick(vx, vy, vz, { type: 'pass', by: passer, ignoreTime: 0.35, time: g.simTime });
       ball.pass = { from: passer, to: target, aim: new THREE.Vector3(aim.x, 0, aim.z), t0: g.simTime, kind };
       if (target) target.ai.receiving = true;
+      if (target && passer.isUser) g.switchControl(target, true); // you're straight onto the receiver
       g.audio.kick(0.55, 'pass');
       g.effects.puff(ball.pos.x, ball.pos.z, 0.8);
       g.events.emit('pass', { from: passer, to: target, aim, speed: Math.hypot(vx, vy, vz), kind });
@@ -288,6 +291,7 @@ export class Passing {
     ball.kick(fx * v0, 0, fz * v0, { type: 'pass', by: passer, ignoreTime: 0.3, time: g.simTime });
     ball.pass = { from: passer, to: target, aim: aim.clone(), t0: g.simTime, kind };
     if (target) target.ai.receiving = true;
+    if (target && passer.isUser) g.switchControl(target, true); // you're straight onto the receiver
     g.audio.kick(v0 / 30, 'pass');
     g.effects.puff(ball.pos.x, ball.pos.z, 0.8);
     g.events.emit('pass', { from: passer, to: target, aim, speed: v0 });

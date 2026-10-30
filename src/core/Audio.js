@@ -89,9 +89,10 @@ export class Audio {
     const t = this.ctx.currentTime;
     if (this.bed) {
       // real crowd bed takes over from the synthetic one
-      this.crowdGain.gain.setTargetAtTime(0.03, t, 0.6);
-      this.bed.gain.gain.setTargetAtTime(0.22 + level * 0.3, t, 0.8);
-      this.bed.filter.frequency.setTargetAtTime(700 + level * 1500, t, 0.8);
+      this.crowdGain.gain.setTargetAtTime(0.0, t, 0.6);
+      this.bed.gain.gain.setTargetAtTime(0.5 + level * 0.25, t, 0.8);
+      this.bed.hype.gain.setTargetAtTime(Math.max(0, level - 0.15) * 0.55, t, 0.9);
+      this.bed.filter.frequency.setTargetAtTime(2600 + level * 3000, t, 0.8);
     } else {
       this.crowdGain.gain.setTargetAtTime(0.16 + level * 0.32, t, 0.6);
       this.crowdFilter.frequency.setTargetAtTime(1200 + level * 1600, t, 0.6);
@@ -107,33 +108,59 @@ export class Audio {
         const bin = atob(uri.slice(uri.indexOf(',') + 1));
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        const done = (b) => { this.buf[name] = b; if (this.buf.cheer && this.buf.applause && !this.bed) this._buildBed(); };
+        const done = (b) => { this.buf[name] = b; if (this.buf.bed && this.buf.cheer_loop && this.buf.murmur && !this.bed) this._buildBed(); };
         const pr = c.decodeAudioData(bytes.buffer, done, () => {});
         if (pr && pr.catch) pr.catch(() => {});
       } catch (_) { /* fall back to synthesis */ }
     }
   }
 
-  /** Continuous stadium murmur: the cheer + applause recordings, slowed, filtered and looped out of phase. */
+  /**
+   * Live stadium bed, three real recordings looped together:
+   *  * 'bed'        — a big crowd's general ambience
+   *  * 'murmur'     — chatter underneath
+   *  * 'cheer_loop' — a football crowd getting excited (St. Pauli), faded up as the attack builds
+   */
   _buildBed() {
     const c = this.ctx;
+    const filter = c.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 3000; filter.Q.value = 0.3;
     const gain = c.createGain(); gain.gain.value = 0;
-    const filter = c.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 900; filter.Q.value = 0.4;
     filter.connect(gain).connect(this.master);
-    const loop = (buf, rate, vol, offset) => {
+    const loop = (buf, vol, rate = 1) => {
       const src = c.createBufferSource(); src.buffer = buf; src.loop = true;
-      src.loopStart = 0.3; src.loopEnd = buf.duration - 0.3;
-      src.playbackRate.value = rate;
+      src.loopStart = 0.2; src.loopEnd = buf.duration - 0.2; src.playbackRate.value = rate;
       const g = c.createGain(); g.gain.value = vol;
       src.connect(g).connect(filter);
-      src.start(c.currentTime, offset % buf.duration);
+      src.start(c.currentTime, Math.random() * buf.duration * 0.8);
+      return g;
     };
-    loop(this.buf.cheer, 0.62, 0.55, 0.4);
-    loop(this.buf.cheer, 0.71, 0.45, 1.9);
-    loop(this.buf.applause, 0.55, 0.35, 1.1);
-    loop(this.buf.cheer, 0.83, 0.25, 2.7);
-    this.bed = { gain, filter };
+    loop(this.buf.bed, 0.55);
+    loop(this.buf.murmur, 0.35);
+    const hype = loop(this.buf.cheer_loop, 0.0);
+    this.bed = { gain, filter, hype };
+    this._chantT = 6 + Math.random() * 8;
     this.setCrowd(this._crowdTarget);
+  }
+
+  /** Per frame: chants come and go while the game is live. */
+  tick(dt, live) {
+    if (!this.bed || !this.ready) return;
+    this._chantT -= dt;
+    if (this._chantT <= 0) {
+      this._chantT = 18 + Math.random() * 20;
+      if (live) this._playRandom('chant_', 4, { gain: 0.32 + Math.random() * 0.12, attack: 1.5, release: 2.5 });
+    }
+  }
+
+  _playRandom(prefix, n, opts) {
+    const i = 1 + Math.floor(Math.random() * n);
+    return this._play(prefix + i, opts);
+  }
+
+  /** The crowd lifts as you drive at goal. */
+  surge() {
+    if (!this._throttle('surge', 6)) return;
+    this._play('surge', { gain: 0.55, attack: 0.6, release: 2.0 });
   }
 
   /** Play a sample with rate/filter/envelope shaping. Returns false if not loaded. */
@@ -321,6 +348,11 @@ export class Audio {
 
   /** Big cheer ("AHHH!") — level 0..1.5 */
   cheer(level = 1) {
+    if (this.buf && this.buf.roar_1) {
+      this._playRandom('roar_', 4, { gain: 0.5 + 0.35 * Math.min(level, 1.2), attack: 0.1, release: 1.5 });
+      if (level > 0.6) this.fanWhistles(Math.round(level * 4), 2.5);
+      return;
+    }
     if (this.buf && this.buf.cheer) {
       const L = Math.max(0.3, level);
       this._play('cheer', { rate: 0.97 + Math.random() * 0.06, gain: 0.45 + 0.4 * Math.min(L, 1.2), attack: 0.08, release: 1.2 });
@@ -341,6 +373,15 @@ export class Audio {
   /** GOAL! */
   roar() {
     if (!this._throttle('roar', 2)) return;
+    if (this.buf && this.buf.goal_1) {
+      // a real stadium erupting
+      this._playRandom('goal_', 4, { gain: 1.0, attack: 0.03, release: 2.0 });
+      this._play('bigcheer', { gain: 0.6, delay: 0.25, attack: 0.3, release: 2.5 });
+      this._playRandom('roar_', 4, { gain: 0.55, delay: 5.5, attack: 0.5, release: 2.0 });
+      this._play('applause', { gain: 0.45, delay: 7.5, release: 1.5 });
+      this.fanWhistles(6, 3);
+      return;
+    }
     this.cheer(1.4);
     if (this.buf && this.buf.cheer) {
       // the stadium keeps going: more waves of cheering and applause
@@ -357,6 +398,11 @@ export class Audio {
   /** "Ooooh!" — close chance / save, then applause for the keeper/effort. */
   ooh() {
     if (!this._throttle('ooh', 1.2)) return;
+    if (this.buf && this.buf.ooh_1) {
+      this._play('ooh_1', { gain: 0.9, attack: 0.05, release: 1.4 });
+      this._play('applause', { gain: 0.4, delay: 1.6, release: 1.2 });
+      return;
+    }
     if (this.buf && this.buf.cheer) {
       // the cheer recording slowed and darkened sounds like a rising "ooooh"
       this._play('cheer', { rate: 0.7, rateTo: 0.82, gain: 0.55, attack: 0.25, release: 0.9, dur: 1.6, lp: 1100 });
@@ -371,6 +417,11 @@ export class Audio {
   /** "Awww" — off target, losing the ball. */
   groan(level = 1) {
     if (!this._throttle('groan', 1)) return;
+    if (this.buf && this.buf.ooh_1) {
+      // the real "ooh" falling away in pitch is a disappointed "awwww"
+      this._play('ooh_1', { rate: 1.0, rateTo: 0.72, gain: 0.45 + 0.3 * level, attack: 0.06, release: 1.2, dur: 2.6, lp: 1600, offset: 0.4 });
+      return;
+    }
     if (this.buf && this.buf.boo) {
       // a boo pitched up and falling away = a disappointed "awwww"
       this._play('boo', { rate: 1.3, rateTo: 0.95, gain: 0.3 + 0.25 * level, attack: 0.08, release: 0.8, lp: 1800 });
@@ -397,6 +448,7 @@ export class Audio {
   /** Rising murmur as a player shapes up for a skill. */
   anticipate() {
     if (!this._throttle('anticipate', 0.8)) return;
+    if (this._play('surge', { gain: 0.3, attack: 0.3, release: 0.8, dur: 2.0, offset: 1.0 })) return;
     if (this._play('cheer', { rate: 0.66, rateTo: 0.85, gain: 0.25, attack: 0.3, release: 0.5, dur: 1.0, lp: 900 })) return;
     this._voice({ formants: [[420, 2, 1], [1000, 2, 0.5]], peak: 0.16, attack: 0.25, hold: 0.15, release: 0.5, sweep: 1.6 });
   }
@@ -404,6 +456,10 @@ export class Audio {
   /** "OHHH!" for a skill that beats a man. */
   skillCheer() {
     if (!this._throttle('skill', 0.8)) return;
+    if (this.buf && this.buf.roar_1) {
+      this._playRandom('roar_', 4, { gain: 0.55, attack: 0.08, release: 1.4, dur: 3.2 });
+      return;
+    }
     if (this.buf && this.buf.cheer) {
       this._play('cheer', { rate: 1.08, gain: 0.5, attack: 0.05, release: 0.9, dur: 1.8, offset: 0.3 });
       this._play('applause', { gain: 0.3, delay: 0.5, release: 0.9, dur: 2.0 });

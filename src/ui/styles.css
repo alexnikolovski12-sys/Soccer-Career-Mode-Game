@@ -154,12 +154,19 @@ html, body {
 .act.sprint  { --c1: #3be06a; --c2: #148a3c; --sz: 118; right: calc(var(--u) * 12);  bottom: calc(var(--u) * 12); font-size: calc(var(--u) * 24); }
 .act.pass    { --c1: #4aa8ff; --c2: #1b5fd0; --sz: 88;  right: calc(var(--u) * 166); bottom: calc(var(--u) * 6); }
 .act.through { --c1: #ffd34a; --c2: #b88a12; --sz: 88;  right: calc(var(--u) * 196); bottom: calc(var(--u) * 122); font-size: calc(var(--u) * 17); }
-.act.shoot   { --c1: #ff8a3a; --c2: #c2410f; --sz: 92;  right: calc(var(--u) * 54);  bottom: calc(var(--u) * 150); }
+.act.shoot   { --c1: #ff8a3a; --c2: #c2410f; --sz: 92;  right: calc(var(--u) * 50);  bottom: calc(var(--u) * 162); }
 .act.sprint .chev, .act.pass .chev { opacity: 0.9; }
 
 /* SHOOT: glows when you have the ball; a power ring fills while held */
-.act.shoot { opacity: 0.55; }
-.act.shoot.ready { opacity: 1; }
+.act.shoot { opacity: 1; }
+.act .tip {
+  position: absolute; pointer-events: none; font-size: calc(var(--u) * 10); font-weight: 800;
+  letter-spacing: 0.06em; color: var(--c1); text-shadow: 0 1px 2px rgba(0,0,0,0.8); white-space: nowrap;
+}
+.act .tip.up    { top: calc(var(--u) * -30); left: 50%; transform: translateX(-50%); }
+.act .tip.down  { bottom: calc(var(--u) * -29); left: 50%; transform: translateX(-50%); }
+.act .tip.left  { left: calc(var(--u) * -34); top: 50%; transform: translate(-50%, -50%) rotate(-90deg); }
+.act .tip.right { right: calc(var(--u) * -36); top: 50%; transform: translate(50%, -50%) rotate(90deg); }
 .act.shoot.ready .ring { filter: drop-shadow(0 0 calc(var(--u) * 6) rgba(255,140,60,0.8)); }
 .act.shoot .meter {
   display: block; position: absolute; inset: calc(var(--u) * -6); border-radius: 50%; pointer-events: none;
@@ -170,6 +177,24 @@ html, body {
   opacity: 0; transition: opacity 0.1s;
 }
 .act.shoot.charging .meter { opacity: 1; }
+
+/* ----------------------------------------------------------- penalty timing circle */
+.pen-meter { position: absolute; left: 0; top: 0; pointer-events: none; display: none; }
+.pen-meter.show { display: block; }
+.pen-meter .pm-ring {
+  position: absolute; left: 0; top: 0; border-radius: 50%;
+  border: calc(var(--u) * 5) solid var(--pm, #ff3b3b);
+  box-shadow: 0 0 calc(var(--u) * 14) var(--pm, #ff3b3b), inset 0 0 calc(var(--u) * 10) var(--pm, #ff3b3b);
+  transform: translate(-50%, -50%);
+}
+.pen-meter .pm-dot {
+  position: absolute; width: calc(var(--u) * 10); height: calc(var(--u) * 10); border-radius: 50%;
+  background: #fff; transform: translate(-50%, -50%); box-shadow: 0 0 8px #fff;
+}
+.pen-meter .pm-hint {
+  position: absolute; transform: translate(-50%, 0); white-space: nowrap; font-weight: 800; font-size: calc(var(--u) * 15);
+  letter-spacing: 0.08em; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+}
 
 /* ----------------------------------------------------------- joystick */
 .joy { position: absolute; inset: 0; pointer-events: none; }
@@ -289,7 +314,8 @@ html, body {
 .result:not(.show) button { pointer-events: none !important; }
 .r-card {
   width: min(calc(var(--u) * 380), 92vw);
-  max-height: 100%; overflow: auto;
+  max-height: 100%; overflow: hidden;
+  display: flex; flex-direction: column;
   background: rgba(10,14,24,0.84); border: 1px solid var(--line); border-radius: 16px;
   padding: calc(var(--u) * 16) calc(var(--u) * 18);
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
@@ -306,13 +332,26 @@ html, body {
 .r-delta.pos { color: var(--good); }
 .r-delta.neg { color: var(--bad); }
 .r-label { opacity: 0.6; font-weight: 600; font-size: calc(var(--u) * 14); letter-spacing: 0.06em; text-transform: uppercase; }
-.r-items { list-style: none; margin: 0; padding: 0; font-size: calc(var(--u) * 16); font-weight: 600; }
+.r-items { list-style: none; margin: 0; padding: 0; font-size: calc(var(--u) * 16); font-weight: 600;
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+.r-card > :not(.r-items) { flex-shrink: 0; }
 .r-items li { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
 .r-items b.pos { color: var(--good); }
 .r-items b.neg { color: var(--bad); }
 .r-match { margin-top: 8px; opacity: 0.8; font-weight: 600; font-size: calc(var(--u) * 15); }
 .r-match b { color: var(--gold); font-size: 1.15em; }
-.r-btns { display: flex; gap: 10px; margin-top: 12px; }
+.r-btns { display: flex; gap: 10px; margin-top: 12px; position: relative; z-index: 1; }
+/* short (landscape phone) screens: tighter card so the buttons always fit */
+@media (max-height: 480px) {
+  .r-card { padding: 10px 14px; width: min(calc(var(--u) * 460), 92vw); }
+  .r-title { font-size: calc(var(--u) * 32); }
+  .r-delta { font-size: calc(var(--u) * 22); }
+  .r-items { font-size: calc(var(--u) * 14); display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; align-content: start; }
+  .r-items li { padding: 1px 0; }
+  .r-match { margin-top: 4px; font-size: calc(var(--u) * 13); }
+  .r-btns { margin-top: 8px; }
+  .r-btns button { min-height: 42px; }
+}
 .r-btns button {
   flex: 1; min-height: 48px; border-radius: 12px; border: 1px solid var(--line);
   font-weight: 800; font-size: calc(var(--u) * 19); letter-spacing: 0.05em; color: #fff;

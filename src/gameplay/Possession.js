@@ -18,9 +18,11 @@ export class Possession {
     if (ball.frozen || g.setPiece) return;
     if (ball.owner) {
       const o = ball.owner;
-      // the ball only leaves the possession circle when it's kicked (pass/shot,
-      // which clears the owner), lifted, or an opponent wins it
-      if (ball.pos.y > 1.6 || dist2D(o.pos, ball.pos) > CONFIG.dribble.loseDistance) {
+      // The ball never leaves the possession circle on its own: only a pass,
+      // shot, tackle — or a flick skill lifting it over someone — moves it on.
+      const sk = g.skills && g.skills.active;
+      const flicked = sk && sk.o === o && sk.sk.kick;
+      if (!flicked && ball.pos.y > 1.6) {
         ball.owner = null;
         g.events.emit('loose', { player: o });
       } else {
@@ -32,34 +34,88 @@ export class Possession {
   }
 
   /**
-   * Possession circle: the ball rides just ahead of the carrier's feet and
-   * follows every turn. It can't run away from you.
+   * Dribbling inside the possession circle. The ball isn't on rails:
+   *  * each touch pushes it out in front, then the player catches up to it
+   *  * touches come off the left or right foot (and sometimes switch feet),
+   *    so the ball drifts from side to side
+   *  * on a turn the ball is dragged round the outside of the body by the
+   *    turning foot (inside hook, outside cut or a drag-back for big turns)
+   * …but it is clamped so it can never escape the circle.
    */
   dribble(o, dt) {
     const g = this.game, ball = g.ball, D = CONFIG.dribble;
-    if (g.sm.is('SHOT_AIM')) return; // shooter steps beside the ball for the run-up
     const sk = g.skills && g.skills.active;
-    if (sk && sk.o === o && sk.sk.kick) return; // nutmeg / flick: ball's been knocked on, run onto it
+    if (sk && sk.o === o && sk.sk.kick) {
+      // nutmeg / flick: ball's been knocked on; keep it on a leash and run onto it
+      this._leash(o, D.circleMax * 2.2);
+      return;
+    }
     if (ball.pos.y > 0.5) return;
-    const off = D.carryOffset + Math.min(o.speed, 8) * D.carrySpeedOffset;
-    const tx = o.pos.x + Math.sin(o.heading) * off;
-    const tz = o.pos.z + Math.cos(o.heading) * off;
-    const k = 1 - Math.exp(-D.carryStiffness * dt);
-    ball.pos.x += (tx - ball.pos.x) * k;
-    ball.pos.z += (tz - ball.pos.z) * k;
-    ball.vel.x = o.vel.x; ball.vel.z = o.vel.z;
-    if (ball.vel.y > 0) ball.vel.y = 0;
-    ball.curve = 0;
-    // occasional touch animation + sound so it still looks like dribbling
-    if (o.speed > 1 && o.touchCooldown <= 0) {
-      o.touchCooldown = Math.max(0.28, 1.1 / (o.speed + 1));
-      this.kickLeg = -this.kickLeg;
+    const st = o.drib || (o.drib = { side: 1, push: 0, last: o.heading, turnT: 0 });
+    // heading change this step → turning
+    let dh = o.heading - st.last;
+    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    st.last = o.heading;
+    const turnRate = dh / Math.max(dt, 1e-3);
+    st.turnT = Math.max(0, st.turnT - dt);
+
+    const hx = Math.sin(o.heading), hz = Math.cos(o.heading);
+    const rx = hz, rz = -hx; // right of the player
+    // big change of direction: a proper turn — switch to the foot on the outside of it
+    if (Math.abs(turnRate) > D.turnRateForCut && st.turnT <= 0 && o.speed > 0.6) {
+      st.turnT = 0.45;
+      st.side = turnRate > 0 ? -1 : 1;
+      const big = Math.abs(turnRate) > D.turnRateForCut * 2.2;
+      const r = g.rng.next();
+      const variant = big ? (r < 0.5 ? 'dragback' : 'hook') : (r < 0.55 ? 'inside' : 'outside');
+      o.playAction('turn', big ? 0.42 : 0.3, { variant, kickLeg: st.side, side: turnRate > 0 ? 1 : -1 });
+      st.push = big ? 0.15 : 0.35;
+      if (o.isUser) g.audio.touch();
+    }
+
+    // touch rhythm: a touch every few strides, pushing the ball out
+    if (o.speed > 0.8 && o.touchCooldown <= 0 && st.turnT < 0.2) {
+      const sprint = o.sprinting ? 1 : 0;
+      o.touchCooldown = Math.max(0.24, (1.25 - sprint * 0.25) / (o.speed + 1.2));
+      // sometimes switch feet, otherwise keep using the same one for a run of touches
+      if (g.rng.chance(D.switchFootChance)) st.side = -st.side;
+      st.push = D.touchPush + Math.min(o.speed, 9) * D.touchPushPerSpeed;
+      this.kickLeg = st.side;
       if (!o.anim.action || o.anim.action === 'touch') {
         const r = g.rng.next();
-        o.playAction('touch', 0.2, { kickLeg: this.kickLeg, variant: r < 0.7 ? 'inside' : r < 0.88 ? 'outside' : 'sole' });
+        o.playAction('touch', 0.22, { kickLeg: st.side, variant: r < 0.62 ? 'inside' : r < 0.86 ? 'outside' : 'sole' });
       }
       if (o.isUser) g.audio.touch();
     }
+    st.push = Math.max(0, st.push - dt * (D.pushDecay + o.speed * 0.25));
+
+    // where the ball wants to be: ahead of the stride, off the working foot
+    const ahead = D.carryOffset + Math.min(o.speed, 8) * D.carrySpeedOffset + st.push;
+    const lateral = st.side * D.footSpread * (0.6 + 0.4 * Math.min(1, o.speed / 4));
+    // on a turn the ball lags round the outside of the body
+    const lag = Math.max(-1, Math.min(1, -turnRate * 0.12));
+    const tx = o.pos.x + hx * ahead + rx * (lateral + lag * 0.35);
+    const tz = o.pos.z + hz * ahead + rz * (lateral + lag * 0.35);
+    // softer while turning so the ball visibly swings round, firm otherwise
+    const stiff = st.turnT > 0 ? D.carryStiffness * 0.45 : D.carryStiffness;
+    const k = 1 - Math.exp(-stiff * dt);
+    const px = ball.pos.x, pz = ball.pos.z;
+    ball.pos.x += (tx - ball.pos.x) * k;
+    ball.pos.z += (tz - ball.pos.z) * k;
+    this._leash(o, D.circleMax);
+    // keep ball velocity consistent with how it moved (rolling visuals, physics)
+    ball.vel.x = (ball.pos.x - px) / Math.max(dt, 1e-3);
+    ball.vel.z = (ball.pos.z - pz) / Math.max(dt, 1e-3);
+    if (ball.vel.y > 0) ball.vel.y = 0;
+    ball.curve = 0;
+  }
+
+  /** Hard limit: the ball can never be further than `max` from the carrier. */
+  _leash(o, max) {
+    const ball = this.game.ball;
+    const dx = ball.pos.x - o.pos.x, dz = ball.pos.z - o.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d > max) { ball.pos.x = o.pos.x + (dx / d) * max; ball.pos.z = o.pos.z + (dz / d) * max; }
   }
 
   /**
@@ -107,9 +163,13 @@ export class Possession {
     for (const p of g.players) {
       if (p.isKeeper || !ball.canTouch(p) || p.stumble > 0.25) continue;
       if (p.anim.action === 'fall') continue;
+      // passes are safe: an opponent can't cut out a pass on its way to a teammate
+      if (ball.pass && ball.pass.to && p.team !== ball.pass.to.team) continue;
       const d = dist2D(p.pos, ball.pos);
       if (loftTo && p !== loftTo && ball.pos.y > D.receiveMaxHeight) continue;
-      const r = D.receiveReach + p.attrs.reach * 0.25 + (p === loftTo ? 0.7 : 0);
+      // the intended receiver gets a big, forgiving reach so passes almost always arrive
+      const intended = ball.pass && ball.pass.to === p;
+      const r = D.receiveReach + p.attrs.reach * 0.25 + (p === loftTo ? 0.7 : 0) + (intended ? D.receiverBonus : 0);
       if (d < r && d < bestD) { best = p; bestD = d; }
     }
     if (!best) return;

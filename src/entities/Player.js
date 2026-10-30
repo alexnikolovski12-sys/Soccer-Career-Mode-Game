@@ -114,6 +114,15 @@ export class Player {
     for (const k of POSE_KEYS) { this.pose[k] = 0; this.target[k] = 0; }
     this.renderSpeed = 0;
     this.visible = true;
+    // every player moves a little differently: arm swing, elbow bend, bounce, lean, how wide the arms go
+    const r = () => Math.random();
+    this.style = {
+      arm: 0.8 + r() * 0.5, elbow: 0.75 + r() * 0.6, bounce: 0.75 + r() * 0.6,
+      lean: (r() - 0.5) * 0.1, width: r() * 0.18, cadence: 0.92 + r() * 0.16, head: (r() - 0.5) * 0.12,
+      dribbleArms: 0.25 + r() * 0.35, // balance arms when on the ball
+    };
+    this._lastHeadingAnim = 0;
+    this.lean = 0;
 
     this._build();
     this.setStats(o.stats);
@@ -439,24 +448,42 @@ export class Player {
     const speed = this.speed;
     this.renderSpeed = damp(this.renderSpeed, speed, 10, dt);
     const sp = this.renderSpeed;
-    const stride = CONFIG.player.strideLength * (0.75 + Math.min(sp, 9) / 18);
+    const St = this.style;
+    // dribbling = shorter, choppier strides; sprinting = long strides
+    const stride = CONFIG.player.strideLength * (0.75 + Math.min(sp, 9) / 18) * (hasBall ? 0.78 : 1) / St.cadence;
     an.phase += (sp / stride) * Math.PI * 2 * dt;
     const amp = clamp(sp / 7.5, 0, 1);
     const s = Math.sin(an.phase), c = Math.cos(an.phase);
+    const sprint = this.sprinting && sp > 5 ? 1 : 0;
+
+    // turning rate → lean into the turn
+    let dh = this.heading - this._lastHeadingAnim;
+    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    this._lastHeadingAnim = this.heading;
+    const turn = dt > 0 ? clamp(dh / dt, -8, 8) : 0;
+    this.lean = damp(this.lean, -turn * 0.045 * amp, 8, dt);
 
     // ---- locomotion base (idle / jog / sprint / dribble blend continuously by speed)
-    T.hipL = s * (0.08 + 0.62 * amp);
+    T.hipL = s * (0.08 + (0.62 + sprint * 0.12) * amp);
     T.hipR = -T.hipL;
-    T.kneeL = 0.12 + Math.max(0, -c) * (0.2 + 1.0 * amp);
-    T.kneeR = 0.12 + Math.max(0, c) * (0.2 + 1.0 * amp);
-    T.shL = -s * (0.08 + 0.65 * amp);
+    T.kneeL = 0.12 + Math.max(0, -c) * (0.2 + (1.0 + sprint * 0.35) * amp);
+    T.kneeR = 0.12 + Math.max(0, c) * (0.2 + (1.0 + sprint * 0.35) * amp);
+    // arms: sprinters pump with bent elbows; dribblers hold them out for balance
+    const armAmp = (0.08 + 0.65 * amp) * St.arm * (sprint ? 1.25 : 1) * (hasBall ? 0.7 : 1);
+    T.shL = -s * armAmp;
     T.shR = -T.shL;
-    T.shLz = 0.1 + amp * 0.05; T.shRz = -T.shLz;
-    T.elL = T.elR = 0.25 + amp * 1.0;
-    T.lean = 0.03 + amp * 0.2 + (hasBall ? 0.08 : 0) + (this.sprinting ? 0.06 : 0);
-    T.roll = 0; T.twist = -s * 0.12 * amp;
-    T.bodyY = -Math.abs(c) * 0.045 * amp + (sp < 0.3 ? Math.sin(an.time * 2.2) * 0.006 : 0);
-    T.bodyPitch = 0; T.bodyRoll = 0; T.headPitch = -T.lean * 0.6;
+    T.shLz = 0.1 + amp * 0.05 + St.width + (hasBall ? St.dribbleArms * amp + 0.1 : 0);
+    T.shRz = -T.shLz;
+    T.elL = T.elR = (0.25 + amp * 1.0) * St.elbow * (sprint ? 1.2 : 1) * (hasBall ? 0.75 : 1);
+    // one balance arm flares out more on the side away from the ball foot
+    if (hasBall && this.drib) { if (this.drib.side > 0) T.shLz += 0.25 * amp; else T.shRz -= 0.25 * amp; }
+    T.lean = 0.03 + St.lean + amp * 0.2 + (hasBall ? 0.12 : 0) + sprint * 0.1;
+    T.roll = 0; T.twist = -s * (0.12 + sprint * 0.06) * amp;
+    T.bodyY = -Math.abs(c) * 0.045 * amp * St.bounce - (hasBall ? 0.04 * amp : 0)
+      + (sp < 0.3 ? Math.sin(an.time * 2.2) * 0.006 : 0);
+    T.bodyPitch = 0; T.bodyRoll = this.lean;
+    // head: dribblers look down at the ball now and then, otherwise up
+    T.headPitch = -T.lean * 0.6 + St.head + (hasBall ? -0.15 * (0.5 + 0.5 * Math.sin(an.time * 1.3)) : 0);
 
     if (this.isKeeper && !an.action && sp < 2.5) {
       // ready stance
@@ -503,6 +530,30 @@ export class Player {
           T['hip' + kick] = 0.15 + v * 0.55;
           T['knee' + kick] = 0.3 + v * 0.2;
         }
+        break;
+      }
+      case 'turn': {
+        // change of direction with the ball
+        const v = Math.sin(k * Math.PI);
+        const sd = this.anim.side || 1;
+        const va = this.anim.variant;
+        if (va === 'dragback') {
+          // sole on the ball, roll it back and pivot
+          T['hip' + kick] = 0.5 * v - 0.4 * Math.max(0, k - 0.4); T['knee' + kick] = 0.8 * v;
+          T.lean = -0.18 * v; T.bodyY = -0.08 * v; T.twist = sd * 0.5 * v;
+        } else if (va === 'hook') {
+          // wrap the foot round it and spin off
+          T['hip' + kick] = 0.6 * v; T['knee' + kick] = 1.1 * v;
+          T.twist = sd * 0.7 * v; T.bodyRoll = sd * 0.25 * v; T.bodyY = -0.1 * v;
+        } else if (va === 'outside') {
+          T['hip' + kick] = 0.35 * v; T['knee' + kick] = 0.5 * v;
+          T.twist = -sd * 0.4 * v; T.bodyRoll = sd * 0.3 * v; T.bodyY = -0.06 * v;
+        } else {
+          T['hip' + kick] = 0.45 * v; T['knee' + kick] = 0.55 * v;
+          T.twist = sd * 0.45 * v; T.bodyRoll = sd * 0.22 * v; T.bodyY = -0.07 * v;
+        }
+        // arms out for balance through the turn
+        T.shLz = 0.5 + 0.5 * v; T.shRz = -0.5 - 0.5 * v; T.lean = (T.lean || 0) + 0.15 * v;
         break;
       }
       case 'control': {
