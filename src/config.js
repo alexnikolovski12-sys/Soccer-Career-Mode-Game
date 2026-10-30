@@ -109,7 +109,12 @@ export const CONFIG = {
     redirectAngle: 0.6,        // radians — larger direction change triggers a redirect touch
     redirectReachMult: 1.5,
     trapDamping: 10,           // ball damping when stopping with the ball
-    loseDistance: 2.8,         // owner further than this from ball → loose ball
+    loseDistance: 4.5,         // safety only — the ball normally never leaves the possession circle
+    carryOffset: 0.5,          // possession circle: how far ahead of the body the ball sits (m)
+    carrySpeedOffset: 0.03,    // ...plus this much per m/s of running speed
+    carryStiffness: 22,        // how quickly the ball snaps back to the feet after turns
+    stealReach: 0.7,           // an opponent this close to the ball...
+    stealTime: 0.35,           // ...for this long wins it
     receiveReach: 0.95,        // ground distance to receive a pass / loose ball
     receiveMaxHeight: 1.3,
     autoChaseWhenIdle: true,   // walk to your own loose touch when joystick is idle

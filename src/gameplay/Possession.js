@@ -18,61 +18,67 @@ export class Possession {
     if (ball.frozen) return;
     if (ball.owner) {
       const o = ball.owner;
-      const d = dist2D(o.pos, ball.pos);
-      if (d > CONFIG.dribble.loseDistance || ball.pos.y > 1.6) {
+      // the ball only leaves the possession circle when it's kicked (pass/shot,
+      // which clears the owner), lifted, or an opponent wins it
+      if (ball.pos.y > 1.6 || dist2D(o.pos, ball.pos) > CONFIG.dribble.loseDistance) {
         ball.owner = null;
         g.events.emit('loose', { player: o });
       } else {
         this.dribble(o, dt);
+        if (this.contest(o, dt)) return;
       }
     }
     if (!ball.owner && !ball.inGoal) this.checkReceive();
   }
 
+  /**
+   * Possession circle: the ball rides just ahead of the carrier's feet and
+   * follows every turn. It can't run away from you.
+   */
   dribble(o, dt) {
-    const g = this.game, ball = g.ball;
-    const A = o.attrs, D = CONFIG.dribble;
-    o.footPoint(_fp);
-    const bx = ball.pos.x - _fp.x, bz = ball.pos.z - _fp.z;
-    const dFoot = Math.hypot(bx, bz);
-    const reach = A.reach;
-    const moving = o.moveSpeed > 0.4;
-
-    if (moving) {
-      if (o.touchCooldown > 0 || ball.pos.y > 0.5) return;
-      const mx = o.moveDir.x, mz = o.moveDir.z;
-      const gvx = ball.vel.x, gvz = ball.vel.z;
-      const bs = Math.hypot(gvx, gvz);
-      const along = gvx * mx + gvz * mz;
-      const ballDirOff = bs > 0.3 ? Math.acos(Math.max(-1, Math.min(1, along / bs))) : Math.PI;
-      const redirect = ballDirOff > D.redirectAngle;
-      const touchable = dFoot < reach || (redirect && dFoot < reach * D.redirectReachMult);
-      const needTouch = along < o.speed * 1.05 + 0.35 || redirect;
-      if (!touchable || !needTouch) return;
-      const spd = Math.max(o.speed, o.moveSpeed * 0.55);
-      const mult = A.touchMult + (o.sprinting ? A.sprintTouch : 0);
-      const v = spd * mult + D.touchBase;
-      const err = g.rng.gauss() * A.touchError * (o.sprinting ? 1.5 : 1) * (redirect ? 1.4 : 1);
-      const c = Math.cos(err), s = Math.sin(err);
-      const dx = mx * c - mz * s, dz = mx * s + mz * c;
-      ball.kick(dx * v, 0, dz * v, { type: 'touch', by: o, ignoreTime: 0, time: g.simTime });
-      ball.owner = o;
-      o.touchCooldown = D.touchCooldown;
+    const g = this.game, ball = g.ball, D = CONFIG.dribble;
+    if (g.sm.is('SHOT_AIM')) return; // shooter steps beside the ball for the run-up
+    if (ball.pos.y > 0.5) return;
+    const off = D.carryOffset + Math.min(o.speed, 8) * D.carrySpeedOffset;
+    const tx = o.pos.x + Math.sin(o.heading) * off;
+    const tz = o.pos.z + Math.cos(o.heading) * off;
+    const k = 1 - Math.exp(-D.carryStiffness * dt);
+    ball.pos.x += (tx - ball.pos.x) * k;
+    ball.pos.z += (tz - ball.pos.z) * k;
+    ball.vel.x = o.vel.x; ball.vel.z = o.vel.z;
+    if (ball.vel.y > 0) ball.vel.y = 0;
+    ball.curve = 0;
+    // occasional touch animation + sound so it still looks like dribbling
+    if (o.speed > 1 && o.touchCooldown <= 0) {
+      o.touchCooldown = Math.max(0.28, 1.1 / (o.speed + 1));
       this.kickLeg = -this.kickLeg;
       if (!o.anim.action || o.anim.action === 'touch') o.playAction('touch', 0.2, { kickLeg: this.kickLeg });
       if (o.isUser) g.audio.touch();
-      // a sharp redirect costs momentum
-      if (redirect) { o.vel.multiplyScalar(0.82); }
-    } else if (!g.sm.is('SHOT_AIM')) {
-      // stopped: trap the ball under the sole and keep it at the foot
-      if (dFoot < reach * 1.8 && ball.pos.y < 0.5) {
-        const k = Math.exp(-D.trapDamping * dt);
-        ball.vel.x *= k; ball.vel.z *= k;
-        const pull = Math.min(1, 5 * dt);
-        ball.pos.x += (_fp.x - ball.pos.x) * pull;
-        ball.pos.z += (_fp.z - ball.pos.z) * pull;
-      }
     }
+  }
+
+  /**
+   * An opponent who gets to the ball and stays on it wins possession.
+   * (Defenders also have their lunging tackles in DefenderAI.)
+   */
+  contest(o, dt) {
+    const g = this.game, ball = g.ball, D = CONFIG.dribble;
+    let winner = null;
+    for (const d of g.opponentsOf(o)) {
+      if (d.isKeeper || d.stumble > 0 || !d.visible || !ball.canTouch(d)) { if (d.ai) d.ai.onBall = 0; continue; }
+      if (dist2D(d.pos, ball.pos) < D.stealReach) {
+        d.ai.onBall = (d.ai.onBall || 0) + dt;
+        if (d.ai.onBall > D.stealTime) winner = d;
+      } else d.ai.onBall = 0;
+    }
+    if (!winner) return false;
+    winner.ai.onBall = 0;
+    o.stumble = 0.4;
+    o.playAction('stumble', 0.6, { side: g.rng.sign() });
+    ball.lastKick = { type: 'tackle', by: winner, time: g.simTime };
+    this.gain(winner);
+    g.events.emit('tackleWon', { by: winner, victim: o });
+    return true;
   }
 
   checkReceive() {
@@ -131,6 +137,9 @@ export class Possession {
       Math.min(ball.vel.y, 0),
       inc.z * (1 - q) * 0.45 + tz * q + g.rng.gauss() * err,
     );
+    // settle it straight into the possession circle
+    const k = p.isUser ? 0.25 : 0.35;
+    ball.vel.x *= k; ball.vel.z *= k;
     ball.curve = 0;
     ball.lastKick = { type: 'control', by: p, time: g.simTime };
     p.touchCooldown = 0.18;

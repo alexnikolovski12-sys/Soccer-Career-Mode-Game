@@ -161,8 +161,10 @@ export class Player {
     body.position.y = 0.92;
     root.add(body);
 
-    // the user gets private materials so it can be ghosted during the shot camera
-    const m = this.isUser ? (c) => new THREE.MeshLambertMaterial({ color: c }) : mat;
+    // home outfielders get private materials so whoever you control can be ghosted
+    // during the shot camera (control switches between home players on passes)
+    this._privateMats = this.team === 'home' && !this.isKeeper;
+    const m = this._privateMats ? (c) => new THREE.MeshLambertMaterial({ color: c }) : mat;
     const kit = m(L.kitColour), shorts = m(L.shortsColour), socks = m(L.socksColour || L.kitColour);
     const skin = m(L.skinTone), hair = m(L.hairColour || '#222'), boot = m(L.bootColour || '#111');
     const meshes = [];
@@ -234,19 +236,34 @@ export class Player {
     body.position.y *= sc;
     this.heightScale = sc;
 
-    if (this.isUser) {
-      this.ring = new THREE.Mesh(G.ring, new THREE.MeshBasicMaterial({
-        color: CONFIG.colors.userRing, transparent: true, opacity: 0.85, depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }));
-      this.ring.rotation.x = -Math.PI / 2;
-      this.ring.position.y = 0.02;
-      this.ring.renderOrder = 2;
-      root.add(this.ring);
-      this.label = this._makeLabel(this.name || 'YOU');
-      root.add(this.label);
-    }
     this.scene.add(root);
+    if (this.isUser) this._makeMarker();
+  }
+
+  /** Ring under the feet + name label for the player you control. */
+  _makeMarker() {
+    if (this.ring) return;
+    const root = this.parts.root;
+    this.ring = new THREE.Mesh(geo().ring, new THREE.MeshBasicMaterial({
+      color: CONFIG.colors.userRing, transparent: true, opacity: 0.85, depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }));
+    this.ring.rotation.x = -Math.PI / 2;
+    this.ring.position.y = 0.02;
+    this.ring.renderOrder = 2;
+    root.add(this.ring);
+    this.label = this._makeLabel(this.name || `#${this.look.number ?? ''}`);
+    root.add(this.label);
+  }
+
+  /** Hand control to / take control from this player. */
+  setControlled(on) {
+    if (on && !this._privateMats) return;
+    if (!on) this.setGhost(1);
+    this.isUser = on;
+    this.role = on ? 'user' : 'mate';
+    if (on) this._makeMarker();
+    if (this.ring) { this.ring.visible = on; this.label.visible = on; }
   }
 
   _makeLabel(text) {
@@ -282,7 +299,7 @@ export class Player {
 
   /** Fade the body (user only — other players share materials). */
   setGhost(alpha) {
-    if (!this.isUser || this._ghost === alpha) return;
+    if (!this._privateMats || this._ghost === alpha) return;
     this._ghost = alpha;
     const on = alpha < 0.999;
     for (const mesh of this.meshes) {

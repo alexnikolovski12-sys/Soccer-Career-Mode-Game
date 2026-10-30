@@ -67,8 +67,10 @@ class Game {
       id: 'user', team: 'home', role: 'user', name: USER_PLAYER.shortName,
       look: USER_PLAYER.look, stats: USER_PLAYER.stats, rating: TEAMS.home.rating,
     });
+    this.career = this.user; // your career player — control returns to him every moment
+    const mateNames = ['OKAFOR', 'LINDQVIST', 'MORAES', 'HALE'];
     this.teammatePool = [7, 10, 11, 8].map((n, i) => new Player(this.scene, {
-      id: `mate${i}`, team: 'home', role: 'mate', rating: TEAMS.home.rating,
+      id: `mate${i}`, team: 'home', role: 'mate', rating: TEAMS.home.rating, name: mateNames[i],
       look: randomLook(rng, TEAMS.home.kit, n), stats: statsFromRating(TEAMS.home.rating, rng),
     }));
     this.defenderPool = [2, 5, 4, 3, 6, 8].map((n, i) => new Player(this.scene, {
@@ -150,10 +152,43 @@ class Game {
     return Math.max(x, this.ball.pos.x, 0);
   }
 
+  /** Control goes back to the career player at the start of every moment. */
+  resetControl() {
+    if (this.user === this.career) return;
+    this.user.setControlled(false);
+    this.career.setControlled(true);
+    this.user = this.career;
+    this.teammates = this.teammates.filter((p) => p !== this.career);
+  }
+
+  /** Switch control to a home player (called when they receive the ball). */
+  switchControl(p) {
+    const old = this.user;
+    if (!p || p === old || p.team !== 'home' || p.isKeeper) return;
+    const i = this.teammates.indexOf(p);
+    if (i < 0) return;
+    const ai = p.ai || {};
+    old.setControlled(false);
+    p.setControlled(true);
+    // the player you leave behind takes over the role of the one you switched to
+    old.ai = {
+      role: ai.role || 'support', lane: ai.lane ?? old.pos.z, side: ai.side || (Math.sign(old.pos.z) || 1),
+      target: new THREE.Vector3(old.pos.x, 0, old.pos.z), retarget: 0, holdT: 0, decideAt: null,
+      userCalled: false, receiving: false,
+    };
+    p.sprinting = false;
+    this.teammates[i] = old;
+    this.user = p;
+    this.players = [this.user, ...this.teammates, ...this.defenders, this.keeperPlayer];
+    this.lastPasser = null;
+    this.hud.flash(p.name || 'SWITCH', 'neutral');
+  }
+
   activate(nMates, nDefs) {
     this.teammatePool.forEach((p, i) => p.setVisible(i < nMates));
     this.defenderPool.forEach((p, i) => p.setVisible(i < nDefs));
     this.teammates = this.teammatePool.slice(0, nMates);
+    for (const p of this.teammates) p.setControlled(false);
     this.defenders = this.defenderPool.slice(0, nDefs);
     this.players = [this.user, ...this.teammates, ...this.defenders, this.keeperPlayer];
   }
@@ -167,6 +202,7 @@ class Game {
     this.ball.events.length = 0;
     this.keeper.reset();
     this.lastPasser = null;
+    this.resetControl();
     this.replay.stop();
     this.hud.setReplay(false);
     this.hud.hideBig();
@@ -204,7 +240,7 @@ class Game {
     const changed = r.shadowMap.enabled !== lvl.shadows;
     r.shadowMap.enabled = lvl.shadows;
     this.pitch.sun.castShadow = lvl.shadows;
-    for (const p of [this.user, ...this.teammatePool, ...this.defenderPool, this.keeperPlayer]) p.setShadows(lvl.shadows);
+    for (const p of [this.career, ...this.teammatePool, ...this.defenderPool, this.keeperPlayer]) p.setShadows(lvl.shadows);
     this.ball.mesh.castShadow = lvl.shadows;
     this.pitch.setCrowdQuality(lvl.crowd === 'full');
     if (changed) this.scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
@@ -238,6 +274,8 @@ class Game {
       if (type === 'parry') this.audio.kick(0.6);
     });
     ev.on('pass', ({ from }) => { if (from === this.user) this.effects.puff(this.ball.pos.x, this.ball.pos.z); });
+    // FC-style switching: whichever of your teammates gets the ball, you now control them
+    ev.on('gain', ({ player }) => { if (player.team === 'home' && !player.isKeeper) this.switchControl(player); });
   }
 
   // ------------------------------------------------------------ simulation
