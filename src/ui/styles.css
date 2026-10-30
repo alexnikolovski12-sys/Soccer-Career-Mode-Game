@@ -114,7 +114,7 @@ html, body {
   position: absolute;
   right: calc(var(--sar) + 16px);
   bottom: calc(var(--sab) + 14px);
-  width: calc(var(--u) * 236); height: calc(var(--u) * 206);
+  width: calc(var(--u) * 216); height: calc(var(--u) * 104);
   transition: opacity 0.25s, transform 0.25s;
 }
 .pad.hidden { opacity: 0; transform: translateY(20px); }
@@ -130,7 +130,7 @@ html, body {
 }
 .act span { pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
 .act.down { transform: scale(0.92); background: rgba(255,255,255,0.28); }
-.act.pass { width: calc(var(--u) * 86); height: calc(var(--u) * 86); right: 0; bottom: 0; font-size: calc(var(--u) * 19); }
+.act.pass { width: calc(var(--u) * 92); height: calc(var(--u) * 92); right: calc(var(--u) * 112); bottom: 0; font-size: calc(var(--u) * 20); }
 .act.sprint {
   width: calc(var(--u) * 74); height: calc(var(--u) * 74); right: calc(var(--u) * 104); bottom: calc(var(--u) * 2);
   font-size: calc(var(--u) * 15);
@@ -145,7 +145,7 @@ html, body {
     conic-gradient(var(--bad) var(--stam), rgba(255,255,255,0.12) 0); }
 .act.sprint.down { filter: brightness(1.4); }
 .act.shoot {
-  width: calc(var(--u) * 98); height: calc(var(--u) * 98); right: calc(var(--u) * 14); bottom: calc(var(--u) * 104);
+  width: calc(var(--u) * 100); height: calc(var(--u) * 100); right: 0; bottom: 0;
   font-size: calc(var(--u) * 21); opacity: 0.32;
 }
 .act.shoot.ready {
@@ -354,7 +354,7 @@ html, body {
 @keyframes rot { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
 
 /* ----------------------------------------------------------- portrait tweaks */
-html.portrait .pad { width: calc(var(--u) * 210); height: calc(var(--u) * 196); }
+html.portrait .pad { width: calc(var(--u) * 216); height: calc(var(--u) * 104); }
 html.portrait .timer { top: calc(var(--u) * 40 + 8px); left: 0; transform: none; }
 html.portrait .scoreboard { font-size: calc(var(--u) * 17); }
 html.portrait .sb-team { padding: calc(var(--u) * 4) calc(var(--u) * 7); }

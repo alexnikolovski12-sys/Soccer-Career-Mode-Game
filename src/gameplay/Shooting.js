@@ -295,7 +295,9 @@ export class Shooting {
     const g = this.game, ball = g.ball;
     const L = a.launch;
     const shooter = a.shooter;
-    shooter.playAction('shoot', 0.6, { kickLeg: 1 });
+    shooter.playAction('shoot', 0.75, { kickLeg: 1 });
+    shooter.anim.t = 0.75 * 0.24; // already wound up from the run-up: the leg comes straight through
+    shooter.pose.hipR = -1.2; shooter.pose.kneeR = 1.8; shooter.pose.twist = -0.4;
     ball.kick(L.vx, L.vy, L.vz, { curve: L.curve, type: 'shot', by: shooter, ignoreTime: 0.4, time: g.simTime });
     ball.owner = null;
     g.audio.kick(0.4 + a.power * 0.6);

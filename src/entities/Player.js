@@ -495,24 +495,30 @@ export class Player {
         break;
       }
       case 'pass': {
+        // plant, swing back, side-foot through the ball, follow through
         const back = k < 0.35;
-        T['hip' + kick] = back ? ease(0, -0.55, k / 0.35) : ease(-0.55, 0.85, Math.min(1, (k - 0.35) / 0.35));
-        T['knee' + kick] = back ? ease(0.2, 1.1, k / 0.35) : ease(1.1, 0.15, Math.min(1, (k - 0.35) / 0.3));
-        T['hip' + other] = -0.1; T['knee' + other] = 0.25;
-        T.twist = (kick === 'R' ? 1 : -1) * 0.25 * Math.sin(k * Math.PI);
-        T.shLz = 0.45; T.shRz = -0.45;
-        T.lean = 0.12;
+        const fwd = Math.min(1, (k - 0.35) / 0.3);
+        T['hip' + kick] = back ? ease(0.1, -0.85, k / 0.35) : ease(-0.85, 1.05, fwd);
+        T['knee' + kick] = back ? ease(0.2, 1.35, k / 0.35) : ease(1.35, 0.1, fwd);
+        T['hip' + other] = -0.18; T['knee' + other] = 0.35;
+        T.twist = (kick === 'R' ? 1 : -1) * (back ? -0.3 * (k / 0.35) : 0.35 * Math.sin(fwd * Math.PI * 0.5));
+        T.shLz = 0.7; T.shRz = -0.7; T.shL = back ? 0.3 : -0.2; T.shR = back ? -0.3 : 0.2;
+        T.lean = back ? 0.05 : 0.18;
+        T.bodyY = -0.05;
         break;
       }
       case 'shoot': {
+        // big wind-up, laces through the ball, leg follows through high
         const back = k < 0.3;
-        T['hip' + kick] = back ? ease(0, -0.95, k / 0.3) : ease(-0.95, 1.45, Math.min(1, (k - 0.3) / 0.3));
-        T['knee' + kick] = back ? ease(0.2, 1.5, k / 0.3) : ease(1.5, 0.05, Math.min(1, (k - 0.3) / 0.25));
-        T['hip' + other] = -0.15; T['knee' + other] = 0.3;
-        T.shLz = 0.75; T.shRz = -0.75; T.shL = 0.3; T.shR = -0.3;
-        T.lean = back ? 0.18 : -0.12;
-        T.twist = (kick === 'R' ? 1 : -1) * 0.4 * Math.sin(k * Math.PI);
-        T.bodyY = k > 0.4 && k < 0.8 ? 0.05 : 0;
+        const fwd = Math.min(1, (k - 0.3) / 0.28);
+        T['hip' + kick] = back ? ease(0, -1.25, k / 0.3) : k < 0.75 ? ease(-1.25, 1.85, fwd) : ease(1.85, 0.2, (k - 0.75) / 0.25);
+        T['knee' + kick] = back ? ease(0.2, 1.9, k / 0.3) : ease(1.9, 0.05, Math.min(1, (k - 0.3) / 0.2));
+        T['hip' + other] = back ? -0.1 : -0.3; T['knee' + other] = back ? 0.45 : 0.25;
+        T.shLz = 1.0; T.shRz = -1.0; T.shL = back ? 0.6 : -0.4; T.shR = back ? -0.6 : 0.5;
+        T.lean = back ? 0.25 : k < 0.75 ? -0.2 : 0.05;
+        T.twist = (kick === 'R' ? 1 : -1) * (back ? -0.45 * (k / 0.3) : 0.55 * Math.sin(fwd * Math.PI * 0.6));
+        T.bodyRoll = (kick === 'R' ? -1 : 1) * 0.12 * Math.sin(k * Math.PI);
+        T.bodyY = k > 0.35 && k < 0.75 ? 0.07 : -0.04;
         break;
       }
       case 'tackle': {
@@ -587,14 +593,32 @@ export class Player {
         T.lean = 0.2; T.bodyY = -0.05;
         break;
       }
-      case 'roulette': {
-        // full 360° spin over the ball
-        const side = this.anim.side || 1;
-        this.spinYaw = side * Math.PI * 2 * (k * k * (3 - 2 * k));
+      case 'spin': {
+        // roulette / McGeady / Berba / scoop: the body spins over the ball
+        this.spinYaw = (this.anim.spinAmt || Math.PI * 2) * (k * k * (3 - 2 * k));
         const v = Math.sin(k * Math.PI);
         T.hipL = 0.3 * Math.sin(k * Math.PI * 2); T.hipR = -T.hipL;
         T.kneeL = T.kneeR = 0.4; T.bodyY = -0.06 * v;
         T.shLz = 0.6; T.shRz = -0.6; T.lean = 0.1;
+        break;
+      }
+      case 'dragback': {
+        // sole on top of the ball, roll it back and across
+        const v = Math.sin(k * Math.PI);
+        T['hip' + kick] = 0.45 * v - 0.25 * Math.max(0, k - 0.5); T['knee' + kick] = 0.7 * v;
+        T['hip' + other] = -0.1; T.lean = -0.12 * v; T.bodyY = -0.04 * v;
+        T.twist = (this.anim.side || 1) * 0.35 * v;
+        T.shLz = 0.5; T.shRz = -0.5;
+        break;
+      }
+      case 'fakeshot': {
+        // big shooting wind-up... then chop it the other way instead
+        const back = k < 0.4;
+        T['hip' + kick] = back ? ease(0, -1.1, k / 0.4) : ease(-1.1, 0.35, Math.min(1, (k - 0.4) / 0.2));
+        T['knee' + kick] = back ? ease(0.2, 1.7, k / 0.4) : ease(1.7, 0.5, Math.min(1, (k - 0.4) / 0.2));
+        T['hip' + other] = -0.15; T['knee' + other] = 0.35;
+        T.shLz = 0.9; T.shRz = -0.9; T.lean = back ? 0.22 : 0.1;
+        T.twist = (this.anim.side || 1) * (back ? -0.35 : 0.45);
         break;
       }
       case 'elastico': {

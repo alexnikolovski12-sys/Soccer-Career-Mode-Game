@@ -8,13 +8,23 @@ import { dist2D } from '../core/MathUtil.js';
 // weight = how often it's picked; beat = base chance to send the defender the wrong way;
 // shift = sideways metres the carrier moves; dur = seconds
 export const SKILLS = {
-  stepover:  { label: 'STEPOVER',      weight: 34, beat: 0.5,  shift: 0.7, dur: 0.55, anim: 'stepover' },
-  feint:     { label: 'BODY FEINT',    weight: 24, beat: 0.45, shift: 0.6, dur: 0.45, anim: 'feint' },
-  croqueta:  { label: 'LA CROQUETA',   weight: 14, beat: 0.55, shift: 0.9, dur: 0.5,  anim: 'croqueta' },
-  roulette:  { label: 'ROULETTE',      weight: 11, beat: 0.6,  shift: 1.1, dur: 0.75, anim: 'roulette' },
-  elastico:  { label: 'ELASTICO',      weight: 8,  beat: 0.65, shift: 1.0, dur: 0.45, anim: 'elastico' },
-  heelchop:  { label: 'HEEL CHOP',     weight: 6,  beat: 0.55, shift: 0.9, dur: 0.45, anim: 'feint' },
-  rainbow:   { label: 'RAINBOW FLICK', weight: 3,  beat: 0.8,  shift: 0,   dur: 0.9,  anim: 'flick' },
+  stepover:  { label: 'STEPOVER',       weight: 20, beat: 0.5,  shift: 0.7, dur: 0.55, anim: 'stepover' },
+  feint:     { label: 'BODY FEINT',     weight: 15, beat: 0.45, shift: 0.6, dur: 0.45, anim: 'feint' },
+  croqueta:  { label: 'LA CROQUETA',    weight: 9,  beat: 0.55, shift: 0.9, dur: 0.5,  anim: 'croqueta' },
+  dragback:  { label: 'DRAG BACK',      weight: 8,  beat: 0.5,  shift: 0.8, dur: 0.55, anim: 'dragback' },
+  fakeshot:  { label: 'FAKE SHOT',      weight: 8,  beat: 0.55, shift: 0.9, dur: 0.6,  anim: 'fakeshot' },
+  cruyff:    { label: 'CRUYFF TURN',    weight: 7,  beat: 0.55, shift: 1.0, dur: 0.6,  anim: 'fakeshot', spin: Math.PI * 0.5 },
+  roulette:  { label: 'ROULETTE',       weight: 6,  beat: 0.6,  shift: 1.1, dur: 0.75, anim: 'spin', spin: Math.PI * 2 },
+  ballroll:  { label: 'BALL ROLL',      weight: 6,  beat: 0.5,  shift: 0.8, dur: 0.5,  anim: 'dragback' },
+  mcgeady:   { label: 'MCGEADY SPIN',   weight: 5,  beat: 0.6,  shift: 1.0, dur: 0.6,  anim: 'spin', spin: Math.PI },
+  elastico:  { label: 'ELASTICO',       weight: 5,  beat: 0.65, shift: 1.0, dur: 0.45, anim: 'elastico' },
+  heelchop:  { label: 'HEEL CHOP',      weight: 4,  beat: 0.55, shift: 0.9, dur: 0.45, anim: 'feint' },
+  nutmeg:    { label: 'NUTMEG!',        weight: 4,  beat: 0.75, shift: 0,   dur: 0.5,  anim: 'touch', kick: { fwd: 4.2, up: 0 }, close: 2.2 },
+  berba:     { label: 'BERBA SPIN',     weight: 3,  beat: 0.6,  shift: 1.0, dur: 0.7,  anim: 'spin', spin: Math.PI * 1.5 },
+  scoop:     { label: 'SCOOP TURN',     weight: 3,  beat: 0.6,  shift: 1.1, dur: 0.55, anim: 'spin', spin: Math.PI },
+  heel2heel: { label: 'HEEL TO HEEL',   weight: 2,  beat: 0.65, shift: 0.5, dur: 0.5,  anim: 'flick', kick: { fwd: 2.0, up: 1.2 } },
+  sombrero:  { label: 'SOMBRERO FLICK', weight: 2,  beat: 0.75, shift: 0,   dur: 0.7,  anim: 'flick', kick: { fwd: 2.2, up: 3.6 } },
+  rainbow:   { label: 'RAINBOW FLICK',  weight: 2,  beat: 0.8,  shift: 0,   dur: 0.9,  anim: 'flick', kick: { fwd: 2.6, up: 5.0 } },
 };
 
 export class Skills {
@@ -52,32 +62,34 @@ export class Skills {
     this._start(o, target);
   }
 
-  _pick() {
+  _pick(distToDefender) {
     const rng = this.game.rng;
-    const total = Object.values(SKILLS).reduce((a, s) => a + s.weight, 0);
+    // a nutmeg needs the defender right on top of you
+    const ok = Object.entries(SKILLS).filter(([, s]) => !s.close || distToDefender < s.close);
+    const total = ok.reduce((a, [, s]) => a + s.weight, 0);
     let r = rng.next() * total;
-    for (const [k, s] of Object.entries(SKILLS)) { r -= s.weight; if (r <= 0) return k; }
+    for (const [k, s] of ok) { r -= s.weight; if (r <= 0) return k; }
     return 'stepover';
   }
 
   _start(o, d) {
     const g = this.game, ball = g.ball;
-    const key = this._pick();
+    const key = this._pick(Math.hypot(d.pos.x - o.pos.x, d.pos.z - o.pos.z));
     const sk = SKILLS[key];
     // go away from the side the defender is leaning to
     const fx = Math.sin(o.heading), fz = Math.cos(o.heading);
     const px = fz, pz = -fx; // perpendicular (right)
     const side = ((d.pos.x - o.pos.x) * px + (d.pos.z - o.pos.z) * pz) > 0 ? -1 : 1;
     this.active = { key, sk, o, d, t: 0, side, px, pz, fx, fz, resolved: false };
-    o.playAction(sk.anim, sk.dur, { side, kickLeg: side });
-    if (key === 'rainbow') {
-      // flick it up and over the defender, then run onto it
-      ball.kick(o.vel.x + fx * 2.6, CONFIG.skills.rainbowLift, o.vel.z + fz * 2.6,
+    o.playAction(sk.anim, sk.dur, { side, kickLeg: side, spinAmt: (sk.spin || 0) * side });
+    if (sk.kick) {
+      // flicks / nutmegs: knock it past or over the defender, then run onto it
+      ball.kick(o.vel.x + fx * sk.kick.fwd, sk.kick.up, o.vel.z + fz * sk.kick.fwd,
         { type: 'touch', by: o, ignoreTime: 0, time: g.simTime });
       ball.owner = o;
       ball.ignore.set(d, 1.0);
     }
-    if (o.isUser) { g.hud.flash(sk.label, 'good'); g.audio.touch(); }
+    if (o.isUser) { g.hud.flash(sk.label, 'good'); g.audio.touch(); g.audio.anticipate(); }
   }
 
   _run(dt) {

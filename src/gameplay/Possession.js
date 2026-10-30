@@ -38,6 +38,8 @@ export class Possession {
   dribble(o, dt) {
     const g = this.game, ball = g.ball, D = CONFIG.dribble;
     if (g.sm.is('SHOT_AIM')) return; // shooter steps beside the ball for the run-up
+    const sk = g.skills && g.skills.active;
+    if (sk && sk.o === o && sk.sk.kick) return; // nutmeg / flick: ball's been knocked on, run onto it
     if (ball.pos.y > 0.5) return;
     const off = D.carryOffset + Math.min(o.speed, 8) * D.carrySpeedOffset;
     const tx = o.pos.x + Math.sin(o.heading) * off;

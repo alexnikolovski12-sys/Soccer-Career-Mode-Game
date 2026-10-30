@@ -103,11 +103,11 @@ export const CONFIG = {
 
   // --------------------------------------------------------------- automatic skill moves
   skills: {
-    triggerRange: 3.2,         // a defender this close, in front of the carrier...
+    triggerRange: 4.0,         // a defender this close, in front of the carrier...
     frontDot: 0.25,            // ...within roughly ±75° of facing
-    chancePerSecond: 1.3,      // how eagerly skills fire while that's true
+    chancePerSecond: 2.6,      // how eagerly skills fire while that's true
     minSpeed: 1.2,
-    cooldown: 1.6,
+    cooldown: 1.0,
     beatStumble: 0.9,          // how long a beaten defender is wrong-footed
     rainbowLift: 5.0,          // upward speed of the rainbow flick (m/s)
   },
@@ -139,7 +139,8 @@ export const CONFIG = {
     receiveMaxHeight: 1.3,
     autoChaseWhenIdle: true,   // walk to your own loose touch when joystick is idle
     joyDeadZone: 0.1,
-    jogTilt: 0.55,             // joystick magnitude where jog becomes run
+    jogTilt: 0.55,
+    autoSprintTilt: 0.92,      // joystick pushed this far = sprint             // joystick magnitude where jog becomes run
   },
 
   // --------------------------------------------------------------- ball physics
@@ -163,7 +164,7 @@ export const CONFIG = {
   pass: {
     arriveSpeed: 5.5,          // desired speed when reaching the receiver
     minSpeed: 7, maxSpeed: 26,
-    windup: 0.12,              // seconds between button and kick (marker shows)
+    windup: 0.17,              // seconds between button and kick (marker shows)
     angleWeight: 2.2,          // importance of facing angle
     distWeight: 0.6,
     idealDist: 14,

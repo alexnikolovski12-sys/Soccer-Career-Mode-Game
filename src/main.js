@@ -215,6 +215,7 @@ class Game {
     by.stumble = 0;
     this.hud.showBig(penalty ? 'PENALTY!' : 'FOUL — FREE KICK', 'good');
     this.audio.whistle(false);
+    this.audio.boo();
     this.camRig.addShake(0.08);
     m.timer = Math.max(m.timer, CONFIG.setPiece.timerTopUp);
     this.moments.addRating(penalty ? 'Won a penalty' : 'Won a free kick', penalty ? 0.3 : 0.1);
@@ -363,6 +364,7 @@ class Game {
     const ev = this.events;
     ev.on('tackleWon', ({ victim }) => {
       if (victim === this.user) this.camRig.addShake(0.12);
+      if (victim && victim.team === 'home') this.audio.groan(0.8);   // home fans: "awww"
     });
     ev.on('save', ({ type }) => {
       this.audio.ooh();
@@ -375,6 +377,7 @@ class Game {
     ev.on('foul', (e) => this.onFoul(e));
     ev.on('beatDefender', ({ by, skill }) => {
       if (by === this.user && !skill) this.hud.flash('SKILLED!', 'good');
+      if (by && by.team === 'home') this.audio.skillCheer();
     });
   }
 
@@ -424,7 +427,8 @@ class Game {
     let wx = f.x * mv.y + rt.x * mv.x;
     let wz = f.z * mv.y + rt.z * mv.x;
     const mag = mv.mag;
-    const wantsSprint = !!this.input.held.sprint && mag > 0.2;
+    // no sprint button: pushing the stick right to the edge sprints (Shift still works on desktop)
+    const wantsSprint = (!!this.input.held.sprint && mag > 0.2) || mag > CONFIG.dribble.autoSprintTilt;
     u.sprinting = wantsSprint && u.stamina > 0.02;
     let speed = 0;
     if (mag > 0) {
@@ -680,7 +684,7 @@ class Game {
           g.audio.setCrowd(1);
         } else {
           if (outcome === 'SAVED' || outcome === 'POST') g.audio.ooh();
-          else if (outcome === 'OFF_TARGET' || outcome === 'BLOCKED') g.audio.groan();
+          else if (outcome === 'OFF_TARGET' || outcome === 'BLOCKED' || outcome === 'TACKLED' || outcome === 'INTERCEPTED') g.audio.groan();
           g.audio.whistle(outcome === 'TIME_UP' || outcome === 'TACKLED' || outcome === 'INTERCEPTED' || outcome === 'OUT');
         }
       },

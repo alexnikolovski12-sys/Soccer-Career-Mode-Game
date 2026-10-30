@@ -132,7 +132,7 @@ export class Passing {
     if (this.pending) return;
     const sel = this.selectTarget(user, dirX, dirZ);
     const kickLeg = (this.kickLeg = -this.kickLeg);
-    user.playAction('pass', 0.42, { kickLeg });
+    user.playAction('pass', 0.5, { kickLeg });
     if (sel) {
       this.game.effects.showMarker(sel.target);
       this.pending = { passer: user, target: sel.target, t: CONFIG.pass.windup };
@@ -148,7 +148,7 @@ export class Passing {
   requestAIPass(passer, target) {
     if (this.pending) return;
     const kickLeg = (this.kickLeg = -this.kickLeg);
-    passer.playAction('pass', 0.42, { kickLeg });
+    passer.playAction('pass', 0.5, { kickLeg });
     this.pending = { passer, target, t: CONFIG.pass.windup * 0.8 };
     if (target.isUser) this.game.effects.showMarker(target);
   }

@@ -274,6 +274,7 @@ export class MomentManager {
       if (e.type === 'goal' && e.side > 0) { this.end('GOAL', 0); return; }
       if (e.type === 'post') {
         g.audio.post();
+        g.audio.ooh();
         g.camRig.addShake(0.15);
         if (!m.postHit && ball.lastKick && ball.lastKick.type === 'shot') {
           m.postHit = true;

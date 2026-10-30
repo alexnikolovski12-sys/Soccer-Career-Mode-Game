@@ -70,13 +70,11 @@ export class HUD {
     const pad = el('div', 'pad');
     this.btnShoot = el('button', 'act shoot', '<span>SHOOT</span>');
     this.btnPass = el('button', 'act pass', '<span>PASS</span>');
-    this.btnSprint = el('button', 'act sprint', '<span>SPRINT</span>');
-    pad.append(this.btnShoot, this.btnPass, this.btnSprint);
+    pad.append(this.btnShoot, this.btnPass);
     r.appendChild(pad);
     this.pad = pad;
     this.input.bindButton(this.btnShoot, 'shoot');
     this.input.bindButton(this.btnPass, 'pass');
-    this.input.bindButton(this.btnSprint, 'sprint');
 
     // ---- banners
     this.intro = el('div', 'banner intro', `
@@ -132,7 +130,7 @@ export class HUD {
         <div class="o-help">
           <div><b>Left thumb</b> move · <b>PASS</b> · hold <b>SPRINT</b></div>
           <div><b>SHOOT</b> freezes time — pull back &amp; release</div>
-          <div class="desk">Desktop: WASD · Space pass · Shift sprint · F shoot · mouse drag</div>
+          <div class="desk">Desktop: WASD · Space pass · Shift sprint (or push the stick all the way) · F shoot · mouse drag</div>
         </div>
       </div>`);
     r.appendChild(this.startEl);
@@ -181,11 +179,6 @@ export class HUD {
     }
     const statsTxt = `<span><em>MOMENT</em>${mm.momentNo}</span><span><em>GOALS</em>${match.goals}/${match.shots}</span><span><em>RTG</em>${mm.matchRating.toFixed(1)}</span>`;
     set('stats', statsTxt, (v) => { this.statsEl.innerHTML = v; });
-    const st = Math.round(game.user.stamina * 100);
-    set('stam', st, (v) => {
-      this.btnSprint.style.setProperty('--stam', `${v}%`);
-      this.btnSprint.classList.toggle('tired', v < CONFIG.statMap.lowStaminaThreshold * 100);
-    });
   }
 
   setShootAvailable(on) {
