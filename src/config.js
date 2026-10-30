@@ -388,6 +388,10 @@ export const CONFIG = {
   },
 
   // --------------------------------------------------------------- juice
+  career: {
+    momentsPerMatch: 6,        // attacking moments you play in each career match
+  },
+
   juice: {
     celebrateTime: 4.2,        // seconds of celebration before the replay
     replaySeconds: 3.2,

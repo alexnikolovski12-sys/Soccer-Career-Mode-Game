@@ -24,6 +24,7 @@ import { Replay } from './gameplay/Replay.js';
 import { HUD } from './ui/HUD.js';
 import { ShotOverlay } from './ui/ShotOverlay.js';
 import { DebugPanel } from './debug/DebugPanel.js';
+import { Hub } from './career/Hub.js';
 import { USER_PLAYER, TEAMS, randomLook, statsFromRating } from './data/playerStats.js';
 
 class Events {
@@ -147,6 +148,8 @@ class Game {
     this.moments = new MomentManager(this);
     this.quality = new Quality((lvl) => this.applyQuality(lvl));
     this.debug = new DebugPanel(this, this.uiRoot);
+    this.hub = new Hub(document.getElementById('app'), this);
+    this.careerMatch = null;
 
     this.ts = null;
     // a strike that started on a button press leaves the boot on its contact frame
@@ -1077,6 +1080,11 @@ class Game {
   // ------------------------------------------------------------ flow
   nextMoment() {
     if (this.sm.is(STATES.PAUSED)) this.sm.pop();
+    if (this.careerMatch) {
+      const cm = this.careerMatch;
+      if (cm.played >= cm.n) { this.finishCareerMatch(); return; }
+      this._simBetweenMoments();
+    }
     this.hud.hideResult();
     this.moments.setup();
     this.sm.change(STATES.INTRO);
@@ -1093,6 +1101,11 @@ class Game {
   }
 
   onMomentEnding(outcome) {
+    if (this.careerMatch && outcome === 'GOAL') {
+      const sh = (this.shooting.flight && this.shooting.flight.shooter) || this.ball.lastTouch;
+      if (sh === this.career) this.careerMatch.goals++;
+      else this.careerMatch.assists++; // a teammate finished a move you were part of
+    }
     this.resultOutcome = outcome;
     this.pendingResult = null;
     if (this.sm.is(STATES.PAUSED)) this.sm.pop();
@@ -1100,7 +1113,83 @@ class Game {
     this.sm.change(STATES.RESULT, { outcome });
   }
 
-  onMomentFinished(result) { this.pendingResult = result; }
+  onMomentFinished(result) {
+    this.pendingResult = result;
+    if (this.careerMatch) {
+      const cm = this.careerMatch;
+      cm.played++;
+      this.hud.setResultMode({ career: true, last: cm.played >= cm.n });
+    }
+  }
+
+  // ------------------------------------------------------------ career matches
+  /**
+   * Play a career fixture in the match engine: your club in its kit (always
+   * attacking left→right), the opponent in theirs, your player's stats.
+   * N attacking moments, the rest of the game simulated around them.
+   */
+  startCareerMatch(o) {
+    const { my, opp, player } = o;
+    const kitOf = (c, away) => {
+      let k = { kitColour: c.kit.primary, shortsColour: c.kit.shorts, socksColour: c.kit.socks, accent: c.kit.secondary === '#14161c' ? c.kit.primary : c.kit.secondary };
+      if (away) {
+        // colour clash with us → change strip
+        const d = (a, b) => { const x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16); return Math.hypot(((x >> 16) & 255) - ((y >> 16) & 255), ((x >> 8) & 255) - ((y >> 8) & 255), (x & 255) - ((y & 255))); };
+        if (d(c.kit.primary, my.kit.primary) < 110) k = { kitColour: c.kit.secondary, shortsColour: c.kit.primary, socksColour: c.kit.secondary, accent: c.kit.primary };
+        if (d(k.kitColour, my.kit.primary) < 110) k = { kitColour: my.kit.primary === '#f2f4f8' ? '#14161c' : '#f2f4f8', shortsColour: c.kit.primary, socksColour: c.kit.primary, accent: c.kit.primary };
+      }
+      return k;
+    };
+    Object.assign(TEAMS.home, { name: my.name, short: my.short, rating: my.rating, kit: kitOf(my, false) });
+    Object.assign(TEAMS.away, { name: opp.name, short: opp.short, rating: opp.rating, kit: kitOf(opp, true) });
+    const gk = ['#2bd47d', '#f2c21b', '#ff7ab6', '#5fb6f2'].find((c) => c !== TEAMS.away.kit.kitColour && c !== TEAMS.home.kit.kitColour) || '#2bd47d';
+    TEAMS.away.keeperKit = { kitColour: gk, shortsColour: '#16161c', socksColour: gk };
+    const rng = makeRng(Date.now() & 0xffff);
+    for (const p of [this.career, ...this.teammatePool, ...this.extraPool.slice(0, 6)]) p.setKit(TEAMS.home.kit);
+    for (const p of this.teammatePool) { p.rating = my.rating; p.setStats(statsFromRating(my.rating, rng)); }
+    for (const p of this.defenderPool) { p.setKit(TEAMS.away.kit); p.rating = opp.rating; p.setStats(statsFromRating(opp.rating, rng)); }
+    this.keeperPlayer.setKit(TEAMS.away.keeperKit);
+    this.career.setSkinHair(player.look.skin, player.look.hair);
+    this.career.setStats(player.stats);
+    this.career.name = player.name;
+    const mt = this.moments.match;
+    Object.assign(mt, { minute: 0, homeGoals: 0, awayGoals: 0, shots: 0, goals: 0, cards: {}, sentOff: new Set(), moments: [] });
+    this.moments.momentNo = 0;
+    this.hud.setTeams(TEAMS.home, TEAMS.away);
+    this.hud.setResultMode({ career: true, last: false });
+    this.careerMatch = { ...o, n: CONFIG.career.momentsPerMatch, played: 0, goals: 0, assists: 0 };
+    this.audio.unlock();
+    this.audio.setCrowd(0.25);
+    this.audio.whistle(false);
+    this.moments.setup();
+    this.sm.change(STATES.INTRO);
+  }
+
+  /** Between your moments the rest of the game happens: the opposition (or your teammates) can score. */
+  _simBetweenMoments() {
+    const mt = this.moments.match, H = TEAMS.home.rating, A = TEAMS.away.rating;
+    const pA = Math.max(0.03, Math.min(0.3, 0.1 + (A - H) * 0.008));
+    const pH = Math.max(0.02, Math.min(0.2, 0.05 + (H - A) * 0.005));
+    if (Math.random() < pA) { mt.awayGoals++; this.careerMatch.lastNews = `${TEAMS.away.short} scored`; }
+    else if (Math.random() < pH) { mt.homeGoals++; this.careerMatch.lastNews = `${TEAMS.home.short} scored`; }
+    else this.careerMatch.lastNews = null;
+  }
+
+  finishCareerMatch() {
+    const cm = this.careerMatch, mt = this.moments.match;
+    if (!cm) return;
+    const r = {
+      gf: mt.homeGoals, ga: mt.awayGoals,
+      rating: Math.max(3, Math.min(10, +this.moments.matchRating.toFixed(1))),
+      goals: cm.goals, assists: cm.assists, played: true,
+    };
+    this.careerMatch = null;
+    this.hud.setResultMode({ career: false, last: false });
+    this.hud.hideResult();
+    this.audio.whistle(true);
+    this.sm.change('HUB');
+    cm.onFinish(r);
+  }
 
   pause() {
     if (!this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT, STATES.INTRO, STATES.SHOT_AIM)) return;
@@ -1135,13 +1224,24 @@ class Game {
       enter() {
         g.moments.setup();
         g.setControls(false);
-        const ready = () => g.hud.ready(() => {
-          g.audio.unlock();
-          g.audio.setCrowd(0.2);
-          g.sm.change(S.INTRO);
-        });
+        // career mode: boot straight into the hub
+        const ready = () => { g.hud.startEl.classList.add('hide'); g.sm.change('HUB'); };
         const fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
         Promise.race([fonts, new Promise((r) => setTimeout(r, 1500))]).then(ready);
+      },
+    });
+
+    // between matches: the career hub is on screen and the pitch is idle
+    sm.add('HUB', {
+      enter() {
+        g.setControls(false);
+        g.input.enabled = false;
+        g.input.releaseAll();
+        g.hud.hideResult();
+        g.hud.hideIntro && g.hud.hideIntro();
+        g.camRig.setMode('intro');
+        g.audio.setCrowd(0.05);
+        g.hub.open();
       },
     });
 
@@ -1154,6 +1254,7 @@ class Game {
         g.hud.hideResult();
         g.hud.showIntro(`${m.minute}' · ${TEAMS.home.short} ${match.homeGoals}–${match.awayGoals} ${TEAMS.away.short} · Moment ${m.number}`,
           sc.name.toUpperCase(), `${sc.tag} — Attack!`);
+        if (g.careerMatch && g.careerMatch.lastNews) { g.hud.flash(`${g.careerMatch.lastNews.toUpperCase()}!`, 'neutral'); g.careerMatch.lastNews = null; }
         g.input.enabled = false;
         g.input.releaseAll();
         g.camRig.setMode('intro');

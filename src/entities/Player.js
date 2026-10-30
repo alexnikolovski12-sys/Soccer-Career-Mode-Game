@@ -200,6 +200,8 @@ export class Player {
     const m = this._privateMats ? (c) => new THREE.MeshLambertMaterial({ color: c }) : mat;
     const kit = m(L.kitColour), shorts = m(L.shortsColour), socks = m(L.socksColour || L.kitColour);
     const skin = m(L.skinTone), hair = m(L.hairColour || '#222'), boot = m(L.bootColour || '#111');
+    this._mats = { kit, shorts, socks, skin, hair };
+    this._ownMat = {};
     const meshes = [];
     const add = (parent, g, m, x, y, z) => {
       const mesh = new THREE.Mesh(g, m);
@@ -306,6 +308,28 @@ export class Player {
     sp.renderOrder = 10;
     return sp;
   }
+
+  /** Recolour one material slot (kit / shorts / socks / skin / hair) for this player only. */
+  _setMat(key, colour) {
+    if (!colour) return;
+    const cur = this._mats[key];
+    if (this._privateMats || this._ownMat[key]) { cur.color.set(colour); return; }
+    // shared material: give this player his own copy first
+    const nm = new THREE.MeshLambertMaterial({ color: colour });
+    for (const mesh of this.meshes) if (mesh.material === cur) mesh.material = nm;
+    this._mats[key] = nm;
+    this._ownMat[key] = true;
+  }
+
+  /** Change kit (career matches use each club's colours). */
+  setKit(k) {
+    this._setMat('kit', k.kitColour);
+    this._setMat('shorts', k.shortsColour);
+    this._setMat('socks', k.socksColour || k.kitColour);
+    this.look = { ...this.look, ...k };
+  }
+
+  setSkinHair(skin, hair) { this._setMat('skin', skin); this._setMat('hair', hair); }
 
   /** Show/hide the controlled-player markers without changing who's controlled. */
   setMarkerVisible(on) {

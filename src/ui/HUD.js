@@ -267,6 +267,19 @@ export class HUD {
     bar.style.setProperty('--hi', `${zoneHi * 100}%`);
   }
 
+  /** Scoreboard team names/colours (career matches). */
+  setTeams(home, away) {
+    const t = this.scoreboard.querySelectorAll('.sb-team');
+    t[0].innerHTML = `<i style="background:${home.kit.accent}"></i><b>${home.short}</b>`;
+    t[1].innerHTML = `<b>${away.short}</b><i style="background:${away.kit.accent}"></i>`;
+  }
+
+  /** Career matches: no retries, and the last moment's button reads "Full Time". */
+  setResultMode({ career = false, last = false } = {}) {
+    this.result.querySelector('.r-retry').style.display = career ? 'none' : '';
+    this.result.querySelector('.r-next').textContent = last ? 'Full Time' : 'Next Moment';
+  }
+
   setPassLabel(txt) {
     if (this.last.passLabel === txt) return;
     this.last.passLabel = txt;
