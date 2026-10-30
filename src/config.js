@@ -101,6 +101,26 @@ export const CONFIG = {
     labelHeight: 2.25,
   },
 
+  // --------------------------------------------------------------- automatic skill moves
+  skills: {
+    triggerRange: 3.2,         // a defender this close, in front of the carrier...
+    frontDot: 0.25,            // ...within roughly ±75° of facing
+    chancePerSecond: 1.3,      // how eagerly skills fire while that's true
+    minSpeed: 1.2,
+    cooldown: 1.6,
+    beatStumble: 0.9,          // how long a beaten defender is wrong-footed
+    rainbowLift: 5.0,          // upward speed of the rainbow flick (m/s)
+  },
+
+  // --------------------------------------------------------------- free kicks / penalties
+  setPiece: {
+    downTime: 0.9,             // watch the foul before the restart is set up
+    setupTime: 1.4,            // pause with the ball placed before play / aiming resumes
+    wallDistance: 9.15,
+    wallMaxRange: 32,          // build a wall when the free kick is this close to goal
+    timerTopUp: 9,             // seconds left on the moment clock after a foul (at least)
+  },
+
   // --------------------------------------------------------------- dribbling / possession
   dribble: {
     footOffset: 0.42,          // foot point ahead of the body centre
@@ -113,8 +133,8 @@ export const CONFIG = {
     carryOffset: 0.5,          // possession circle: how far ahead of the body the ball sits (m)
     carrySpeedOffset: 0.03,    // ...plus this much per m/s of running speed
     carryStiffness: 22,        // how quickly the ball snaps back to the feet after turns
-    stealReach: 0.7,           // an opponent this close to the ball...
-    stealTime: 0.35,           // ...for this long wins it
+    stealReach: 0.55,          // an opponent this close to the ball...
+    stealTime: 1.0,            // ...for this long wins it
     receiveReach: 0.95,        // ground distance to receive a pass / loose ball
     receiveMaxHeight: 1.3,
     autoChaseWhenIdle: true,   // walk to your own loose touch when joystick is idle
@@ -224,7 +244,11 @@ export const CONFIG = {
     tackleRange: 1.45,
     tackleCooldown: 1.3,
     tackleWindup: 0.22,
-    tackleEagerness: 1.6,      // attempts per second when in range (scaled by rating)
+    tackleEagerness: 0.9,
+    tackleSuccessMult: 0.45,   // scales every tackle's success chance (lower = harder to lose the ball)
+    foulBodyMargin: 0.1,       // tackler reaches your body this much before the ball → contact on the man
+    foulFromBehind: 0.75,      // chance a tackle through the man is a foul
+    foulMistimed: 0.1,         // chance any other tackle is mistimed into a foul      // attempts per second when in range (scaled by rating)
     stumbleTime: 1.0,
     pokeDistance: 1.05,        // ball this far from the carrier can be poked
     pokeChance: 1.4,           // per second

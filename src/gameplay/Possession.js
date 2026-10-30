@@ -15,7 +15,7 @@ export class Possession {
 
   update(dt) {
     const g = this.game, ball = g.ball;
-    if (ball.frozen) return;
+    if (ball.frozen || g.setPiece) return;
     if (ball.owner) {
       const o = ball.owner;
       // the ball only leaves the possession circle when it's kicked (pass/shot,
@@ -63,6 +63,7 @@ export class Possession {
    */
   contest(o, dt) {
     const g = this.game, ball = g.ball, D = CONFIG.dribble;
+    if (ball.pos.y > 0.5) return false; // flicked over them
     let winner = null;
     for (const d of g.opponentsOf(o)) {
       if (d.isKeeper || d.stumble > 0 || !d.visible || !ball.canTouch(d)) { if (d.ai) d.ai.onBall = 0; continue; }
@@ -73,6 +74,15 @@ export class Possession {
     }
     if (!winner) return false;
     winner.ai.onBall = 0;
+    // came through the back of you to get it → foul
+    const F = CONFIG.defender;
+    const bodyFirst = dist2D(winner.pos, o.pos) < dist2D(winner.pos, ball.pos) - F.foulBodyMargin;
+    if (o.team === 'home' && bodyFirst && g.rng.next() < F.foulFromBehind) {
+      winner.playAction('tackle', 0.55);
+      o.playAction('fall', 1.0, { side: g.rng.sign() });
+      g.events.emit('foul', { by: winner, victim: o });
+      return true;
+    }
     o.stumble = 0.4;
     o.playAction('stumble', 0.6, { side: g.rng.sign() });
     ball.lastKick = { type: 'tackle', by: winner, time: g.simTime };

@@ -432,6 +432,7 @@ export class Player {
   updateAnimation(dt, hasBall) {
     const an = this.anim;
     an.time += dt;
+    this.spinYaw = 0;
     const T = this.target;
     const speed = this.speed;
     this.renderSpeed = damp(this.renderSpeed, speed, 10, dt);
@@ -560,6 +561,61 @@ export class Player {
         T.lean = 0.35; T.bodyY = -0.1; T.kneeL = T.kneeR = 0.4;
         break;
       }
+      case 'stepover': {
+        // swing the leg round the ball, dip the shoulder
+        const side = this.anim.side || 1;
+        const v = Math.sin(k * Math.PI);
+        T['hip' + kick] = 0.25 + 0.55 * v; T['knee' + kick] = 0.4 + 0.8 * v;
+        T.twist = side * 0.45 * Math.sin(k * Math.PI * 2);
+        T.bodyRoll = side * 0.18 * v; T.lean = 0.18;
+        T.shLz = 0.35; T.shRz = -0.35;
+        break;
+      }
+      case 'feint': {
+        const side = this.anim.side || 1;
+        const v = Math.sin(k * Math.PI);
+        T.bodyRoll = -side * 0.3 * Math.sin(k * Math.PI * 1.6);
+        T.twist = side * 0.3 * v; T.lean = 0.2; T.bodyY = -0.06 * v;
+        T.shLz = 0.55 * v + 0.1; T.shRz = -0.55 * v - 0.1;
+        break;
+      }
+      case 'croqueta': {
+        // shift the ball foot to foot across the body
+        const v = Math.sin(k * Math.PI);
+        T.hipL = 0.25 * v; T.hipR = 0.25 * v; T.kneeL = T.kneeR = 0.35;
+        T.bodyRoll = (this.anim.side || 1) * 0.15 * Math.sin(k * Math.PI * 2);
+        T.lean = 0.2; T.bodyY = -0.05;
+        break;
+      }
+      case 'roulette': {
+        // full 360° spin over the ball
+        const side = this.anim.side || 1;
+        this.spinYaw = side * Math.PI * 2 * (k * k * (3 - 2 * k));
+        const v = Math.sin(k * Math.PI);
+        T.hipL = 0.3 * Math.sin(k * Math.PI * 2); T.hipR = -T.hipL;
+        T.kneeL = T.kneeR = 0.4; T.bodyY = -0.06 * v;
+        T.shLz = 0.6; T.shRz = -0.6; T.lean = 0.1;
+        break;
+      }
+      case 'elastico': {
+        const side = this.anim.side || 1;
+        const v = Math.sin(k * Math.PI);
+        T['hip' + kick] = 0.35 * v; T['knee' + kick] = 0.5 * v;
+        T.twist = side * (k < 0.5 ? -0.5 : 0.6) * v;
+        T.bodyRoll = side * 0.25 * (k < 0.5 ? -1 : 1) * v; T.lean = 0.2;
+        break;
+      }
+      case 'flick': {
+        // rainbow: heel flicks it up behind and over the head
+        if (k < 0.45) {
+          const v = Math.sin((k / 0.45) * Math.PI);
+          T['hip' + kick] = -0.7 * v; T['knee' + kick] = 1.7 * v;
+          T['hip' + other] = 0.15; T.lean = -0.1;
+        }
+        T.bodyY = k > 0.2 && k < 0.6 ? 0.08 : 0;
+        T.shLz = 0.5; T.shRz = -0.5;
+        break;
+      }
       case 'point': {
         T.shR = 2.5; T.shRz = -0.3; T.elR = 0.1;
         break;
@@ -572,7 +628,7 @@ export class Player {
   render(alpha, time) {
     const r = this.parts.root;
     r.position.lerpVectors(this.prevPos, this.pos, alpha);
-    r.rotation.y = lerpAngle(this.prevHeading, this.heading, alpha);
+    r.rotation.y = lerpAngle(this.prevHeading, this.heading, alpha) + (this.spinYaw || 0);
     this._applyPose(this.pose);
     if (this.ring) {
       const pulse = 0.85 + Math.sin(time * 4) * 0.12;

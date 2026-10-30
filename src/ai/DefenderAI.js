@@ -220,15 +220,22 @@ export class DefenderAI {
       tk.resolved = true;
       const c = tk.target;
       const dBall = dist2D(d.pos, ball.pos);
-      if (ball.owner !== c || dBall > D.tackleRange + 0.3) {
+      const bodyFirst = dist2D(d.pos, c.pos) < dBall - D.foulBodyMargin;
+      if (ball.owner !== c || dBall > D.tackleRange + 0.3 || ball.pos.y > 0.5) {
         this._fail(d, c, false);
+      } else if (c.team === 'home' && g.rng.next() < (bodyFirst ? D.foulFromBehind : D.foulMistimed)) {
+        // caught the man before the ball → foul, free kick
+        c.playAction('fall', 1.0, { side: g.rng.sign() });
+        c.stumble = 0.4;
+        g.audio.kick(0.3);
+        g.events.emit('foul', { by: d, victim: c });
       } else {
         c.footPoint(_fp);
         const gap = Math.hypot(ball.pos.x - _fp.x, ball.pos.z - _fp.z);
         let p = CONFIG.teamMap.tackleSkill(d.rating) - c.attrs.tackleResist;
         p += clamp(gap - 0.45, 0, 1) * 0.5;
         if (c.sprinting) p += 0.08;
-        p = clamp(p, 0.05, 0.92);
+        p = clamp(p * D.tackleSuccessMult, 0.03, 0.6);
         if (g.rng.next() < p) this._win(d, c);
         else this._fail(d, c, true);
       }

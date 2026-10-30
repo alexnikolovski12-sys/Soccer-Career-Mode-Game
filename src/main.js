@@ -18,6 +18,7 @@ import { DefenderAI } from './ai/DefenderAI.js';
 import { Possession } from './gameplay/Possession.js';
 import { Passing } from './gameplay/Passing.js';
 import { Shooting } from './gameplay/Shooting.js';
+import { Skills } from './gameplay/Skills.js';
 import { MomentManager, SCENARIOS } from './gameplay/MomentManager.js';
 import { Replay } from './gameplay/Replay.js';
 import { HUD } from './ui/HUD.js';
@@ -91,6 +92,8 @@ class Game {
     this.possession = new Possession(this);
     this.passing = new Passing(this);
     this.shooting = new Shooting(this);
+    this.skills = new Skills(this);
+    this.setPiece = null;
     this.teammateAI = new TeammateAI(this);
     this.defenderAI = new DefenderAI(this);
     this.replay = new Replay(this);
@@ -162,7 +165,7 @@ class Game {
   }
 
   /** Switch control to a home player (called when they receive the ball). */
-  switchControl(p) {
+  switchControl(p, quiet = false) {
     const old = this.user;
     if (!p || p === old || p.team !== 'home' || p.isKeeper) return;
     const i = this.teammates.indexOf(p);
@@ -181,7 +184,98 @@ class Game {
     this.user = p;
     this.players = [this.user, ...this.teammates, ...this.defenders, this.keeperPlayer];
     this.lastPasser = null;
-    this.hud.flash(p.name || 'SWITCH', 'neutral');
+    if (!quiet) this.hud.flash(p.name || 'SWITCH', 'neutral');
+  }
+
+  /** Whenever a home outfield player has the ball, you are that player. */
+  syncControl(quiet = true) {
+    const o = this.ball.owner;
+    if (o && o !== this.user && o.team === 'home' && !o.isKeeper && this.teammates.includes(o)) this.switchControl(o, quiet);
+  }
+
+  /** Move a player without wiping their AI assignment (place() resets it). */
+  _reposition(p, x, z, heading) {
+    const ai = p.ai;
+    p.place(x, z, heading);
+    p.ai = ai;
+    p.ai.tackling = null; p.ai.onBall = 0;
+  }
+
+  /** A defender went through the man: stop play, then set up a free kick (or penalty). */
+  onFoul({ by, victim }) {
+    if (!this.sm.is(STATES.PLAYING) || this.setPiece) return;
+    const m = this.moments.current;
+    if (!m || m.ending) return;
+    const L = CONFIG.pitch.length / 2, P = CONFIG.pitch;
+    const x = this.ball.pos.x, z = this.ball.pos.z;
+    const penalty = x > L - P.penaltyDepth && Math.abs(z) < P.penaltyWidth / 2;
+    this.setPiece = { phase: 'down', t: CONFIG.setPiece.downTime, penalty, victim, spot: { x, z } };
+    this.skills.reset();
+    this.passing.reset();
+    by.stumble = 0;
+    this.hud.showBig(penalty ? 'PENALTY!' : 'FOUL — FREE KICK', 'good');
+    this.audio.whistle(false);
+    this.camRig.addShake(0.08);
+    m.timer = Math.max(m.timer, CONFIG.setPiece.timerTopUp);
+    this.moments.addRating(penalty ? 'Won a penalty' : 'Won a free kick', penalty ? 0.3 : 0.1);
+  }
+
+  _setUpFreeKick() {
+    const sp = this.setPiece, S = CONFIG.setPiece, L = CONFIG.pitch.length / 2, P = CONFIG.pitch, W = CONFIG.pitch.width / 2;
+    const ball = this.ball;
+    if (sp.victim.team === 'home' && !sp.victim.isKeeper) this.switchControl(sp.victim, true);
+    const u = this.user;
+    let x = sp.penalty ? L - 11 : Math.min(sp.spot.x, L - 1.5);
+    let z = sp.penalty ? 0 : Math.max(-W + 1, Math.min(W - 1, sp.spot.z));
+    const dGoal = Math.hypot(L - x, z) || 1;
+    const ux = (L - x) / dGoal, uz = -z / dGoal;     // ball → goal centre
+    const heading = Math.atan2(ux, uz);
+    ball.reset(x, z);
+    ball.owner = u; ball.lastTouch = u; ball.pass = null;
+    ball.lastKick = { type: 'control', by: u, time: this.simTime };
+    this._reposition(u, x - ux * 0.6, z - uz * 0.6, heading);
+    u.stumble = 0;
+
+    const boxEdge = L - P.penaltyDepth - 1.5;
+    const wall = !sp.penalty && dGoal < S.wallMaxRange ? Math.min(dGoal < 22 ? 4 : 3, this.defenders.length) : 0;
+    this.defenders.forEach((d, i) => {
+      d.stumble = 0; d.tackleCooldown = 1.2;
+      if (sp.penalty) {
+        if (d.pos.x > boxEdge || Math.hypot(d.pos.x - x, d.pos.z - z) < S.wallDistance)
+          this._reposition(d, boxEdge - 1 - (i % 2) * 2, (i - this.defenders.length / 2) * 3, -Math.PI / 2);
+      } else if (i < wall) {
+        const off = (i - (wall - 1) / 2) * 0.72;
+        this._reposition(d, x + ux * S.wallDistance - uz * off, z + uz * S.wallDistance + ux * off, heading + Math.PI);
+      } else {
+        const dx = d.pos.x - x, dz = d.pos.z - z, dl = Math.hypot(dx, dz) || 1;
+        if (dl < S.wallDistance) this._reposition(d, x + (dx / dl) * (S.wallDistance + 0.5), z + (dz / dl) * (S.wallDistance + 0.5), heading + Math.PI);
+      }
+    });
+    for (const t of this.teammates) {
+      const dl = Math.hypot(t.pos.x - x, t.pos.z - z);
+      if (sp.penalty && t.pos.x > boxEdge) this._reposition(t, boxEdge - 2, t.pos.z * 0.5, Math.PI / 2);
+      else if (dl < 2.5) this._reposition(t, t.pos.x - 3, t.pos.z + (t.pos.z > z ? 3 : -3), Math.PI / 2);
+    }
+    this.keeper.reset();
+    for (const p of this.players) p.savePrev();
+    ball.savePrev();
+    this.camRig.snap();
+    sp.phase = 'set';
+    sp.t = S.setupTime;
+    sp.shoot = this.shooting.canShoot(u);
+    this.hud.hideBig();
+    this.hud.flash(sp.penalty ? 'PENALTY' : sp.shoot ? 'FREE KICK — SHOOT!' : 'FREE KICK', 'good');
+  }
+
+  _setPieceUpdate(dt) {
+    const sp = this.setPiece;
+    for (const p of this.players) p.savePrev();
+    this.ball.savePrev();
+    sp.t -= dt;
+    if (sp.t > 0) return;
+    if (sp.phase === 'down') { this._setUpFreeKick(); return; }
+    this.setPiece = null;
+    if (sp.shoot && this.shooting.canShoot(this.user)) this.sm.change(STATES.SHOT_AIM);
   }
 
   activate(nMates, nDefs) {
@@ -202,6 +296,8 @@ class Game {
     this.ball.events.length = 0;
     this.keeper.reset();
     this.lastPasser = null;
+    this.setPiece = null;
+    this.skills.reset();
     this.resetControl();
     this.replay.stop();
     this.hud.setReplay(false);
@@ -212,6 +308,7 @@ class Game {
   }
 
   afterSpawn() {
+    this.syncControl(true);
     this.teammateAI.reset();
     this.defenderAI.reset();
     this.replay.reset(this.players);
@@ -267,7 +364,6 @@ class Game {
     ev.on('tackleWon', ({ victim }) => {
       if (victim === this.user) this.camRig.addShake(0.12);
     });
-    ev.on('beatDefender', ({ by }) => { if (by === this.user) this.hud.flash('SKILLED!', 'good'); });
     ev.on('save', ({ type }) => {
       this.audio.ooh();
       this.camRig.addShake(0.1);
@@ -276,6 +372,10 @@ class Game {
     ev.on('pass', ({ from }) => { if (from === this.user) this.effects.puff(this.ball.pos.x, this.ball.pos.z); });
     // FC-style switching: whichever of your teammates gets the ball, you now control them
     ev.on('gain', ({ player }) => { if (player.team === 'home' && !player.isKeeper) this.switchControl(player); });
+    ev.on('foul', (e) => this.onFoul(e));
+    ev.on('beatDefender', ({ by, skill }) => {
+      if (by === this.user && !skill) this.hud.flash('SKILLED!', 'good');
+    });
   }
 
   // ------------------------------------------------------------ simulation
@@ -286,7 +386,9 @@ class Game {
     ball.events.length = 0;
 
     if (mode === 'play') {
+      this.syncControl(false);
       this.userControl(dt);
+      this.skills.update(dt);
       this.teammateAI.update(dt);
       this.defenderAI.update(dt);
       this.keeper.update(dt);
@@ -303,7 +405,7 @@ class Game {
       p.pos.z = Math.max(-W, Math.min(W, p.pos.z));
     }
     ball.update(dt);
-    if (mode === 'play') this.possession.update(dt);
+    if (mode === 'play') { this.possession.update(dt); this.syncControl(false); }
     for (const e of ball.events) {
       if (e.type === 'net') {
         this.pitch.nets[Math.sign(e.x) || 1].hit(e.x, e.y, e.z, e.v);
@@ -491,8 +593,12 @@ class Game {
         g.camRig.setMode('follow');
         if (prev === S.INTRO) g.audio.whistle(false);
       },
-      update(dt) { g.simulate(dt); },
+      update(dt) {
+        if (g.setPiece) { g._setPieceUpdate(dt); return; }
+        g.simulate(dt);
+      },
       frame() {
+        if (g.setPiece) { g.input.consume('pass'); g.input.consume('shoot'); g.hud.setShootAvailable(false); return; }
         g.hud.setShootAvailable(g.shooting.canShoot(g.user));
         const mateHas = g.ball.owner && g.ball.owner.team === 'home' && !g.ball.owner.isUser;
         g.hud.setPassLabel(mateHas ? 'CALL' : 'PASS');
