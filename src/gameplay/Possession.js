@@ -34,96 +34,111 @@ export class Possession {
   }
 
   /**
-   * Dribbling inside the possession circle. The ball isn't on rails:
-   *  * each touch pushes it out in front, then the player catches up to it
-   *  * touches come off the left or right foot (and sometimes switch feet),
-   *    so the ball drifts from side to side
-   *  * on a turn the ball is dragged round the outside of the body by the
-   *    turning foot (inside hook, outside cut or a drag-back for big turns)
-   * …but it is clamped so it can never escape the circle.
+   * Real dribbling. The ball is a free, rolling ball between touches:
+   *  * the player takes a touch when he's caught up with it, timed to the foot
+   *    that's swinging forward in his stride (so touches alternate naturally,
+   *    with runs on his stronger foot)
+   *  * touch weight varies: soft taps in traffic, normal touches, longer ones,
+   *    and knock-ons into space when sprinting or bursting
+   *  * changing direction needs a proper touch: inside cut, outside cut, or a
+   *    drag-back for big turns — the player brakes and plants for it
+   *  * stopping: he traps it under the sole
+   * A soft leash means it can still never get away from him.
    */
   dribble(o, dt) {
     const g = this.game, ball = g.ball, D = CONFIG.dribble;
     const sk = g.skills && g.skills.active;
-    if (sk && sk.o === o && sk.sk.kick) {
-      // nutmeg / flick: ball's been knocked on; keep it on a leash and run onto it
-      this._leash(o, D.circleMax * 2.2);
+    if (sk && sk.o === o && sk.sk.kick) { this._leash(o, D.circleMax * 2.2); return; }
+    if (ball.pos.y > 0.5) return;
+    const st = o.drib || (o.drib = { side: 1, pref: Math.random() < 0.75 ? 1 : -1, last: 0 });
+    const moving = o.moveSpeed > 0.35;
+    let dx, dz;
+    if (moving) { dx = o.moveDir.x; dz = o.moveDir.z; } else { dx = Math.sin(o.heading); dz = Math.cos(o.heading); }
+    const hx = Math.sin(o.heading), hz = Math.cos(o.heading);
+    const rx = hz, rz = -hx;
+    // which foot is coming through in the stride right now
+    const strideFoot = Math.sin(o.anim.phase) > 0 ? 1 : -1;
+    const fx = o.pos.x + hx * D.footOffset + rx * st.side * 0.11;
+    const fz = o.pos.z + hz * D.footOffset + rz * st.side * 0.11;
+    const footD = Math.hypot(ball.pos.x - fx, ball.pos.z - fz);
+    const bx = ball.pos.x - o.pos.x, bz = ball.pos.z - o.pos.z;
+    const bd = Math.hypot(bx, bz);
+    const bvx = ball.vel.x, bvz = ball.vel.z, bs = Math.hypot(bvx, bvz);
+
+    if (!moving) {
+      // trap it: kill the roll and draw it under the sole
+      const k = Math.exp(-D.trapDamping * dt);
+      ball.vel.x *= k; ball.vel.z *= k;
+      const pull = Math.min(1, 4 * dt);
+      ball.pos.x += (fx - ball.pos.x) * pull;
+      ball.pos.z += (fz - ball.pos.z) * pull;
+      if (bs > 2 && o.touchCooldown <= 0 && footD < D.touchReach) {
+        o.touchCooldown = 0.4;
+        o.playAction('touch', 0.3, { kickLeg: st.side, variant: 'sole' });
+        if (o.isUser) g.audio.touch();
+      }
+      this._leash(o, D.circleMax);
       return;
     }
-    if (ball.pos.y > 0.5) return;
-    const st = o.drib || (o.drib = { side: 1, push: 0, last: o.heading, turnT: 0 });
-    // heading change this step → turning
-    let dh = o.heading - st.last;
-    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
-    st.last = o.heading;
-    const turnRate = dh / Math.max(dt, 1e-3);
-    st.turnT = Math.max(0, st.turnT - dt);
 
-    const hx = Math.sin(o.heading), hz = Math.cos(o.heading);
-    const rx = hz, rz = -hx; // right of the player
-    if (o.justCut) {
-      // quick cut: the ball goes with you off the outside of the boot
-      o.justCut = false;
-      st.turnT = 0.3;
-      st.side = o.anim.kickLeg || st.side;
-      st.push = 0.3;
-      if (o.isUser) g.audio.touch();
-    }
-    // big change of direction: a proper turn — switch to the foot on the outside of it
-    if (Math.abs(turnRate) > D.turnRateForCut && st.turnT <= 0 && o.speed > 0.6) {
-      st.turnT = 0.45;
-      st.side = turnRate > 0 ? -1 : 1;
-      const big = Math.abs(turnRate) > D.turnRateForCut * 2.2;
-      const r = g.rng.next();
-      const variant = big ? (r < 0.5 ? 'dragback' : 'hook') : (r < 0.55 ? 'inside' : 'outside');
-      o.playAction('turn', big ? 0.42 : 0.3, { variant, kickLeg: st.side, side: turnRate > 0 ? 1 : -1 });
-      st.push = big ? 0.15 : 0.35;
-      if (o.isUser) g.audio.touch();
-    }
-
-    // touch rhythm: a touch every few strides, pushing the ball out
-    if (o.speed > 0.8 && o.touchCooldown <= 0 && st.turnT < 0.2) {
-      const sprint = o.sprinting ? 1 : 0;
-      o.touchCooldown = Math.max(0.24, (1.25 - sprint * 0.25) / (o.speed + 1.2));
-      // sometimes switch feet, otherwise keep using the same one for a run of touches
-      if (g.rng.chance(D.switchFootChance)) st.side = -st.side;
-      // every touch is a bit different: soft taps, normal touches, and the odd
-      // big knock-on when sprinting into space
+    const along = bvx * dx + bvz * dz;                       // ball speed in the direction we want to go
+    const ahead = bx * dx + bz * dz;                         // how far in front of us it is
+    const offAng = bs > 0.4 ? Math.acos(Math.max(-1, Math.min(1, along / bs))) : Math.PI;
+    // angle between where he's facing and where he wants to go = how big a turn this is
+    const turnAng = Math.acos(Math.max(-1, Math.min(1, hx * dx + hz * dz)));
+    const reach = D.touchReach + (turnAng > 0.8 ? 0.25 : 0);
+    const caughtUp = ahead < D.touchAhead + o.speed * 0.06 || along < o.speed * 0.92;
+    const wrongWay = offAng > D.redirectAngle;
+    if (o.touchCooldown <= 0 && footD < reach && (caughtUp || wrongWay)) {
       let space = 99;
       for (const d of g.opponentsOf(o)) if (!d.isKeeper) space = Math.min(space, dist2D(d.pos, o.pos));
-      const r = g.rng.next();
-      let mult = r < 0.25 ? 0.45 : r < 0.8 ? 1 : 1.5;
-      if (o.sprinting && space > 7 && g.rng.chance(0.35)) mult = 2.6;     // knock it on and chase
-      if (space < 2.5) mult = Math.min(mult, 0.6);                        // tight control in traffic
-      st.push = (D.touchPush + Math.min(o.speed, 9) * D.touchPushPerSpeed) * mult;
-      this.kickLeg = st.side;
-      if (!o.anim.action || o.anim.action === 'touch') {
+      const cross = hx * dz - hz * dx;                       // + = turning left
+      const errA = g.rng.gauss() * o.attrs.touchError * 0.5;
+      let v, cd, anim;
+      if (turnAng > 2.2) {
+        // DRAG-BACK: sole on top, roll it back the way you came, spin
+        st.side = cross >= 0 ? -1 : 1;
+        v = 2.4 + o.speed * 0.2; cd = 0.38;
+        o.vel.multiplyScalar(0.25);
+        anim = ['turn', 0.42, { variant: 'dragback', side: cross >= 0 ? 1 : -1, kickLeg: st.side }];
+        if (o.isUser) g.camRig.addShake(0.025);
+      } else if (turnAng > 0.75) {
+        // CUT: inside of the foot across the body, or the outside to go the other way
+        const inside = g.rng.chance(0.55);
+        st.side = inside ? (cross >= 0 ? -1 : 1) : (cross >= 0 ? 1 : -1);
+        v = o.speed * 0.85 + 1.6; cd = 0.3;
+        o.vel.multiplyScalar(0.62);
+        anim = ['turn', 0.32, { variant: inside ? 'inside' : 'outside', side: cross >= 0 ? 1 : -1, kickLeg: st.side }];
+        if (o.isUser) g.camRig.addShake(0.018);
+      } else {
+        // stride touch: off the foot that's coming through, often the stronger one
+        st.side = g.rng.chance(0.55) ? st.pref : strideFoot;
         const r = g.rng.next();
-        o.playAction('touch', 0.22, { kickLeg: st.side, variant: r < 0.62 ? 'inside' : r < 0.86 ? 'outside' : 'sole' });
+        let push = r < 0.3 ? 0.55 : r < 0.8 ? 1.25 : 2.0;    // soft / normal / longer
+        if (space < 2.2) push = Math.min(push, 0.6);           // tight in traffic
+        if (o.sprinting && space > 7 && g.rng.chance(0.4)) push = 3.6; // knock it on and chase
+        if (o.burstTouch) { push = 3.2; o.burstTouch = false; }
+        v = o.speed + push; cd = Math.max(0.2, 0.9 / (o.speed + 1.5));
+        const r2 = g.rng.next();
+        anim = ['touch', 0.24, { kickLeg: st.side, variant: r2 < 0.6 ? 'inside' : r2 < 0.85 ? 'outside' : 'laces' }];
       }
+      const c = Math.cos(errA), s2 = Math.sin(errA);
+      const ux = dx * c - dz * s2, uz = dx * s2 + dz * c;
+      ball.vel.x = ux * v; ball.vel.z = uz * v;
+      if (ball.vel.y > 0) ball.vel.y = 0;
+      ball.curve = 0;
+      ball.lastKick = { type: 'dribble', by: o, time: g.simTime };
+      o.touchCooldown = cd;
+      if (!o.anim.action || o.anim.action === 'touch' || anim[0] === 'turn') o.playAction(anim[0], anim[1], anim[2]);
       if (o.isUser) g.audio.touch();
     }
-    st.push = Math.max(0, st.push - dt * (D.pushDecay + o.speed * 0.25));
-
-    // where the ball wants to be: ahead of the stride, off the working foot
-    const ahead = D.carryOffset + Math.min(o.speed, 8) * D.carrySpeedOffset + st.push;
-    const lateral = st.side * D.footSpread * (0.6 + 0.4 * Math.min(1, o.speed / 4));
-    // on a turn the ball lags round the outside of the body
-    const lag = Math.max(-1, Math.min(1, -turnRate * 0.12));
-    const tx = o.pos.x + hx * ahead + rx * (lateral + lag * 0.35);
-    const tz = o.pos.z + hz * ahead + rz * (lateral + lag * 0.35);
-    // softer while turning so the ball visibly swings round, firm otherwise
-    const stiff = st.turnT > 0 ? D.carryStiffness * 0.45 : D.carryStiffness;
-    const k = 1 - Math.exp(-stiff * dt);
-    const px = ball.pos.x, pz = ball.pos.z;
-    ball.pos.x += (tx - ball.pos.x) * k;
-    ball.pos.z += (tz - ball.pos.z) * k;
-    this._leash(o, D.circleMax + (st.push > 0.45 ? 0.35 : 0));
-    // keep ball velocity consistent with how it moved (rolling visuals, physics)
-    ball.vel.x = (ball.pos.x - px) / Math.max(dt, 1e-3);
-    ball.vel.z = (ball.pos.z - pz) / Math.max(dt, 1e-3);
-    if (ball.vel.y > 0) ball.vel.y = 0;
-    ball.curve = 0;
+    // never let it get away: past the comfortable range the player "reaches" it
+    if (bd > D.circleMax * 0.85) {
+      const nx = bx / bd, nz = bz / bd;
+      const out = ball.vel.x * nx + ball.vel.z * nz - o.vel.x * nx - o.vel.z * nz;
+      if (out > 0) { ball.vel.x -= nx * out * 0.6; ball.vel.z -= nz * out * 0.6; }
+    }
+    this._leash(o, D.circleMax + 0.35);
   }
 
   /** Hard limit: the ball can never be further than `max` from the carrier. */
@@ -171,7 +186,7 @@ export class Possession {
   checkReceive() {
     const g = this.game, ball = g.ball, D = CONFIG.dribble;
     // the intended receiver of a lofted ball can take it on the chest
-    const loftTo = ball.pass && ball.pass.kind === 'lofted' ? ball.pass.to : null;
+    const loftTo = ball.pass && ball.pass.to ? ball.pass.to : null;
     if (ball.pos.y > (loftTo ? 1.75 : D.receiveMaxHeight)) return;
     // a struck shot can't be "received" — blocks/saves resolve it instead
     if (ball.lastKick && ball.lastKick.type === 'shot' && ball.speed > 7) return;

@@ -78,6 +78,8 @@ class Game {
       look: USER_PLAYER.look, stats: USER_PLAYER.stats, rating: TEAMS.home.rating,
     });
     this.career = this.user; // your career player — control returns to him every moment
+    this.user.isCareer = true;
+    this.user.setControlled(true); // shows the triangle + star badge
     const mateNames = ['OKAFOR', 'LINDQVIST', 'MORAES', 'HALE'];
     this.teammatePool = [7, 10, 11, 8].map((n, i) => new Player(this.scene, {
       id: `mate${i}`, team: 'home', role: 'mate', rating: TEAMS.home.rating, name: mateNames[i],
@@ -92,6 +94,18 @@ class Game {
       look: { ...randomLook(rng, TEAMS.away.keeperKit, 1), height: 1.9 }, stats: statsFromRating(CONFIG.keeper.rating, rng),
     });
     this.keeper = new Keeper(this, this.keeperPlayer);
+    // the rest of the squad + subs, only used to mob the scorer after a big late goal
+    const bib = { kitColour: '#ff7a1a', shortsColour: '#1b2a4a', socksColour: '#f2f4f8' };
+    this.extraPool = [2, 3, 4, 5, 6, 14, 15, 17, 18, 20, 21].map((n, i) => {
+      const p = new Player(this.scene, {
+        id: `x${i}`, team: 'home', role: 'mate', rating: TEAMS.home.rating,
+        look: randomLook(rng, i < 6 ? TEAMS.home.kit : bib, n), stats: statsFromRating(TEAMS.home.rating, rng),
+      });
+      p.setVisible(false);
+      p.isSub = i >= 6;
+      return p;
+    });
+    this.extras = [];
     this.teammates = [];
     this.defenders = [];
     this.players = [];
@@ -444,6 +458,37 @@ class Game {
     st.cuts.length = 0;
   }
 
+  /**
+   * Change of pace: going from slow / stopped to full speed (or slamming on
+   * SPRINT) on the ball knocks it on and explodes away — a defender who was
+   * jockeying close is caught flat-footed for a moment.
+   */
+  _burst(u, mag, dt) {
+    const st = this._bs || (this._bs = { slowT: 0, cd: 0, sprintWas: false });
+    st.cd = Math.max(0, st.cd - dt);
+    const has = this.ball.owner === u && this.sm.is(STATES.PLAYING);
+    const slow = u.speed < 3.2;
+    if (slow) st.slowT = Math.min(1, st.slowT + dt); else st.slowT = Math.max(0, st.slowT - dt * 0.5);
+    const sprintPress = u.sprinting && !st.sprintWas;
+    st.sprintWas = u.sprinting;
+    if (!has || st.cd > 0) return;
+    if ((st.slowT > 0.25 && mag > 0.92) || (sprintPress && u.speed < 5)) {
+      st.cd = 1.4; st.slowT = 0;
+      u.cutBoost = 0.5;           // extra acceleration (Player.integrate)
+      u.burstTouch = true;        // next touch knocks it on
+      u.touchCooldown = 0;
+      this.camRig.addShake(0.03);
+      let caught = 0;
+      for (const d of this.defenders) {
+        const dd = Math.hypot(d.pos.x - u.pos.x, d.pos.z - u.pos.z);
+        if (dd > 3.2 || d.stumble > 0) continue;
+        const p = 0.45 + (u.stats.acceleration - d.rating) / 120;
+        if (this.rng.next() < p) { d.stumble = 0.38; d.ai.tackling = null; d.tackleCooldown = Math.max(d.tackleCooldown, 0.8); caught++; }
+      }
+      if (caught) { this.hud.flash('BURST!', 'good'); this.audio.skillCheer(); }
+    }
+  }
+
   activate(nMates, nDefs) {
     this.teammatePool.forEach((p, i) => p.setVisible(i < nMates));
     this.defenderPool.forEach((p, i) => p.setVisible(i < nDefs));
@@ -466,6 +511,8 @@ class Game {
     this.ball.events.length = 0;
     this.keeper.reset();
     this.lastPasser = null;
+    for (const p of this.extras) p.setVisible(false);
+    this.extras = [];
     this.setPiece = null;
     this.skills.reset();
     this.resetControl();
@@ -607,6 +654,7 @@ class Game {
     // stamina
     u.stamina = Math.min(1, u.stamina + M.staminaRecover * dt);
     this._juke(u, wx, wz, mag, dt);
+    this._burst(u, mag, dt);
 
     // you're on the receiver as soon as a pass is played: get to it
     if (ball.pass && ball.pass.to === u && mag < 0.6) {
@@ -654,10 +702,9 @@ class Game {
       } else if (tg) {
         this.passing.requestUserPass(u, dx, dz, 'through');
       } else if (pg) {
-        // tap = instant ground pass; hold (briefly) or swipe up/down = lofted ball, held longer = higher & further
-        const P = CONFIG.pass;
-        const lofted = pg.held >= P.loftHoldMin || pg.dir === 'up' || pg.dir === 'down';
-        const power = Math.min(1, Math.max(0, (pg.held - P.loftHoldMin) / (P.loftHoldFull - P.loftHoldMin)));
+        // touch = instant ground pass; flick up/down as you press = lofted ball (longer flick = higher, further)
+        const lofted = pg.dir === 'up' || pg.dir === 'down';
+        const power = Math.min(1, Math.abs(pg.dy || 0) / 70 + (pg.dy === 0 && lofted ? 0.6 : 0));
         this.passing.requestUserPass(u, dx, dz, lofted ? 'lofted' : 'ground', power);
       }
     } else if ((pg || tg) && this.teammateAI.callForBall()) {
@@ -668,6 +715,7 @@ class Game {
   }
 
   _resultControl(dt) {
+    this._updateExtras(dt);
     const u = this.user, ball = this.ball;
     const goal = this.resultOutcome === 'GOAL';
     const t = this.sm.time;
@@ -689,6 +737,47 @@ class Game {
       p.steer(0, 0, 0);
       if (!goal && p !== u) p.faceTowards(ball.pos.x, ball.pos.z);
     }
+  }
+
+  /** Whole squad and the subs bench pour on to mob the scorer. */
+  _startBigCelebration() {
+    const u = this.user, W = CONFIG.pitch.width / 2;
+    const side = u.pos.z >= 0 ? 1 : -1;
+    this.extras = this.extraPool.slice();
+    this.extras.forEach((p, i) => {
+      // teammates from further up the pitch; subs off the bench on the touchline
+      // subs were warming up down the touchline; the rest of the XI come from behind the play
+      const x = p.isSub ? u.pos.x - 14 - (i - 6) * 2.5 : u.pos.x - 10 - Math.random() * 14;
+      const z = p.isSub ? side * (W + 2) : u.pos.z + (Math.random() - 0.5) * 24;
+      p.place(x, z, Math.PI / 2);
+      p.setVisible(true);
+      p.savePrev();
+      p.celebDelay = p.isSub ? 0.4 + Math.random() * 0.6 : Math.random() * 0.5;
+      p.playAction('armsup', 30, {});
+    });
+    this.audio.roar();
+    this.audio.cheer(1.5);
+    this.camRig.addShake(0.35);
+  }
+
+  _updateExtras(dt) {
+    if (!this.extras.length) return;
+    const u = this.user, t = this.sm.time;
+    this.extras.forEach((p, i) => {
+      p.savePrev();
+      if (t < p.celebDelay) { p.steer(0, 0, 0); } else {
+        const ang = i * 0.9 + 0.4, rr = 2.2 + (i % 3) * 0.9;
+        const tx = u.pos.x - Math.cos(ang) * rr, tz = u.pos.z + Math.sin(ang) * rr;
+        p.sprinting = true;
+        const d = p.moveTo(tx, tz, p.attrs.sprintSpeed * 1.05, 2.5);
+        p.faceTowards(u.pos.x, u.pos.z);
+        if (d < 2.4 && p.anim.action !== 'teamjump') {
+          p.playAction('teamjump', 0.9, { loop: true, offset: i });
+          if (!this._pileShake) { this._pileShake = true; this.camRig.addShake(0.2); }
+        }
+      }
+      p.integrate(dt, false);
+    });
   }
 
   /** Scorer's celebration: run to the fans, then the move. */
@@ -846,8 +935,7 @@ class Game {
         g.hud.setShotCharge(has && !pen ? g.shooting.chargeFrom(g.input.chargeTime('shoot')) : 0);
         g._penaltyMeterFrame(realDt || 1 / 60);
         g._freeKickFrame(realDt || 1 / 60);
-        const ph = g.input.chargeTime('pass'), PC = CONFIG.pass;
-        g.hud.setPassCharge(has && ph > PC.loftHoldMin ? Math.min(1, (ph - PC.loftHoldMin) / (PC.loftHoldFull - PC.loftHoldMin)) : 0);
+        g.hud.setPassCharge(0);
         if (g.setPiece && g.setPiece.phase !== 'ready') {
           g.input.consumeGesture('pass'); g.input.consumeGesture('through'); g.input.consumeGesture('shoot');
           g.hud.setShootAvailable(false); return;
@@ -892,9 +980,18 @@ class Game {
         const titles = { GOAL: 'GOAL!', SAVED: 'SAVED', OFF_TARGET: 'OFF TARGET', POST: 'HIT THE POST', BLOCKED: 'BLOCKED', TACKLED: 'TACKLED', INTERCEPTED: 'INTERCEPTED', TIME_UP: 'TIME UP', OUT: 'OUT OF PLAY' };
         g.hud.showBig(titles[outcome] || outcome, info[outcome] || 'bad');
         g.celebration = null;
+        g._pileShake = false;
         if (outcome === 'GOAL') {
           const types = ['kneeslide', 'kneeslide', 'airplane', 'jumpfist', 'spinjump', 'pointsky'];
           g.celebration = { type: types[Math.floor(Math.random() * types.length)], phase: 'run' };
+          const mt = g.moments.match, mm = g.moments.current;
+          const late = mm && mm.minute >= 70 && (mt.homeGoals === mt.awayGoals || mt.homeGoals === mt.awayGoals + 1);
+          if (late) {
+            g.celebration.big = true;
+            g.celebration.type = Math.random() < 0.6 ? 'kneeslide' : 'jumpfist';
+            g._startBigCelebration();
+            g.hud.flash(mt.homeGoals === mt.awayGoals ? 'LATE EQUALISER!' : 'LATE WINNER!', 'good');
+          }
           g.audio.roar();
           g.audio.net();
           g.camRig.addShake(CONFIG.juice.goalShake);
@@ -912,7 +1009,7 @@ class Game {
         const goal = g.resultOutcome === 'GOAL';
         if (g.resultPhase === 'live') {
           if (goal && sm.time > 1.3 && g.camRig.mode === 'goalview') g.camRig.setMode('celebrate', { target: g.user.pos });
-          if (goal && sm.time > CONFIG.juice.celebrateTime && g.pendingResult) {
+          if (goal && sm.time > CONFIG.juice.celebrateTime * (g.celebration && g.celebration.big ? 1.6 : 1) && g.pendingResult) {
             const J = CONFIG.juice;
             if (g.replay.start(g.goalSimTime - J.replaySeconds, g.goalSimTime + J.replayTail, J.replaySpeed)) {
               g.resultPhase = 'replay';
@@ -979,6 +1076,7 @@ class Game {
     if (!replaying) {
       if (!paused) for (const p of this.players) p.updateAnimation(scaledDt, this.ball.owner === p);
       for (const p of this.players) p.render(alpha, this.realTime);
+      for (const p of this.extras) { if (!paused) p.updateAnimation(scaledDt, false); p.render(alpha, this.realTime); }
       this.ball.render(alpha);
     }
     this.pitch.update(paused ? 0 : scaledDt);

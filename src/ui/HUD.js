@@ -81,8 +81,8 @@ export class HUD {
     r.appendChild(pad);
     this.pad = pad;
     this.input.bindGesture(this.btnShoot, 'shoot');
-    this.input.bindGesture(this.btnPass, 'pass');
-    this.input.bindGesture(this.btnThrough, 'through');
+    this.input.bindGesture(this.btnPass, 'pass', { quick: 0.09 });
+    this.input.bindGesture(this.btnThrough, 'through', { quick: 0.06 });
     this.input.bindButton(this.btnSprint, 'sprint');
 
     // ---- free kick: choose PASS / SHOOT, then tap to lock the aim line, then the power

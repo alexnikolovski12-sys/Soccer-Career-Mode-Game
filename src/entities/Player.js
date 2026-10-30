@@ -77,6 +77,37 @@ function contrastText(hex) {
 }
 
 // ---------------------------------------------------------------- Player
+// Marker textures, drawn once and shared.
+const _markerTex = {};
+function markerTex(kind) {
+  if (_markerTex[kind]) return _markerTex[kind];
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  if (kind === 'triangle') {
+    g.beginPath(); g.moveTo(14, 22); g.lineTo(114, 22); g.lineTo(64, 112); g.closePath();
+    g.fillStyle = '#ff2a2a'; g.fill();
+    g.lineWidth = 8; g.strokeStyle = 'rgba(0,0,0,0.55)'; g.stroke();
+  } else {
+    // yellow disc with a star cut out of the middle
+    g.beginPath(); g.arc(64, 64, 58, 0, Math.PI * 2);
+    g.fillStyle = '#ffd21f'; g.fill();
+    g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,0.5)'; g.stroke();
+    g.globalCompositeOperation = 'destination-out';
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 ? 17 : 40, a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const x = 64 + Math.cos(a) * r, y = 66 + Math.sin(a) * r;
+      if (i) g.lineTo(x, y); else g.moveTo(x, y);
+    }
+    g.closePath(); g.fill();
+    g.globalCompositeOperation = 'source-over';
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return (_markerTex[kind] = t);
+}
+
 export class Player {
   /**
    * @param {object} o { id, team: 'home'|'away', role: 'user'|'mate'|'def'|'gk', look, stats, rating, name }
@@ -261,8 +292,22 @@ export class Player {
     this.ring.position.y = 0.02;
     this.ring.renderOrder = 2;
     root.add(this.ring);
-    this.label = this._makeLabel(this.name || `#${this.look.number ?? ''}`);
+    // upside-down red triangle over whoever you control
+    this.label = Player._sprite(markerTex('triangle'), 0.06, 0.054);
+    this.label.position.y = CONFIG.player.labelHeight;
     root.add(this.label);
+    // your own career player also gets the yellow star badge above it
+    this.badge = Player._sprite(markerTex('star'), 0.062, 0.062);
+    this.badge.position.y = CONFIG.player.labelHeight + 0.42;
+    this.badge.visible = false;
+    root.add(this.badge);
+  }
+
+  static _sprite(tex, w, h) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, sizeAttenuation: false }));
+    sp.scale.set(w, h, 1);
+    sp.renderOrder = 10;
+    return sp;
   }
 
   /** Hand control to / take control from this player. */
@@ -272,7 +317,10 @@ export class Player {
     this.isUser = on;
     this.role = on ? 'user' : 'mate';
     if (on) this._makeMarker();
-    if (this.ring) { this.ring.visible = on; this.label.visible = on; }
+    if (this.ring) {
+      this.ring.visible = on; this.label.visible = on;
+      this.badge.visible = on && !!this.isCareer;
+    }
   }
 
   _makeLabel(text) {
@@ -326,7 +374,7 @@ export class Player {
 
   dispose() {
     this.scene.remove(this.parts.root);
-    if (this.label) { this.label.material.map.dispose(); this.label.material.dispose(); }
+    if (this.label) { this.label.material.dispose(); }
     if (this.ring) this.ring.material.dispose();
   }
 
@@ -516,9 +564,17 @@ export class Player {
     this._lastHeadingAnim = this.heading;
     const turn = dt > 0 ? clamp(dh / dt, -8, 8) : 0;
     this.lean = damp(this.lean, -turn * 0.045 * amp, 8, dt);
+    // accelerating = drive forward, braking = sit back on the heels
+    const acc = dt > 0 ? (sp - (this._prevSp ?? sp)) / dt : 0;
+    this._prevSp = sp;
+    this.accLean = damp(this.accLean || 0, clamp(acc * 0.035, -0.28, 0.22), 10, dt);
+    // turning on the spot = little shuffle steps
+    const shuffle = sp < 0.9 ? clamp(Math.abs(turn) / 3.5, 0, 1) : 0;
+    if (shuffle > 0) an.phase += shuffle * 9 * dt;
 
     // ---- locomotion base (idle / jog / sprint / dribble blend continuously by speed)
-    T.hipL = s * (0.08 + (0.62 + sprint * 0.12) * amp);
+    const legAmp = Math.max(amp, shuffle * 0.35);
+    T.hipL = s * (0.08 + (0.62 + sprint * 0.12) * legAmp);
     T.hipR = -T.hipL;
     T.kneeL = 0.12 + Math.max(0, -c) * (0.2 + (1.0 + sprint * 0.35) * amp);
     T.kneeR = 0.12 + Math.max(0, c) * (0.2 + (1.0 + sprint * 0.35) * amp);
@@ -531,7 +587,7 @@ export class Player {
     T.elL = T.elR = (0.25 + amp * 1.0) * St.elbow * (sprint ? 1.2 : 1) * (hasBall ? 0.75 : 1);
     // one balance arm flares out more on the side away from the ball foot
     if (hasBall && this.drib) { if (this.drib.side > 0) T.shLz += 0.25 * amp; else T.shRz -= 0.25 * amp; }
-    T.lean = 0.03 + St.lean + amp * 0.2 + (hasBall ? 0.12 : 0) + sprint * 0.1;
+    T.lean = 0.03 + St.lean + amp * 0.2 + (hasBall ? 0.12 : 0) + sprint * 0.1 + this.accLean;
     T.roll = 0; T.twist = -s * (0.12 + sprint * 0.06) * amp;
     T.bodyY = -Math.abs(c) * 0.045 * amp * St.bounce - (hasBall ? 0.04 * amp : 0)
       + (sp < 0.3 ? Math.sin(an.time * 2.2) * 0.006 : 0);
@@ -578,6 +634,9 @@ export class Player {
         if (va === 'outside') {
           T['hip' + kick] = 0.2 + v * 0.4; T['knee' + kick] = 0.35 + v * 0.25;
           T.twist = (kick === 'R' ? -1 : 1) * 0.25 * v; T.bodyRoll = (kick === 'R' ? 1 : -1) * 0.08 * v;
+        } else if (va === 'laces') {
+          // pushed on with the laces, toe pointed, a longer stride
+          T['hip' + kick] = 0.25 + v * 0.75; T['knee' + kick] = 0.15 + v * 0.35; T.lean = (T.lean || 0) + 0.06 * v;
         } else if (va === 'sole') {
           T['hip' + kick] = 0.3 * v; T['knee' + kick] = 0.4 + v * 0.7; T.lean = 0.12;
         } else {

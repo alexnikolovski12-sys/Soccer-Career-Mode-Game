@@ -101,7 +101,7 @@ export const CONFIG = {
     labelHeight: 2.25,
     sprintBoost: 1.08,         // extra pace when holding SPRINT
     cutAngle: 0.95,            // stick change (rad) on the ball that triggers a quick cut
-    cutSnap: 0.8,              // fraction of the turn done instantly in a cut
+    cutSnap: 0.55,              // fraction of the turn done instantly in a cut
     cutKeepSpeed: 0.8,         // speed kept through the cut
     cutBurstTime: 0.4,         // seconds of extra acceleration after it
     cutBurstAccel: 2.2,
@@ -151,21 +151,23 @@ export const CONFIG = {
     footOffset: 0.42,          // foot point ahead of the body centre
     touchCooldown: 0.2,
     touchBase: 0.45,           // added ball speed per touch (m/s)
-    redirectAngle: 0.6,        // radians — larger direction change triggers a redirect touch
+    redirectAngle: 0.45,        // radians — larger direction change triggers a redirect touch
     redirectReachMult: 1.5,
-    trapDamping: 10,           // ball damping when stopping with the ball
+    trapDamping: 10,
+    touchReach: 0.62,          // foot has to be this close to the ball to touch it
+    touchAhead: 0.55,          // take the next touch once the ball is less than this far in front           // ball damping when stopping with the ball
     loseDistance: 4.5,         // safety only — the ball normally never leaves the possession circle
     carryOffset: 0.5,          // possession circle: how far ahead of the body the ball sits (m)
     carrySpeedOffset: 0.03,    // ...plus this much per m/s of running speed
     carryStiffness: 18,        // how quickly the ball follows the feet
-    circleMax: 1.15,           // the ball can never be further than this from the carrier
+    circleMax: 1.25,           // the ball can never be further than this from the carrier
     touchPush: 0.18,           // each touch pushes the ball this far out…
     touchPushPerSpeed: 0.035,  // …plus this per m/s
     pushDecay: 0.9,            // how fast the player catches back up to it
     footSpread: 0.16,          // how far left/right of centre the working foot carries it
     switchFootChance: 0.35,    // chance a touch switches feet
     turnRateForCut: 4.5,       // rad/s of turning that counts as a proper turn (cut/hook/drag-back)
-    receiverBonus: 0.9,        // extra reach for the intended receiver of a pass
+    receiverBonus: 1.4,        // extra reach for the intended receiver of a pass
     stealReach: 0.55,          // an opponent this close to the ball...
     stealTime: 1.0,            // ...for this long wins it
     receiveReach: 0.95,        // ground distance to receive a pass / loose ball
@@ -195,9 +197,10 @@ export const CONFIG = {
 
   // --------------------------------------------------------------- passing
   pass: {
-    arriveSpeed: 10,           // desired speed when reaching the receiver (zippy)
-    minSpeed: 11, maxSpeed: 32,
-    windup: 0.07,              // tap → ball's gone almost instantly
+    arriveSpeed: 14,           // desired speed when reaching the receiver (crisp, fast)
+    minSpeed: 14, maxSpeed: 38,
+    windup: 0.035,             // touch → ball's gone almost instantly
+    homing: 3.0,               // rad/s a pass can bend toward where its receiver actually is
     assist: 0.12,              // multiplier on pass error (fully assisted ≈ dead accurate)
     loftHoldMin: 0.18,         // hold PASS at least this long for a lofted ball…
     loftHoldFull: 0.45,        // …and this long for the highest, furthest one

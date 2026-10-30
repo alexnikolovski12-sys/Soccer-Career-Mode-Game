@@ -229,7 +229,46 @@ export class Passing {
     return [ux * v * ce, v * se, uz * v * ce];
   }
 
+  /**
+   * Guided passes: while a pass is travelling it quietly bends toward where
+   * its receiver actually is (ground) or re-aims its landing spot (lofted),
+   * so passes arrive ~every time even if the receiver drifts.
+   */
+  _home(dt) {
+    const ball = this.game.ball, ps = ball.pass;
+    if (!ps || !ps.to || ball.owner || ball.frozen) return;
+    const t = ps.to;
+    const hs = Math.hypot(ball.vel.x, ball.vel.z);
+    if (hs < 1) return;
+    if (ps.kind === 'lofted') {
+      if (ball.pos.y < 0.4) return;
+      const g = CONFIG.ball.gravity, r = CONFIG.ball.radius;
+      const tRem = (ball.vel.y + Math.sqrt(Math.max(0, ball.vel.y * ball.vel.y + 2 * g * (ball.pos.y - r)))) / g;
+      if (tRem < 0.1) return;
+      const tx = t.pos.x + t.vel.x * tRem * 0.6, tz = t.pos.z + t.vel.z * tRem * 0.6;
+      const k = Math.min(1, dt * 2.5);
+      ball.vel.x += ((tx - ball.pos.x) / tRem * 1.08 - ball.vel.x) * k;
+      ball.vel.z += ((tz - ball.pos.z) / tRem * 1.08 - ball.vel.z) * k;
+      return;
+    }
+    if (ps.kind === 'through') return; // played into space; the runner goes onto it
+    const d = Math.hypot(t.pos.x - ball.pos.x, t.pos.z - ball.pos.z);
+    const eta = d / hs;
+    const tx = t.pos.x + t.vel.x * eta * 0.7, tz = t.pos.z + t.vel.z * eta * 0.7;
+    const want = Math.atan2(tz - ball.pos.z, tx - ball.pos.x);
+    const cur = Math.atan2(ball.vel.z, ball.vel.x);
+    let diff = Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
+    if (Math.abs(diff) > 1.4) return; // it's already gone past him
+    const max = CONFIG.pass.homing * dt;
+    diff = Math.max(-max, Math.min(max, diff));
+    const a = cur + diff;
+    // don't let it die before it gets there
+    const sp = Math.max(hs, Math.min(9, d * 1.2));
+    ball.vel.x = Math.cos(a) * sp; ball.vel.z = Math.sin(a) * sp;
+  }
+
   update(dt) {
+    this._home(dt);
     const pd = this.pending;
     if (!pd) return;
     pd.t -= dt;

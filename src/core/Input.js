@@ -112,17 +112,27 @@ export class Input {
    * A button that reports a gesture on release: how long it was held and
    * which way the finger swiped off it ('tap' | 'up' | 'down' | 'left' | 'right').
    */
-  bindGesture(el, name) {
-    let id = null, sx = 0, sy = 0, cx = 0, cy = 0;
+  bindGesture(el, name, { quick = 0 } = {}) {
+    let id = null, sx = 0, sy = 0, cx = 0, cy = 0, fired = false, timer = null;
+    // quick buttons (PASS / THROUGH) fire almost as soon as the finger lands —
+    // after `quick` seconds — using whatever swipe has happened by then
+    const fire = () => {
+      if (fired || !this.enabled) return;
+      fired = true;
+      const dx = cx - sx, dy = cy - sy;
+      this.gestures[name] = { dir: this._dir(dx, dy, el), dx, dy, held: quick };
+    };
     const down = (e) => {
       this._gesture();
       e.preventDefault(); e.stopPropagation();
       if (!this.enabled || id !== null) return;
       id = e.pointerId; sx = cx = e.clientX; sy = cy = e.clientY;
+      fired = false;
       try { el.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
       this.charging[name] = performance.now();
       this.held[name] = true;
       el.classList.add('down');
+      if (quick) { clearTimeout(timer); timer = setTimeout(fire, quick * 1000); }
     };
     const move = (e) => { if (e.pointerId === id) { cx = e.clientX; cy = e.clientY; el.style.setProperty('--sw', this._dir(cx - sx, cy - sy, el)); } };
     const up = (e) => {
@@ -133,6 +143,7 @@ export class Input {
       this.held[name] = false;
       el.classList.remove('down');
       if (!this.enabled || t0 == null) return;
+      if (quick) { clearTimeout(timer); fire(); return; }
       const dx = cx - sx, dy = cy - sy;
       this.gestures[name] = { dir: this._dir(dx, dy, el), dx, dy, held: (performance.now() - t0) / 1000 };
     };
