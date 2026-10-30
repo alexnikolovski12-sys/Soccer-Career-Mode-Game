@@ -163,7 +163,8 @@ export const CONFIG = {
     carryOffset: 0.5,          // possession circle: how far ahead of the body the ball sits (m)
     carrySpeedOffset: 0.03,    // ...plus this much per m/s of running speed
     carryStiffness: 18,        // how quickly the ball follows the feet
-    circleMax: 0.95,           // the ball can never be further than this from the carrier
+    circleMax: 0.95,
+    looseDistance: 3.2,        // ball this far from the dribbler = loose ball (no reeling it back in)           // the ball can never be further than this from the carrier
     touchPush: 0.18,           // each touch pushes the ball this far out…
     touchPushPerSpeed: 0.035,  // …plus this per m/s
     pushDecay: 0.9,            // how fast the player catches back up to it

@@ -5,6 +5,14 @@ import { Player } from '../entities/Player.js';
 import { statsFromRating } from '../data/playerStats.js';
 import { makeRng } from '../core/MathUtil.js';
 
+/** Career look → Player.setAppearance() settings (older saves only had skin + hair). */
+export function appearanceOf(look) {
+  return {
+    skin: look.skin, hairColour: look.hairColour || look.hair, hairStyle: look.hairStyle || 'short',
+    facial: look.facial || 'none', sleeves: look.sleeves || 'short', boots: look.boots || '#111111', number: look.number ?? 9,
+  };
+}
+
 export class AvatarView {
   constructor() {
     const c = (this.canvas = document.createElement('canvas'));
@@ -45,15 +53,15 @@ export class AvatarView {
   }
 
   /** Dress the model: club kit + the player's skin and hair. */
-  setPlayer({ kit, skin, hair, number = 9 }) {
+  setPlayer({ kit, skin, hair, number = 9, look = null }) {
     if (this.failed) return;
-    const look = {
+    const base = {
       kitColour: kit.primary, shortsColour: kit.shorts, socksColour: kit.socks,
       skinTone: skin, hairColour: hair, bootColour: '#111111', height: 1.8, number,
     };
     if (!this.player) {
       this.player = new Player(this.scene, {
-        id: 'avatar', team: 'home', role: 'mate', name: '', look,
+        id: 'avatar', team: 'home', role: 'mate', name: '', look: base,
         stats: statsFromRating(70, makeRng(7)), rating: 70,
       });
       this.player.place(0, 0, this.yaw); // start facing the camera (no instant spin for the animator)
@@ -64,6 +72,7 @@ export class AvatarView {
       this.player.setKit({ kitColour: kit.primary, shortsColour: kit.shorts, socksColour: kit.socks });
       this.player.setSkinHair(skin, hair);
     }
+    if (look) this.player.setAppearance(appearanceOf(look));
   }
 
   /** Put the view into `host` (re-attached on every hub render) and run it. */

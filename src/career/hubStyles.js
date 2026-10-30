@@ -165,6 +165,26 @@ h3 small { font-weight:500; opacity:.6; font-size:13px; margin-left:6px; }
 .rev { list-style:none; padding:0; font-size:16px; }
 .hub-toast { position:absolute; left:50%; bottom:24px; transform:translateX(-50%); background:#c9f04a; color:#1b0a33; font-weight:800; padding:8px 18px; border-radius:999px; z-index:9; }
 
+/* customise */
+.custom { position:absolute; inset:0; z-index:6; display:flex; flex-direction:column; padding:inherit;
+  background:linear-gradient(135deg,#2a0b4d 0%,#3d1270 45%,#1e0838 100%); }
+.cu-head { display:flex; align-items:center; justify-content:space-between; font-size:24px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,.12); }
+.cu-body { flex:1; min-height:0; display:flex; gap:16px; padding-top:8px; }
+.cu-view { width:40%; min-width:150px; height:100%; position:relative; touch-action:none;
+  background:radial-gradient(60% 60% at 50% 60%, rgba(201,162,255,.22), transparent 70%); border-radius:16px; }
+.cu-opts { flex:1; min-width:0; padding-right:4px; }
+.cu-opts h4 { margin:8px 0 5px; font-size:16px; display:flex; align-items:center; gap:8px; }
+.cu-opts h4 small { font-weight:500; opacity:.7; font-size:13px; display:inline-flex; align-items:center; gap:4px; }
+.chips { display:flex; gap:6px; flex-wrap:wrap; }
+.chip { border:0; border-radius:999px; padding:5px 12px; font-size:15px; font-weight:700; background:rgba(255,255,255,.1); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.18); }
+.chip.on { background:#c9f04a; color:#1b0a33; box-shadow:none; }
+.sws { display:flex; gap:7px; flex-wrap:wrap; }
+.sw { width:30px; height:30px; border-radius:50%; border:0; box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
+.sw.on { box-shadow: 0 0 0 3px #c9f04a, inset 0 0 0 2px rgba(0,0,0,.3); }
+.sw.locked { opacity:.25; }
+.num { display:flex; align-items:center; gap:14px; }
+.num b { font-size:30px; min-width:44px; text-align:center; }
+
 /* small / portrait */
 @media (max-height: 430px) {
   .hub-body { gap:14px; padding-top:6px; }
@@ -177,6 +197,8 @@ h3 small { font-weight:500; opacity:.6; font-size:13px; margin-left:6px; }
   .home-right { width:100%; }
   .avatar-card { display:flex; align-items:center; gap:10px; text-align:left; }
   .av3d { width:110px; height:150px; flex-shrink:0; }
+  .cu-body { flex-direction:column; }
+  .cu-view { width:100%; height:200px; flex-shrink:0; }
   .msg-list { width:100%; max-height:40%; }
   .hub-club { display:none; }
 }

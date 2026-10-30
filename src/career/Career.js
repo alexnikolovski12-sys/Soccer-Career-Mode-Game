@@ -3,7 +3,7 @@
 // sponsors, club, country, social), objectives for club and country, the
 // shop (agent upgrades, followers, investments), season end and transfers.
 // Saved on the device (localStorage).
-import { world, club, league, LEAGUE_COUNTRIES, SPONSORS, nation, CLUBS_PER_LEAGUE } from './data.js';
+import { world, club, league, LEAGUE_COUNTRIES, BRANDS, BRAND_CATS, nation, CUSTOM } from './data.js';
 
 const SAVE_KEY = 'breakaway_career_v1';
 const DAY = 86400000;
@@ -100,7 +100,10 @@ export class Career {
       v: 1,
       player: {
         name, nationality, age: 18, position: 'ST', stats,
-        look: { skin: pick(['#f1c9a5', '#e0ac82', '#c68a5e', '#a86b43', '#7d4a2b', '#5a3420']), hair: pick(['#1a1310', '#2a1c14', '#4a3020', '#7a5a2e', '#c9a35a', '#0e0e0e']) },
+        look: {
+          skin: pick(CUSTOM.skins), hair: pick(CUSTOM.hairColours.slice(0, 7)), hairStyle: pick(['short', 'buzz', 'curly', 'quiff']),
+          facial: 'none', sleeves: 'short', boots: CUSTOM.bootsDefault, number: 9,
+        },
       },
       clubId, wage, money: 15000, followers: 1200, agentTier: 0, pr: false, investments: [],
       date: start, seasonNo: 1, year: 2026,
@@ -329,17 +332,28 @@ export class Career {
     else if (r.rating <= 5.6) this.message('coach', 'We need more', `Not your day against ${opp.name}. I need more from you next week.`);
     // sponsors notice consistent form
     const good = s.form.filter((x) => x >= 7.0).length;
-    const chance = good >= 3 ? 0.18 + AGENT_TIERS[s.agentTier].sponsor + Math.min(0.2, s.followers / 2e6) : 0;
+    const chance = good >= 2 ? 0.22 + AGENT_TIERS[s.agentTier].sponsor + Math.min(0.2, s.followers / 2e6) : 0;
     if (rnd() < chance) this._sponsorOffer();
   }
 
+  /** Categories you already have a live deal in (rivals can't sponsor you too). */
+  takenCats() { return new Set((this.s.sponsors || []).filter((x) => x.weeks > 0).map((x) => x.cat)); }
+  hasBootDeal() { return this.takenCats().has('boots'); }
+  bootsUnlocked() { return !!this.s.bootsUnlocked || this.hasBootDeal(); }
+
   _sponsorOffer() {
-    const s = this.s;
-    const brand = pick(SPONSORS);
-    const base = Math.round((300 + s.followers * 0.02) * (1 + s.agentTier * 0.5) / 50) * 50;
-    const weeks = pick([8, 12, 20]);
-    this.message('sponsor', `${brand} want you`, `${brand} would like you as a brand ambassador: ${fmtMoney(base)} a week for ${weeks} weeks. Accept?`,
-      [{ label: 'Accept', act: 'sponsor', brand, weekly: base, weeks }, { label: 'Decline', act: 'none' }]);
+    const s = this.s, taken = this.takenCats();
+    // boot brands are keenest until you've got boots
+    let pool = BRANDS.filter((b) => !taken.has(b.cat));
+    if (!pool.length) return;
+    if (!taken.has('boots') && rnd() < 0.4) pool = pool.filter((b) => b.cat === 'boots');
+    const b = pick(pool);
+    const catMul = { boots: 1.4, apparel: 1.3, car: 1.5, watch: 1.2, bank: 1.2 }[b.cat] || 1;
+    const base = Math.round((250 + s.followers * 0.018) * (1 + s.agentTier * 0.5) * catMul / 50) * 50;
+    const weeks = pick([12, 20, 30]);
+    const extra = b.cat === 'boots' ? ' You\'ll wear their boots — every boot colour unlocks in Customise.' : '';
+    this.message('sponsor', `${b.name} want you`, `${b.name} (${BRAND_CATS[b.cat]}) would like you as a brand ambassador: ${fmtMoney(base)} a week for ${weeks} weeks.${extra}`,
+      [{ label: 'Accept', act: 'sponsor', brand: b.name, cat: b.cat, weekly: base, weeks }, { label: 'Decline', act: 'none' }]);
   }
 
   _agentUpdate() {
@@ -394,7 +408,9 @@ export class Career {
     m.done = true; m.read = true; m.choice = a.label;
     if (a.act === 'sponsor') {
       s.sponsors = s.sponsors || [];
-      s.sponsors.push({ brand: a.brand, weekly: a.weekly, weeks: a.weeks });
+      if (this.takenCats().has(a.cat)) { m.choice = `Can't — you already have a ${BRAND_CATS[a.cat].toLowerCase()} deal`; this.emit(); return; }
+      s.sponsors.push({ brand: a.brand, cat: a.cat, weekly: a.weekly, weeks: a.weeks });
+      if (a.cat === 'boots') s.bootsUnlocked = true; // once you've had a boot deal the colours stay unlocked
       s.followers = Math.round(s.followers * 1.04);
     }
     this.emit();
@@ -410,6 +426,12 @@ export class Career {
     s.followers += gain;
     this.emit();
     return gain;
+  }
+
+  /** Save customisation choices. */
+  customise(patch) {
+    Object.assign(this.s.player.look, patch);
+    this.emit();
   }
 
   // ---- shop

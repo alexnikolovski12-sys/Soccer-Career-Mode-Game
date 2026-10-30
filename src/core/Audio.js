@@ -43,6 +43,10 @@ export class Audio {
     const comp = c.createDynamicsCompressor();
     comp.threshold.value = -14; comp.ratio.value = 4;
     this.master.connect(comp).connect(c.destination);
+    // every match sound goes through this bus so the menus can be silent
+    this.fx = c.createGain();
+    this.fx.connect(this.master);
+    if (this.matchOn === false) this.fx.gain.value = 0;
 
     // Shared noise buffers
     const len = c.sampleRate * 2;
@@ -73,7 +77,7 @@ export class Audio {
     this.crowdGain = c.createGain();
     this.crowdGain.gain.value = 0;
     src.connect(lp); src2.connect(bp).connect(n2g).connect(lp);
-    lp.connect(this.crowdGain).connect(this.master);
+    lp.connect(this.crowdGain).connect(this.fx);
     // Slow swell LFO
     const lfo = c.createOscillator(); lfo.frequency.value = 0.13;
     const lfoG = c.createGain(); lfoG.gain.value = 0.05;
@@ -82,10 +86,28 @@ export class Audio {
     this.crowdFilter = lp;
   }
 
+  /**
+   * Stadium sound on/off. Off (career menus): the crowd bed, chants and any
+   * reactions still ringing out are faded to silence.
+   */
+  setMatchAudio(on) {
+    this.matchOn = on;
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (!this.fx) return;
+    this.fx.gain.cancelScheduledValues(t);
+    this.fx.gain.setTargetAtTime(on ? 1 : 0, t, on ? 0.05 : 0.25);
+    if (!on) {
+      if (this.bed) this.bed.gain.gain.setTargetAtTime(0, t, 0.3);
+      if (this.crowdGain) this.crowdGain.gain.setTargetAtTime(0, t, 0.3);
+    } else this.setCrowd(this._crowdTarget);
+  }
+
   /** 0..1 excitement: rises as the attack nears the box. */
   setCrowd(level) {
     this._crowdTarget = level;
     if (!this.ctx) return;
+    if (this.matchOn === false) return;
     const t = this.ctx.currentTime;
     if (this.bed) {
       // real crowd bed takes over from the synthetic one
@@ -125,7 +147,7 @@ export class Audio {
     const c = this.ctx;
     const filter = c.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 3000; filter.Q.value = 0.3;
     const gain = c.createGain(); gain.gain.value = 0;
-    filter.connect(gain).connect(this.master);
+    filter.connect(gain).connect(this.fx);
     const loop = (buf, vol, rate = 1) => {
       const src = c.createBufferSource(); src.buffer = buf; src.loop = true;
       src.loopStart = 0.2; src.loopEnd = buf.duration - 0.2; src.playbackRate.value = rate;
@@ -180,7 +202,7 @@ export class Audio {
     let node = src;
     if (hp) { const f = c.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp; node.connect(f); node = f; }
     if (lp) { const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; node.connect(f); node = f; }
-    node.connect(g).connect(this.master);
+    node.connect(g).connect(this.fx);
     src.start(t, offset);
     src.stop(t + len + 0.05);
     return true;
@@ -200,7 +222,7 @@ export class Audio {
     if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + (dur || attack + decay));
     const g = c.createGain();
     this._env(g, t, attack, peak, decay);
-    s.connect(f).connect(g).connect(this.master);
+    s.connect(f).connect(g).connect(this.fx);
     s.start(t, Math.random() * 1.5);
     s.stop(t + attack + decay + 0.05);
   }
@@ -212,7 +234,7 @@ export class Audio {
     if (to) o.frequency.exponentialRampToValueAtTime(to, t + attack + decay);
     const g = c.createGain();
     this._env(g, t, attack, peak, decay);
-    o.connect(g).connect(this.master);
+    o.connect(g).connect(this.fx);
     o.start(t); o.stop(t + attack + decay + 0.05);
   }
 
@@ -257,7 +279,7 @@ export class Audio {
     g.gain.exponentialRampToValueAtTime(0.16, t + 0.02);
     g.gain.setValueAtTime(0.16, t + dur - 0.05);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); o2.connect(g); g.connect(this.master);
+    o.connect(g); o2.connect(g); g.connect(this.fx);
     [o, o2, lfo].forEach((n) => { n.start(t); n.stop(t + dur + 0.05); });
   }
 
@@ -292,7 +314,7 @@ export class Audio {
       g.connect(amG); out = amG;
       lfo.start(t); lfo.stop(end + 0.05);
     }
-    out.connect(this.master);
+    out.connect(this.fx);
     formants.forEach(([f, q, w], i) => {
       const src = c.createBufferSource();
       src.buffer = i % 2 ? this.brown : this.noise; src.loop = true;
@@ -321,7 +343,7 @@ export class Audio {
       g.gain.setValueAtTime(0.0001, at);
       g.gain.exponentialRampToValueAtTime(Math.max(0.002, pk), at + 0.003);
       g.gain.exponentialRampToValueAtTime(0.0001, at + dec);
-      s.connect(f).connect(g).connect(this.master);
+      s.connect(f).connect(g).connect(this.fx);
       s.start(at, Math.random() * 1.8); s.stop(at + dec + 0.02);
     }
   }
@@ -342,7 +364,7 @@ export class Audio {
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(0.035 + Math.random() * 0.03, t + 0.04);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g).connect(this.master);
+      o.connect(g).connect(this.fx);
       o.start(t); o.stop(t + dur + 0.05);
     }
   }

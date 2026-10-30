@@ -126,7 +126,8 @@ export class Possession {
         const r = g.rng.next();
         let push = r < 0.35 ? 0.25 : r < 0.85 ? 0.55 : 0.85;  // soft / normal / slightly longer
         if (space < 2.2) push = Math.min(push, 0.3);           // tight in traffic
-        if (o.sprinting && space > 7 && g.rng.chance(0.3)) push = 1.4; // knock it on and chase
+        // sprinting: you can't have pace AND close control — every touch is heavier
+        if (o.sprinting) push = space < 1.6 ? 0.8 : 1.0 + g.rng.next() * 0.9 + (space > 7 && g.rng.chance(0.35) ? 0.9 : 0);
         if (o.burstTouch) { push = 1.3; o.burstTouch = false; }
         v = o.speed + push; cd = Math.max(0.2, 0.9 / (o.speed + 1.5));
         const r2 = g.rng.next();
@@ -153,18 +154,13 @@ export class Possession {
       const lag = o.speed - (ball.vel.x * dx + ball.vel.z * dz);
       if (lag > 0) { ball.vel.x += dx * lag * k; ball.vel.z += dz * lag * k; }
     }
-    // keep it close: if it's drifting away from him, it stops running away
-    // (relative to the player) and is eased back toward the working foot
-    if (bd > Math.max(D.circleMax * 0.6, carry + 0.12)) {
-      const nx = bx / bd, nz = bz / bd;
-      const out = (ball.vel.x - o.vel.x) * nx + (ball.vel.z - o.vel.z) * nz;
-      if (out > 0) { ball.vel.x -= nx * out; ball.vel.z -= nz * out; }
-      const k = Math.min(1, dt * 3 * (bd / D.circleMax));
-      ball.pos.x += (fx - ball.pos.x) * k * 0.5;
-      ball.pos.z += (fz - ball.pos.z) * k * 0.5;
+    // No magic: a ball that's been knocked away keeps rolling where the touch
+    // sent it. He has to get to it and take touches to bring it round. If he
+    // leaves it too far, it's just a loose ball (he can still run onto it).
+    if (bd > D.looseDistance) {
+      ball.owner = null;
+      g.events.emit('loose', { player: o });
     }
-    // sprinting = quicker, but the ball is further from your feet (easier to nick)
-    this._leash(o, D.circleMax + (o.sprinting ? D.sprintCarryExtra + 0.15 : 0));
   }
 
   /** Hard limit: the ball can never be further than `max` from the carrier. */

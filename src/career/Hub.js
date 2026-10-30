@@ -2,7 +2,7 @@
 // list, avatar + Customise), Messages, Club, Country, Shop tabs; the new
 // career flow (name → 3 starting offers → nationality) and all the pop-ups
 // (training report, social posts, match report, season review).
-import { world, club, league, nation, NATIONS, kitSVG, crestSVG, countryOf } from './data.js';
+import { world, club, league, nation, NATIONS, kitSVG, crestSVG, countryOf, CUSTOM, BRAND_CATS } from './data.js';
 import { Career, fmtDate, fmtMoney, overallOf, STAT_KEYS, SHOP, AGENT_TIERS } from './Career.js';
 import { HUB_CSS } from './hubStyles.js';
 import { ICON, flag } from './icons.js';
@@ -165,7 +165,7 @@ export class Hub {
     body.appendChild(right);
     // your real 3D player in the club kit
     this.avatar = this.avatar || new AvatarView();
-    this.avatar.setPlayer({ kit: c.kit, skin: P.look.skin, hair: P.look.hair });
+    this.avatar.setPlayer({ kit: c.kit, skin: P.look.skin, hair: P.look.hairColour || P.look.hair, look: P.look });
     requestAnimationFrame(() => this.avatar.attach(right.querySelector('.av3d')));
     const q = (sel) => left.querySelector(sel);
     if (q('.act-sim')) q('.act-sim').onclick = () => this._sim();
@@ -173,7 +173,7 @@ export class Hub {
     if (q('.act-play')) q('.act-play').onclick = () => this._play(fx);
     if (q('.act-simmatch')) q('.act-simmatch').onclick = () => this._simMatch(fx);
     if (q('.act-review')) q('.act-review').onclick = () => this._seasonReview();
-    right.querySelector('.act-custom').onclick = () => this._popup('Customise', '<p>Player customisation is coming soon.</p>', [{ label: 'OK' }]);
+    right.querySelector('.act-custom').onclick = () => this._customise();
   }
 
   _avatar(P, c) {
@@ -335,7 +335,7 @@ export class Hub {
     }).join('');
     const inv = s.investments.map((v, i) => `<div class="shop-item"><div><b>${esc(v.title)}</b><small>Worth ${fmtMoney(v.value)}${v.risk ? ' · pays out at season end' : ''}</small></div>
       ${v.risk ? '' : `<button class="hub-btn" data-cash="${i}">Cash out</button>`}</div>`).join('');
-    const sp = (s.sponsors || []).filter((x) => x.weeks > 0).map((x) => `<div class="shop-item"><div><b>${ICON.deal(16)} ${esc(x.brand)}</b><small>${fmtMoney(x.weekly)}/wk · ${x.weeks} weeks left</small></div></div>`).join('');
+    const sp = (s.sponsors || []).filter((x) => x.weeks > 0).map((x) => `<div class="shop-item"><div><b>${ICON.deal(16)} ${esc(x.brand)}</b><small>${esc(BRAND_CATS[x.cat] || 'Sponsor')} · ${fmtMoney(x.weekly)}/wk · ${x.weeks} weeks left</small></div></div>`).join('');
     wrap.innerHTML = `<div class="bank"><div><b>${fmtMoney(s.money)}</b><span>Bank</span></div><div><b>${fmtMoney(s.wage)}</b><span>Wage / week</span></div><div><b>${fmtNum(s.followers)}</b><span>Followers</span></div></div>
       <h3>Shop</h3>${items}${inv ? `<h3>Your investments</h3>${inv}` : ''}${sp ? `<h3>Sponsorships</h3>${sp}` : ''}`;
     body.appendChild(wrap);
@@ -343,6 +343,45 @@ export class Hub {
       b.onclick = () => { if (C.buy(SHOP.find((x) => x.id === b.dataset.id))) this._toast('Purchased!'); this.render(); };
     });
     wrap.querySelectorAll('[data-cash]').forEach((b) => { b.onclick = () => { C.cashOut(+b.dataset.cash); this.render(); }; });
+  }
+
+  // ------------------------------------------------------------ CUSTOMISE
+  _customise() {
+    const C = this.career, s = C.s, c = club(s.clubId);
+    const L = s.player.look;
+    const panel = h('div', 'custom');
+    this.el.appendChild(panel);
+    const draw = () => {
+      const look = { ...L, hairColour: L.hairColour || L.hair };
+      const unlocked = C.bootsUnlocked();
+      const chip = (key, val, label) => `<button class="chip ${look[key] === val ? 'on' : ''}" data-k="${key}" data-v="${val}">${esc(label)}</button>`;
+      const sw = (key, val, locked) => `<button class="sw ${look[key] === val ? 'on' : ''} ${locked ? 'locked' : ''}" data-k="${key}" data-v="${val}" ${locked ? 'disabled' : ''} style="background:${val}"></button>`;
+      panel.innerHTML = `<div class="cu-head"><b>Customise</b><button class="hub-btn small cu-done">Done</button></div>
+        <div class="cu-body"><div class="cu-view"></div><div class="cu-opts hub-scroll">
+          <h4>Hair</h4><div class="chips">${CUSTOM.hairStyles.map(([v, l]) => chip('hairStyle', v, l)).join('')}</div>
+          <h4>Hair colour</h4><div class="sws">${CUSTOM.hairColours.map((v) => sw('hairColour', v)).join('')}</div>
+          <h4>Face</h4><div class="chips">${CUSTOM.facial.map(([v, l]) => chip('facial', v, l)).join('')}</div>
+          <h4>Skin</h4><div class="sws">${CUSTOM.skins.map((v) => sw('skin', v)).join('')}</div>
+          <h4>Sleeves</h4><div class="chips">${CUSTOM.sleeves.map(([v, l]) => chip('sleeves', v, l)).join('')}</div>
+          <h4>Boots ${unlocked ? '' : `<small>${ICON.box(14)} Get a boots sponsor to unlock colours</small>`}</h4>
+          <div class="sws">${CUSTOM.boots.map((v) => sw('boots', v, !unlocked && v !== CUSTOM.bootsDefault)).join('')}</div>
+          <h4>Shirt number <small>your teammates take the other numbers</small></h4>
+          <div class="num"><button class="hub-btn small" data-n="-1">−</button><b>${look.number ?? 9}</b><button class="hub-btn small" data-n="1">+</button></div>
+        </div></div>`;
+      // live 3D preview
+      this.avatar = this.avatar || new AvatarView();
+      this.avatar.setPlayer({ kit: c.kit, skin: look.skin, hair: look.hairColour, look });
+      requestAnimationFrame(() => this.avatar.attach(panel.querySelector('.cu-view')));
+      panel.querySelectorAll('[data-k]').forEach((b) => {
+        b.onclick = () => { if (b.disabled) return; C.customise({ [b.dataset.k]: b.dataset.v, ...(b.dataset.k === 'hairColour' ? { hair: b.dataset.v } : {}) }); draw(); };
+      });
+      panel.querySelectorAll('[data-n]').forEach((b) => {
+        b.onclick = () => { let n = (look.number ?? 9) + +b.dataset.n; if (n < 1) n = 99; if (n > 99) n = 1; C.customise({ number: n }); draw(); };
+      });
+      panel.querySelector('.cu-done').onclick = () => { this.busy = false; panel.remove(); this.render(); };
+    };
+    this.busy = true; // don't let the background re-render while customising
+    draw();
   }
 
   // ------------------------------------------------------------ season review

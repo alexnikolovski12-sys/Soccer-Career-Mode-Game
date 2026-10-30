@@ -25,6 +25,7 @@ import { HUD } from './ui/HUD.js';
 import { ShotOverlay } from './ui/ShotOverlay.js';
 import { DebugPanel } from './debug/DebugPanel.js';
 import { Hub } from './career/Hub.js';
+import { appearanceOf } from './career/AvatarView.js';
 import { USER_PLAYER, TEAMS, randomLook, statsFromRating } from './data/playerStats.js';
 
 class Events {
@@ -1045,13 +1046,16 @@ class Game {
     if (cel.phase === 'run') {
       const d = u.moveTo(cel.target.x, cel.target.z, u.attrs.sprintSpeed, 1);
       if (cel.type === 'airplane' && u.anim.action !== 'airplane') u.playAction('airplane', 9, { loop: true });
-      if (d < (cel.type === 'kneeslide' ? 6.5 : 1.5) || t > 2.0) {
+      const sliding = cel.type === 'kneeslide' || cel.type === 'bellyslide';
+      if (d < (sliding ? 6.5 : 1.5) || t > 2.0) {
         cel.phase = 'move';
         const hx = Math.sin(u.heading), hz = Math.cos(u.heading);
-        if (cel.type === 'kneeslide') {
+        if (sliding) {
           cel.slide = { x: hx, z: hz, v: Math.max(5.5, u.speed) };
-          u.playAction('kneeslide', 2.6, { hold: true });
-        } else if (cel.type === 'jumpfist') u.playAction('jumpfist', 9, { loop: true });
+          u.playAction(cel.type, 2.6, { hold: true });
+        } else if (cel.type === 'backflip') u.playAction('backflip', 1.15, {});
+        else if (['cuptheear', 'shush', 'armscrossed', 'salute', 'calmdown', 'heart', 'badgepoint', 'robot'].includes(cel.type)) u.playAction(cel.type, 9, { loop: true });
+        else if (cel.type === 'jumpfist') u.playAction('jumpfist', 9, { loop: true });
         else if (cel.type === 'spinjump') u.playAction('spinjump', 1.4, { hold: true, side: this.rng.sign() });
         else if (cel.type === 'pointsky') u.playAction('pointsky', 9, { loop: true });
         else u.playAction('celebrate', 2.4, { loop: true });
@@ -1068,6 +1072,7 @@ class Game {
       if (s.v < 0.2) cel.slide = null;
       return;
     }
+    if (cel.type === 'backflip' && u.anim.action !== 'backflip' && !cel.landed) { cel.landed = true; u.playAction('armsup', 9, { loop: true }); this.camRig.addShake(0.12); }
     if (cel.type === 'airplane') {
       // keep wheeling away, arms out
       cel.a = (cel.a || 0) + dt * 0.9;
@@ -1149,7 +1154,16 @@ class Game {
     for (const p of this.teammatePool) { p.rating = my.rating; p.setStats(statsFromRating(my.rating, rng)); }
     for (const p of this.defenderPool) { p.setKit(TEAMS.away.kit); p.rating = opp.rating; p.setStats(statsFromRating(opp.rating, rng)); }
     this.keeperPlayer.setKit(TEAMS.away.keeperKit);
-    this.career.setSkinHair(player.look.skin, player.look.hair);
+    const look = appearanceOf(player.look);
+    this.career.setAppearance(look);
+    // teammates (and subs) never wear your number
+    const used = new Set([look.number]);
+    let n = 2;
+    for (const p of [...this.teammatePool, ...this.extraPool]) {
+      let num = p.look.number;
+      if (used.has(num)) { while (used.has(n) || n === 1) n++; num = n; p.setNumber(num); }
+      used.add(num);
+    }
     this.career.setStats(player.stats);
     this.career.name = player.name;
     const mt = this.moments.match;
@@ -1159,6 +1173,7 @@ class Game {
     this.hud.setResultMode({ career: true, last: false });
     this.careerMatch = { ...o, n: CONFIG.career.momentsPerMatch, played: 0, goals: 0, assists: 0 };
     this.audio.unlock();
+    this.audio.setMatchAudio(true);
     this.audio.setCrowd(0.25);
     this.audio.whistle(false);
     this.moments.setup();
@@ -1168,16 +1183,21 @@ class Game {
   /** Between your moments the rest of the game happens: the opposition (or your teammates) can score. */
   _simBetweenMoments() {
     const mt = this.moments.match, H = TEAMS.home.rating, A = TEAMS.away.rating;
-    const pA = Math.max(0.03, Math.min(0.3, 0.1 + (A - H) * 0.008));
-    const pH = Math.max(0.02, Math.min(0.2, 0.05 + (H - A) * 0.005));
-    if (Math.random() < pA) { mt.awayGoals++; this.careerMatch.lastNews = `${TEAMS.away.short} scored`; }
-    else if (Math.random() < pH) { mt.homeGoals++; this.careerMatch.lastNews = `${TEAMS.home.short} scored`; }
-    else this.careerMatch.lastNews = null;
+    // ~1.3 goals a game for an even opponent, more if they're better than you
+    const pA = Math.max(0.08, Math.min(0.48, 0.21 + (A - H) * 0.012));
+    const pH = Math.max(0.02, Math.min(0.15, 0.05 + (H - A) * 0.004));
+    this.careerMatch.lastNews = null;
+    if (Math.random() < pA) {
+      mt.awayGoals++; this.careerMatch.lastNews = `${TEAMS.away.short} scored`;
+      if (Math.random() < pA * 0.25) mt.awayGoals++;
+    }
+    if (Math.random() < pH) { mt.homeGoals++; this.careerMatch.lastNews = this.careerMatch.lastNews ? 'Goals at both ends' : `${TEAMS.home.short} scored`; }
   }
 
   finishCareerMatch() {
     const cm = this.careerMatch, mt = this.moments.match;
     if (!cm) return;
+    this._simBetweenMoments(); // the last few minutes after your final moment
     const r = {
       gf: mt.homeGoals, ga: mt.awayGoals,
       rating: Math.max(3, Math.min(10, +this.moments.matchRating.toFixed(1))),
@@ -1240,7 +1260,7 @@ class Game {
         g.hud.hideResult();
         g.hud.hideIntro && g.hud.hideIntro();
         g.camRig.setMode('intro');
-        g.audio.setCrowd(0.05);
+        g.audio.setMatchAudio(false);   // no crowd / chants on the menus
         g.hub.open();
       },
     });
@@ -1335,7 +1355,8 @@ class Game {
         g.celebration = null;
         g._pileShake = false;
         if (outcome === 'GOAL') {
-          const types = ['kneeslide', 'kneeslide', 'airplane', 'jumpfist', 'spinjump', 'pointsky'];
+          const types = ['kneeslide', 'kneeslide', 'bellyslide', 'airplane', 'jumpfist', 'spinjump', 'pointsky', 'cuptheear',
+            'shush', 'armscrossed', 'salute', 'calmdown', 'heart', 'badgepoint', 'robot', 'backflip'];
           g.celebration = { type: types[Math.floor(Math.random() * types.length)], phase: 'run' };
           const mt = g.moments.match, mm = g.moments.current;
           const late = mm && mm.minute >= 70 && (mt.homeGoals === mt.awayGoals || mt.homeGoals === mt.awayGoals + 1);

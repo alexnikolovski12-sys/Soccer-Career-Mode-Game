@@ -199,8 +199,40 @@ export function crestSVG(c, size = 40) {
   </svg>`;
 }
 
-/** Fictional brands for sponsorship offers. */
-export const SPONSORS = [
-  'Strada Boots', 'Volt Energy', 'Northwind Watches', 'Kinetic Wear', 'Apex Headphones', 'Blaze Gaming',
-  'Coastline Motors', 'Pulse Hydration', 'Summit Mobile', 'Orbit Sportswear', 'Granite Fitness', 'Nova Eyewear',
-];
+/**
+ * Fictional brands for sponsorship deals. You can only hold one deal per
+ * category (rival brands won't share a player); a boots deal unlocks boot colours.
+ */
+export const BRAND_CATS = {
+  boots: 'Football boots', apparel: 'Sportswear', energy: 'Energy drink', soda: 'Soft drink', food: 'Fast food',
+  phone: 'Phones & tech', audio: 'Headphones', watch: 'Watches', car: 'Cars', gaming: 'Gaming', bank: 'Banking',
+  fitness: 'Fitness', eyewear: 'Eyewear', grooming: 'Grooming',
+};
+export const BRANDS = [
+  ['Strada', 'boots'], ['Kinetic', 'boots'], ['Velox', 'boots'], ['Apex Strike', 'boots'], ['Torro', 'boots'], ['Zenith FC', 'boots'],
+  ['Orbit Sportswear', 'apparel'], ['Northline', 'apparel'], ['Pace Athletics', 'apparel'], ['Halo Wear', 'apparel'],
+  ['Volt Energy', 'energy'], ['Surge', 'energy'], ['Rush Fuel', 'energy'], ['Pulse Hydration', 'energy'],
+  ['FizzCo', 'soda'], ['Citrus Pop', 'soda'], ['Cola Max', 'soda'],
+  ['Burger Barn', 'food'], ['Crispy Bucket', 'food'], ['Slice Republic', 'food'], ['Taco Rocket', 'food'],
+  ['Summit Mobile', 'phone'], ['Nimbus Tech', 'phone'], ['Pixelon', 'phone'],
+  ['Apex Audio', 'audio'], ['Bassline', 'audio'], ['EchoBeat', 'audio'],
+  ['Northwind Watches', 'watch'], ['Chrono & Co', 'watch'], ['Meridian Time', 'watch'],
+  ['Coastline Motors', 'car'], ['Vantage Auto', 'car'], ['Ridge EV', 'car'], ['Stellar Cars', 'car'],
+  ['Blaze Gaming', 'gaming'], ['Quest Arena', 'gaming'], ['Pixel Forge', 'gaming'],
+  ['Harbour Bank', 'bank'], ['Crest Finance', 'bank'], ['Unity Pay', 'bank'],
+  ['Granite Fitness', 'fitness'], ['Core Club Gyms', 'fitness'],
+  ['Nova Eyewear', 'eyewear'], ['Lumen Optics', 'eyewear'],
+  ['Sharp Edge', 'grooming'], ['Groom Lab', 'grooming'], ['Fade Co', 'grooming'],
+].map(([name, cat]) => ({ name, cat }));
+
+/** Customisation options. */
+export const CUSTOM = {
+  hairStyles: [['short', 'Short'], ['buzz', 'Buzz cut'], ['quiff', 'Quiff'], ['curly', 'Curly'], ['afro', 'Afro'], ['long', 'Long'], ['bun', 'Man bun'], ['mohawk', 'Mohawk'], ['bald', 'Bald']],
+  hairColours: ['#0e0e0e', '#1a1310', '#2a1c14', '#4a3020', '#7a5a2e', '#b07a3a', '#c9a35a', '#e4cf8f', '#9a3b1c', '#d9d9d9'],
+  facial: [['none', 'Clean'], ['stubble', 'Stubble'], ['beard', 'Beard'], ['goatee', 'Goatee'], ['moustache', 'Moustache']],
+  skins: ['#f6d7bd', '#f1c9a5', '#e0ac82', '#c68a5e', '#a86b43', '#8b5634', '#6e4026', '#4f2c18'],
+  sleeves: [['short', 'Short sleeves'], ['long', 'Long sleeves']],
+  // boots: black only until you've got a boots sponsor
+  bootsDefault: '#111111',
+  boots: ['#111111', '#f2f4f8', '#e8262e', '#1d6ff2', '#ffd21f', '#22c55e', '#ff7a1a', '#e05aa0', '#7b3fe4', '#19d3c5', '#c9f04a', '#b8925a'],
+};

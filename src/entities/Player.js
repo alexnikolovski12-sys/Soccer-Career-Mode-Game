@@ -32,6 +32,24 @@ function geo() {
   return GEO;
 }
 
+// hair / facial hair pieces for career customisation
+const HG = {};
+function HAIR_GEO() {
+  if (HG.cap) return HG;
+  HG.cap = new THREE.SphereGeometry(0.122, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  HG.buzz = new THREE.SphereGeometry(0.118, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  HG.long = new THREE.CylinderGeometry(0.105, 0.115, 0.2, 10, 1, true, Math.PI * 0.6, Math.PI * 0.8);
+  HG.afro = new THREE.SphereGeometry(0.165, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62);
+  HG.mohawk = new THREE.BoxGeometry(0.035, 0.07, 0.22);
+  HG.bun = new THREE.SphereGeometry(0.05, 10, 8);
+  HG.curl = new THREE.SphereGeometry(0.048, 8, 6);
+  HG.quiff = new THREE.BoxGeometry(0.15, 0.05, 0.09);
+  HG.beard = new THREE.SphereGeometry(0.119, 12, 8, Math.PI * 0.15, Math.PI * 0.7, Math.PI * 0.52, Math.PI * 0.4);
+  HG.tache = new THREE.BoxGeometry(0.06, 0.014, 0.018);
+  HG.goatee = new THREE.BoxGeometry(0.04, 0.045, 0.03);
+  return HG;
+}
+
 const MATS = new Map();
 function mat(colour) {
   let m = MATS.get(colour);
@@ -200,7 +218,8 @@ export class Player {
     const m = this._privateMats ? (c) => new THREE.MeshLambertMaterial({ color: c }) : mat;
     const kit = m(L.kitColour), shorts = m(L.shortsColour), socks = m(L.socksColour || L.kitColour);
     const skin = m(L.skinTone), hair = m(L.hairColour || '#222'), boot = m(L.bootColour || '#111');
-    this._mats = { kit, shorts, socks, skin, hair };
+    this._mats = { kit, shorts, socks, skin, hair, boot };
+    this._forearms = []; this._boots = [];
     this._ownMat = {};
     const meshes = [];
     const add = (parent, g, m, x, y, z) => {
@@ -224,10 +243,13 @@ export class Player {
     add(head, G.head, skin, 0, 0, 0);
     const hairMesh = add(head, G.hair, hair, 0, 0.012, -0.008);
     hairMesh.rotation.x = -0.25;
+    this._head = head;
+    this._hairMeshes = [hairMesh];
     // number on the back
     const num = new THREE.Mesh(G.numPlane, new THREE.MeshBasicMaterial({
       map: numberTexture(L.number ?? 0, contrastText(L.kitColour)), transparent: true,
     }));
+    this._numMesh = num;
     num.position.set(0, 0.36, -0.163);
     num.rotation.y = Math.PI;
     torso.add(num);
@@ -240,7 +262,7 @@ export class Player {
       const el = new THREE.Group();
       el.position.y = -0.28;
       sh.add(el);
-      add(el, G.foreArm, skin, 0, -0.13, 0);
+      this._forearms.push(add(el, G.foreArm, skin, 0, -0.13, 0));
       add(el, G.hand, this.isKeeper ? mat('#f0f0f0') : skin, 0, -0.28, 0);
       return { sh, el };
     };
@@ -256,7 +278,7 @@ export class Player {
       const ankle = new THREE.Group();
       ankle.position.y = -0.39;
       knee.add(ankle);
-      add(ankle, G.boot, boot, 0, -0.04, 0.05);
+      this._boots.push(add(ankle, G.boot, boot, 0, -0.04, 0.05));
       return { hip, knee, ankle };
     };
     this.parts = { root, body, torso, head, armL: arm(1), armR: arm(-1), legL: leg(1), legR: leg(-1) };
@@ -330,6 +352,56 @@ export class Player {
   }
 
   setSkinHair(skin, hair) { this._setMat('skin', skin); this._setMat('hair', hair); }
+
+  /** Shirt number on the back. */
+  setNumber(n) {
+    this.look = { ...this.look, number: n };
+    this._numMesh.material.map = numberTexture(n, contrastText(this.look.kitColour || '#ffffff'));
+    this._numMesh.material.needsUpdate = true;
+  }
+
+  /**
+   * Career customisation: hair style + colour, facial hair, skin, long/short
+   * sleeves, boot colour, shirt number.
+   */
+  setAppearance(a) {
+    if (a.skin) this._setMat('skin', a.skin);
+    if (a.hairColour) this._setMat('hair', a.hairColour);
+    if (a.boots) this._setMat('boot', a.boots);
+    if (a.number != null) this.setNumber(a.number);
+    // sleeves: long = the forearms are shirt
+    if (a.sleeves) for (const m of this._forearms) m.material = a.sleeves === 'long' ? this._mats.kit : this._mats.skin;
+    if (a.hairStyle !== undefined || a.facial !== undefined) this._rebuildHair(a.hairStyle ?? this._hairStyle ?? 'short', a.facial ?? this._facial ?? 'none');
+  }
+
+  _rebuildHair(style, facial) {
+    this._hairStyle = style; this._facial = facial;
+    const head = this._head, hm = this._mats.hair;
+    for (const m of this._hairMeshes) { head.remove(m); const i = this.meshes.indexOf(m); if (i >= 0) this.meshes.splice(i, 1); }
+    this._hairMeshes = [];
+    const add = (g, x, y, z, rx = 0, mat = hm) => {
+      const m = new THREE.Mesh(g, mat); m.position.set(x, y, z); m.rotation.x = rx; m.castShadow = true;
+      head.add(m); this.meshes.push(m); this._hairMeshes.push(m); return m;
+    };
+    const H = HAIR_GEO();
+    switch (style) {
+      case 'bald': break;
+      case 'buzz': add(H.buzz, 0, 0.008, -0.006, -0.25); break;
+      case 'long': add(H.cap, 0, 0.012, -0.008, -0.25); add(H.long, 0, -0.07, -0.05); break;
+      case 'afro': add(H.afro, 0, 0.04, -0.015); break;
+      case 'mohawk': add(H.mohawk, 0, 0.1, -0.01, -0.15); break;
+      case 'bun': add(H.cap, 0, 0.012, -0.008, -0.25); add(H.bun, 0, 0.08, -0.1); break;
+      case 'curly': for (const [x, y, z] of [[0, 0.1, 0.02], [0.06, 0.08, -0.02], [-0.06, 0.08, -0.02], [0, 0.09, -0.07], [0.07, 0.03, -0.06], [-0.07, 0.03, -0.06], [0.04, 0.1, 0.06], [-0.04, 0.1, 0.06]]) add(H.curl, x, y, z); break;
+      case 'quiff': add(H.cap, 0, 0.012, -0.008, -0.25); add(H.quiff, 0, 0.1, 0.06, 0.4); break;
+      default: add(H.cap, 0, 0.012, -0.008, -0.25);
+    }
+    if (facial === 'beard') add(H.beard, 0, -0.01, 0.012);
+    else if (facial === 'stubble') { const sm = this._stubbleMat || (this._stubbleMat = new THREE.MeshLambertMaterial({ color: hm.color, transparent: true, opacity: 0.45 })); sm.color.copy(hm.color); add(H.beard, 0, -0.008, 0.008, 0, sm); }
+    else if (facial === 'moustache') add(H.tache, 0, -0.035, 0.108);
+    else if (facial === 'goatee') add(H.goatee, 0, -0.085, 0.085);
+  }
+
+
 
   /** Show/hide the controlled-player markers without changing who's controlled. */
   setMarkerVisible(on) {

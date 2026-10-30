@@ -1,6 +1,6 @@
 // Every celebration type + a big late-goal pile-on, and a fall with its get-up.
 const out = [];
-for (const type of ['kneeslide', 'airplane', 'jumpfist', 'spinjump', 'pointsky', 'celebrate']) {
+for (const type of ['kneeslide', 'bellyslide', 'airplane', 'jumpfist', 'spinjump', 'pointsky', 'cuptheear', 'shush', 'armscrossed', 'salute', 'calmdown', 'heart', 'badgepoint', 'robot', 'backflip', 'celebrate']) {
   // score for real (keeper switched off), then pick the celebration
   startMoment();
   g.config.keeper.difficulty = 0;

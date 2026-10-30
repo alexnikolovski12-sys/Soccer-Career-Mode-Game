@@ -401,6 +401,83 @@ export function handPose(name, k, T, anim, out) {
       T.shL = T.shR = -0.4 - up * 0.6; T.shLz = 1.0; T.shRz = -1.0; T.elL = T.elR = 0.3; T.headPitch = 0.4 * up;
       break;
     }
+    // ---- more celebrations
+    case 'cuptheear': {
+      // "I can't hear you" — hand cupped to the ear, other arm out to the crowd
+      const t = anim.t, v = Math.min(1, k * 6);
+      T.shR = 1.65 * v; T.shRz = -1.25 * v; T.elR = 2.3 * v;
+      T.shL = 0.4 * v; T.shLz = 1.25 * v; T.elL = 0.2;
+      T.bodyRoll = 0.12 * v; T.headPitch = 0.15 + Math.sin(t * 2) * 0.05; T.lean = -0.08 * v;
+      break;
+    }
+    case 'shush': {
+      const v = Math.min(1, k * 6);
+      T.shR = 1.35 * v; T.shRz = -0.15 * v; T.elR = 2.45 * v; T.shL = 0.1; T.shLz = 0.25; T.elL = 0.3;
+      T.headPitch = -0.1 * v; T.lean = 0.04;
+      break;
+    }
+    case 'armscrossed': {
+      // stands there, arms folded, chin up — job done
+      const v = Math.min(1, k * 5);
+      T.shL = T.shR = 0.95 * v; T.shLz = -0.35 * v; T.shRz = 0.35 * v; T.elL = T.elR = 2.05 * v;
+      T.headPitch = 0.25 * v; T.lean = -0.1 * v;
+      break;
+    }
+    case 'salute': {
+      const v = Math.min(1, k * 6);
+      T.shR = 1.45 * v; T.shRz = -1.1 * v; T.elR = 2.4 * v; T.shL = 0.05; T.shLz = 0.12; T.elL = 0.1;
+      T.headPitch = 0.12 * v; T.lean = -0.06 * v;
+      break;
+    }
+    case 'calmdown': {
+      // palms down, "calm down, calm down"
+      const t = anim.t, v = Math.min(1, k * 5), p = Math.sin(t * 6) * 0.22;
+      T.shL = T.shR = (0.7 + p) * v; T.shLz = 0.55 * v; T.shRz = -0.55 * v; T.elL = T.elR = 0.35;
+      T.lean = 0.12 * v; T.kneeL = T.kneeR = 0.3 * v; T.bodyY = -0.05 * v;
+      break;
+    }
+    case 'heart': {
+      const v = Math.min(1, k * 5);
+      T.shL = T.shR = 1.35 * v; T.shLz = -0.45 * v; T.shRz = 0.45 * v; T.elL = T.elR = 1.75 * v;
+      T.headPitch = 0.1 * v;
+      break;
+    }
+    case 'badgepoint': {
+      // grab / point at the badge, other fist up
+      const t = anim.t, v = Math.min(1, k * 5);
+      T.shR = 1.0 * v; T.shRz = 0.45 * v; T.elR = 1.9 * v;
+      T.shL = (2.6 + Math.sin(t * 5) * 0.2) * v; T.shLz = 0.25; T.elL = 0.4;
+      T.headPitch = 0.3 * v; T.lean = -0.12 * v;
+      break;
+    }
+    case 'robot': {
+      // stiff robot dance, arms clicking between positions
+      const t = anim.t, step = Math.floor(t * 3) % 4;
+      T.elL = T.elR = 1.57;
+      T.shL = step === 0 || step === 3 ? 1.5 : 0.1; T.shR = step === 1 || step === 2 ? 1.5 : 0.1;
+      T.shLz = 0.15; T.shRz = -0.15;
+      T.twist = [0.3, -0.3, 0.3, -0.3][step]; T.kneeL = T.kneeR = 0.12; T.headPitch = [0.1, -0.1, 0.1, -0.1][step];
+      break;
+    }
+    case 'backflip': {
+      // crouch, spring, full backward rotation tucked, land with arms up
+      if (k < 0.18) { const c = k / 0.18; T.bodyY = -0.25 * c; T.kneeL = T.kneeR = 1.1 * c; T.hipL = T.hipR = 0.6 * c; T.shL = T.shR = -0.6 * c; }
+      else if (k < 0.78) {
+        const a = (k - 0.18) / 0.6;
+        T.bodyY = Math.sin(a * Math.PI) * 0.95; T.bodyPitch = -Math.PI * 2 * (a * a * (3 - 2 * a));
+        T.kneeL = T.kneeR = 1.9 * Math.sin(a * Math.PI); T.hipL = T.hipR = 1.4 * Math.sin(a * Math.PI);
+        T.shL = T.shR = 1.0; T.elL = T.elR = 1.2;
+      } else { const l = (k - 0.78) / 0.22; T.bodyY = -0.18 * (1 - l); T.kneeL = T.kneeR = 0.8 * (1 - l); T.shL = T.shR = 2.7 * l; T.shLz = 0.4; T.shRz = -0.4; }
+      break;
+    }
+    case 'bellyslide': {
+      // dive forward and slide on the front, arms out
+      const v = Math.min(1, k / 0.12);
+      T.bodyPitch = 1.45 * v; T.bodyY = -0.72 * v;
+      T.shL = T.shR = 2.6 * v; T.shLz = 0.9 * v; T.shRz = -0.9 * v; T.elL = T.elR = 0.2;
+      T.hipL = T.hipR = -0.15 * v; T.kneeL = T.kneeR = 0.5 * v; T.headPitch = -0.9 * v;
+      break;
+    }
     // ---- referee
     case 'card': {
       // right arm straight up holding the card, left arm pointing at the spot
