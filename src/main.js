@@ -94,6 +94,16 @@ class Game {
       look: { ...randomLook(rng, TEAMS.away.keeperKit, 1), height: 1.9 }, stats: statsFromRating(CONFIG.keeper.rating, rng),
     });
     this.keeper = new Keeper(this, this.keeperPlayer);
+    // referee: all black, follows play; shows cards after fouls
+    this.ref = new Player(this.scene, {
+      id: 'ref', team: 'ref', role: 'ref', rating: 72, name: 'REF',
+      look: { kitColour: '#151515', shortsColour: '#151515', socksColour: '#151515', skinTone: '#c68a5e', hairColour: '#1a1310', bootColour: '#0e0e0e', height: 1.82, number: '' },
+      stats: statsFromRating(72, rng),
+    });
+    this.ref.place(0, -18, Math.PI / 2);
+    this.cardMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.15), new THREE.MeshBasicMaterial({ color: 0xffd400, side: THREE.DoubleSide }));
+    this.cardMesh.visible = false;
+    this.scene.add(this.cardMesh);
     // the rest of the squad + subs, only used to mob the scorer after a big late goal
     const bib = { kitColour: '#ff7a1a', shortsColour: '#1b2a4a', socksColour: '#f2f4f8' };
     this.extraPool = [2, 3, 4, 5, 6, 14, 15, 17, 18, 20, 21].map((n, i) => {
@@ -213,6 +223,111 @@ class Game {
     if (!quiet) this.hud.flash(p.name || 'SWITCH', 'neutral');
   }
 
+  /**
+   * After a pass you control nobody: the camera follows the ball and the
+   * receiver goes to meet it on his own. You take over once he's got it.
+   */
+  startBallCam(target) {
+    this.switchControl(target, true);       // the passer goes back to AI
+    this.ballCam = { to: target, t: 0 };
+    target.setMarkerVisible(false);
+  }
+
+  _endBallCam() {
+    if (!this.ballCam) return;
+    this.ballCam = null;
+    if (this.user) this.user.setMarkerVisible(true);
+  }
+
+  /**
+   * A cross to a teammate in the box: as it drops he attacks it in the air —
+   * volley, side volley or bicycle kick depending on height and angle — and
+   * buries it in the corner.
+   */
+  _crossFinish(dt) {
+    const ball = this.ball, ps = ball.pass, F = this.finishing;
+    if (F) {
+      F.t += dt;
+      const r = F.r;
+      r.steer(0, 0, 0);
+      if (F.t >= F.at && !F.done) {
+        F.done = true;
+        const P = CONFIG.pitch, gx = P.length / 2, hw = P.goalWidth / 2;
+        const kz = this.keeperPlayer.pos.z, bz = ball.pos.z;
+        // from a tight angle always go far post; otherwise away from the keeper
+        let side = Math.abs(bz) > 4 ? -Math.sign(bz) : Math.abs(kz) > 0.3 ? (kz > 0 ? -1 : 1) : (this.rng.chance(0.5) ? 1 : -1);
+        ball.frozen = false;
+        const maxSp = CONFIG.statMap.maxShotSpeed(r.stats.shotPower) * 1.0;
+        // try a few safe spots well inside the posts/bar until the path is clean
+        let launch = null;
+        const tries = [[side, hw - 1.0, 0.6 + this.rng.next() * 0.9], [side, hw - 1.4, 0.9], [-side, hw - 1.2, 0.8], [0, 0, 1.0]];
+        for (const [sd, zz, yy] of tries) {
+          const T = new THREE.Vector3(gx, yy, sd * zz);
+          const L = this.shooting.solve(ball.pos.clone(), T, maxSp * 0.92, 0);
+          const res = L.result;
+          if (res.onTarget && res.edgeDistance > 0.35 && this._pathClearOfPosts(res.path)) { launch = L; break; }
+          launch = launch || L;
+        }
+        launch.result.forceBeat = true;
+        const h = r.heading;
+        if (this.shooting.fire(r, launch, { kind: 'volley', power: 1, pressure: 0, dist: 12 }) === true) {
+          r.heading = r.prevHeading = h;  // keep the acrobatic body shape (fire() turns him to the shot)
+          for (const d of this.defenders) this.shooting.flight.blocked.add(d);
+          this.camRig.addShake(0.35);
+          this.audio.kick(1, 'driven');
+          this.finishing = null;
+          this.sm.change(STATES.SHOT_FLIGHT);
+          this.setTimeScale(1, 0.7);
+        }
+      }
+      return;
+    }
+    if (!ps || !ps.finish || ball.owner || !ps.to) return;
+    const r = ps.to;
+    const hd = Math.hypot(ball.pos.x - r.pos.x, ball.pos.z - r.pos.z);
+    const dropping = ball.vel.y < 0 && ball.pos.y < 2.5 && ball.pos.y > 0.3;
+    if (!(dropping && hd < 2.6) && !(ball.pos.y <= 0.3 && hd < 3.0)) return;
+    // pick the finish from the ball's height and the angle it arrives at
+    const gx = CONFIG.pitch.length / 2;
+    const toGoal = Math.atan2(gx - r.pos.x, 0 - r.pos.z);
+    const from = Math.atan2(-ball.vel.x, -ball.vel.z);           // direction the ball is coming from
+    const ang = Math.abs(Math.atan2(Math.sin(from - toGoal), Math.cos(from - toGoal)));
+    // decide once per cross whether he goes overhead; otherwise wait for it to drop a bit
+    if (ps.overhead == null) ps.overhead = this.rng.chance(0.35);
+    if (ball.pos.y > 1.5 && !ps.overhead && hd > 0.8) return;
+    let type;
+    if (ball.pos.y > 1.5) type = 'bicycle';
+    else if (ball.pos.y > 0.75 && ang > 0.8) type = 'sidevolley';
+    else type = 'volley';
+    // body shape: facing goal for a volley, side-on for a side volley, back to goal for a bicycle
+    const sgn = Math.sign(Math.sin(from - toGoal)) || 1;
+    const heading = type === 'bicycle' ? toGoal + Math.PI : type === 'sidevolley' ? toGoal - sgn * 1.2 : toGoal;
+    this.switchControl(r, true);
+    this._endBallCam();
+    r.place(ball.pos.x - Math.sin(heading) * 0.55, ball.pos.z - Math.cos(heading) * 0.55, heading);
+    r.savePrev();
+    const dur = type === 'bicycle' ? 1.3 : 0.8;
+    r.playAction(type, dur, { kickLeg: 1 });
+    ball.vel.set(0, 0, 0);
+    ball.frozen = true;                      // hangs for the strike
+    this.finishing = { r, t: 0, at: dur * 0.4, type, done: false };
+    this.setTimeScale(0.3, 0.08);            // slow-mo on the contact
+    this.hud.flash(type === 'bicycle' ? 'BICYCLE KICK!' : type === 'sidevolley' ? 'SIDE VOLLEY!' : 'VOLLEY!', 'good');
+    this.audio.anticipate();
+  }
+
+  /** Does a predicted shot path stay clear of the posts and crossbar? */
+  _pathClearOfPosts(path) {
+    if (!path) return true;
+    const P = CONFIG.pitch, gx = P.length / 2, hw = P.goalWidth / 2, H = P.goalHeight;
+    for (const pt of path) {
+      if (pt.x < gx - 3 || pt.x > gx + 0.3) continue;
+      for (const pz of [-hw, hw]) if (Math.hypot(pt.x - gx, pt.z - pz) < 0.45 && pt.y < H + 0.2) return false;
+      if (Math.abs(pt.x - gx) < 0.4 && Math.abs(pt.y - H) < 0.35 && Math.abs(pt.z) < hw + 0.2) return false;
+    }
+    return true;
+  }
+
   /** Whenever a home outfield player has the ball, you are that player. */
   syncControl(quiet = true) {
     const o = this.ball.owner;
@@ -235,11 +350,20 @@ class Game {
     const L = CONFIG.pitch.length / 2, P = CONFIG.pitch;
     const x = this.ball.pos.x, z = this.ball.pos.z;
     const penalty = x > L - P.penaltyDepth && Math.abs(z) < P.penaltyWidth / 2;
-    this.setPiece = { phase: 'down', t: CONFIG.setPiece.downTime, penalty, victim, spot: { x, z } };
+    // the referee's decision: mostly yellow, sometimes straight red (more likely from behind), 2nd yellow = red
+    const match = this.moments.match;
+    const behind = (by.pos.x - victim.pos.x) * Math.sin(victim.heading) + (by.pos.z - victim.pos.z) * Math.cos(victim.heading) < 0;
+    let card = this.rng.next() < (behind ? 0.28 : 0.1) ? 'R' : 'Y';
+    if (card === 'Y' && match.cards[by.id] === 'Y') card = 'R2';
+    victim.stayDown = true;
+    this.setPiece = { phase: 'down', t: CONFIG.setPiece.downTime, penalty, victim, offender: by, card, spot: { x, z } };
     this.skills.reset();
     this.passing.reset();
     by.stumble = 0;
     this.hud.showBig(penalty ? 'PENALTY!' : 'FOUL — FREE KICK', 'good');
+    // play's stopped: no buttons or joystick while the referee deals with it
+    this.hud.setButtonMode('none');
+    this.input.joystick.setVisible(false);
     this.audio.whistle(false);
     this.audio.boo();
     this.camRig.addShake(0.08);
@@ -296,13 +420,104 @@ class Game {
     this.hud.flash(sp.penalty ? 'PENALTY — TIME IT!' : sp.shoot ? 'FREE KICK — HOLD SHOOT' : 'FREE KICK', 'good');
   }
 
+  /** Move some players during a stoppage (savePrev already done). */
+  _stepPlayers(dt, list) {
+    for (const p of list) p.integrate(dt, false);
+  }
+
+  /** The referee jogs over to the foul, then shows the card. */
+  _refToFoul(dt) {
+    const sp = this.setPiece, r = this.ref, o = sp.offender;
+    r.savePrev();
+    const tx = o.pos.x + (sp.victim.pos.x - o.pos.x) * 0.5 - 2.2, tz = o.pos.z + (o.pos.z > r.pos.z ? -2.2 : 2.2);
+    const d = r.moveTo(tx, tz, r.runSpeed * 0.9, 1.2);
+    r.faceTowards(o.pos.x, o.pos.z);
+    r.integrate(dt, false);
+    // the offender stands there waiting, facing the ref
+    o.steer(0, 0, 0); o.faceTowards(r.pos.x, r.pos.z);
+    if (d < 0.6 || sp.t <= 0) {
+      sp.phase = 'card'; sp.t = 2.2; sp.cardT = 0;
+      r.steer(0, 0, 0);
+      r.playAction('card', 2.0, { kickLeg: 1 });
+      const red = sp.card !== 'Y';
+      this.cardMesh.material.color.set(red ? 0xe0161f : 0xffd400);
+      const num = o.look.number;
+      this.hud.showBig(red ? 'RED CARD' : 'YELLOW CARD', red ? 'bad' : 'neutral', 1.8);
+      this.hud.flash(`${TEAMS.away.short} #${num}${sp.card === 'R2' ? ' — SECOND YELLOW' : ''}${red ? ' — SENT OFF!' : ' — BOOKED'}`, red ? 'good' : 'neutral');
+      this.audio.whistle(false);
+      this.audio.boo();
+      if (red) this.audio.cheer(0.9);
+      this.moments.match.cards[o.id] = red ? 'R' : 'Y';
+      this.moments.addRating(red ? `${TEAMS.away.short} #${num} sent off` : `${TEAMS.away.short} #${num} booked`, 0);
+      this.camRig.setMode('celebrate', { target: r.pos, angle: 0.5 });
+    }
+  }
+
+  _cardPhase(dt) {
+    const sp = this.setPiece, r = this.ref;
+    sp.cardT += dt;
+    r.savePrev(); r.steer(0, 0, 0); r.faceTowards(sp.offender.pos.x, sp.offender.pos.z); r.integrate(dt, false);
+    this.cardMesh.visible = sp.cardT > 0.25 && sp.cardT < 2.0;
+    // a red card: he trudges off toward the touchline while it's shown
+    if (sp.card !== 'Y' && sp.cardT > 0.9) {
+      const o = sp.offender, W = CONFIG.pitch.width / 2;
+      o.savePrev();
+      o.moveTo(o.pos.x, Math.sign(o.pos.z || 1) * (W + 3), o.jogSpeed * 0.7, 1);
+      o.integrate(dt, false);
+    }
+  }
+
+  /** Sent off: gone now and for the rest of the match. */
+  _sendOff(d) {
+    this.moments.match.sentOff.add(d.id);
+    d.setVisible(false);
+    d.pos.set(0, 0, 80);
+    this.defenders = this.defenders.filter((p) => p !== d);
+    this.players = this.players.filter((p) => p !== d);
+  }
+
+  /** Card held up in the referee's raised right hand. */
+  _cardFrame() {
+    if (!this.cardMesh.visible) return;
+    const r = this.ref, h = r.heading;
+    // right side of the body, at full arm stretch
+    this.cardMesh.position.set(r.pos.x - Math.cos(h) * 0.2, 2.42, r.pos.z + Math.sin(h) * 0.2);
+    this.cardMesh.lookAt(this.camRig.camera.position);
+  }
+
+  /** The referee keeps up with play from a sensible distance, out of the way. */
+  _refFollow(dt) {
+    const r = this.ref, b = this.ball.pos;
+    r.savePrev();
+    const W = CONFIG.pitch.width / 2;
+    const side = b.z > 0 ? -1 : 1;
+    const tx = b.x - 9, tz = Math.max(-W + 3, Math.min(W - 3, b.z + side * 9));
+    const d = Math.hypot(tx - r.pos.x, tz - r.pos.z);
+    r.moveTo(tx, tz, d > 10 ? r.runSpeed : d > 4 ? r.jogSpeed : r.jogSpeed * 0.5, 3);
+    r.faceTowards(b.x, b.z);
+    r.integrate(dt, false);
+  }
+
   _setPieceUpdate(dt) {
     const sp = this.setPiece;
     for (const p of this.players) p.savePrev();
     this.ball.savePrev();
     sp.t -= dt;
+    if (sp.phase === 'ref') { this._refToFoul(dt); return; }
+    if (sp.phase === 'card') { this._cardPhase(dt); if (sp.t > 0) return; }
+    if (sp.phase === 'getup') { this._stepPlayers(dt, []); if (sp.t > 0) return; }
     if (sp.t > 0) return;
-    if (sp.phase === 'down') { this._setUpFreeKick(); return; }
+    if (sp.phase === 'down') { sp.phase = 'ref'; sp.t = 4; return; }
+    if (sp.phase === 'card') {
+      // the fouled player gets up, then it's the free kick / penalty
+      sp.phase = 'getup'; sp.t = 1.5;
+      sp.victim.stayDown = false;
+      this.cardMesh.visible = false;
+      if (sp.card !== 'Y') this._sendOff(sp.offender);
+      this.camRig.setMode('follow');
+      return;
+    }
+    if (sp.phase === 'getup') { this._setUpFreeKick(); return; }
     sp.phase = 'ready'; // everyone holds until you take it
     if (!sp.penalty) {
       sp.fk = 'choose';
@@ -495,10 +710,15 @@ class Game {
 
   activate(nMates, nDefs) {
     this.teammatePool.forEach((p, i) => p.setVisible(i < nMates));
-    this.defenderPool.forEach((p, i) => p.setVisible(i < nDefs));
+    // sent-off defenders are gone for the rest of the match → one fewer each time
+    const off = (this.moments && this.moments.match.sentOff) || new Set();
+    const avail = this.defenderPool.filter((p) => !off.has(p.id));
+    const n = Math.max(1, Math.min(avail.length, nDefs - off.size));
+    this.defenderPool.forEach((p) => p.setVisible(false));
     this.teammates = this.teammatePool.slice(0, nMates);
     for (const p of this.teammates) p.setControlled(false);
-    this.defenders = this.defenderPool.slice(0, nDefs);
+    this.defenders = avail.slice(0, n);
+    for (const p of this.defenders) p.setVisible(true);
     this.players = [this.user, ...this.teammates, ...this.defenders, this.keeperPlayer];
   }
 
@@ -516,6 +736,12 @@ class Game {
     this.ball.events.length = 0;
     this.keeper.reset();
     this.lastPasser = null;
+    this.ballCam = null;
+    this.finishing = null;
+    if (this.ball) this.ball.frozen = false;
+    if (this.cardMesh) this.cardMesh.visible = false;
+    for (const p of [...this.teammatePool, this.career]) p.stayDown = false;
+    if (this.ref) { const b = this.ball.pos; this.ref.place(b.x - 9, b.z > 0 ? -9 : 9, Math.PI / 2); }
     for (const p of this.extras) p.setVisible(false);
     this.extras = [];
     this.setPiece = null;
@@ -533,7 +759,7 @@ class Game {
     this.syncControl(true);
     this.teammateAI.reset();
     this.defenderAI.reset();
-    this.replay.reset(this.players);
+    this.replay.reset([...this.players, this.ref, ...this.extraPool]);
     for (const p of this.players) { p.savePrev(); p.anim.action = null; }
     this.ball.savePrev();
     this.camRig.setMode('follow');
@@ -594,7 +820,9 @@ class Game {
     });
     ev.on('pass', ({ from }) => { if (from === this.user) this.effects.puff(this.ball.pos.x, this.ball.pos.z); });
     // FC-style switching: whichever of your teammates gets the ball, you now control them
-    ev.on('gain', ({ player }) => { if (player.team === 'home' && !player.isKeeper) this.switchControl(player); });
+    ev.on('gain', ({ player }) => {
+      if (player.team === 'home' && !player.isKeeper) { this._endBallCam(); this.switchControl(player, true); }
+    });
     ev.on('foul', (e) => this.onFoul(e));
     ev.on('beatDefender', ({ by, skill }) => {
       if (by === this.user && !skill) this.hud.flash('SKILLED!', 'good');
@@ -611,6 +839,12 @@ class Game {
 
     if (mode === 'play') {
       this.syncControl(false);
+      this._crossFinish(dt);
+      if (this.ballCam) {
+        this.ballCam.t += dt;
+        const ps = this.ball.pass;
+        if (this.ball.owner || !ps || ps.to !== this.ballCam.to || this.ballCam.t > 4) this._endBallCam();
+      }
       this.userControl(dt);
       this.skills.update(dt);
       this.teammateAI.update(dt);
@@ -631,6 +865,7 @@ class Game {
     }
     ball.update(dt);
     if (mode === 'play') { this.possession.update(dt); this.syncControl(false); }
+    if (mode === 'play') this._refFollow(dt); else { this.ref.savePrev(); this.ref.steer(0, 0, 0); this.ref.integrate(dt, false); }
     for (const e of ball.events) {
       if (e.type === 'net') {
         this.pitch.nets[Math.sign(e.x) || 1].hit(e.x, e.y, e.z, e.v);
@@ -644,7 +879,13 @@ class Game {
 
   userControl(dt) {
     const u = this.user, ball = this.ball, D = CONFIG.dribble, M = CONFIG.statMap;
+    if (this.finishing) { u.steer(0, 0, 0); this.input.consumeGesture('pass'); this.input.consumeGesture('through'); this.input.consumeGesture('shoot'); return; }
     const mv = this.input.poll();
+    if (this.ballCam || this.finishing) {
+      // nobody under your control while the pass travels: the receiver goes to meet it
+      mv.x = 0; mv.y = 0; mv.mag = 0;
+      this.input.consumeGesture('pass'); this.input.consumeGesture('through'); this.input.consumeGesture('shoot');
+    }
     const f = this.camRig.forward, rt = this.camRig.right;
     let wx = f.x * mv.y + rt.x * mv.x;
     let wz = f.z * mv.y + rt.z * mv.x;
@@ -1022,7 +1263,8 @@ class Game {
           if (goal && sm.time > 1.3 && g.camRig.mode === 'goalview') g.camRig.setMode('celebrate', { target: g.user.pos });
           if (goal && sm.time > CONFIG.juice.celebrateTime * (g.celebration && g.celebration.big ? 1.6 : 1) && g.pendingResult) {
             const J = CONFIG.juice;
-            if (g.replay.start(g.goalSimTime - J.replaySeconds, g.goalSimTime + J.replayTail, J.replaySpeed)) {
+            // replay the build-up and goal in slow-mo, then the celebration
+            if (g.replay.start(g.goalSimTime - J.replaySeconds, g.simTime, J.replaySpeed, g.goalSimTime + J.replayTail)) {
               g.resultPhase = 'replay';
               g.hud.hideBig();
               g.hud.setReplay(true);
@@ -1034,8 +1276,16 @@ class Game {
             g._showCard();
           }
         } else if (g.resultPhase === 'replay') {
+          const J2 = CONFIG.juice;
           g.camRig.opts.ballPos = g.replay.ballPos;
           if (!g.replay.update(realDt)) g._endReplay();
+          else {
+            // the squad/subs only appear once the goal's gone in
+            const show = g.replay.t >= g.goalSimTime;
+            for (const p of g.extras) p.parts.root.visible = show;
+            // once it's into the celebration, follow the scorer
+            if (g.replay.t > g.goalSimTime + J2.replayTail && g.camRig.mode === 'replay') g.camRig.setMode('celebrate', { target: g.user.parts.root.position, angle: 0.6 });
+          }
         }
       },
       exit() {
@@ -1088,6 +1338,9 @@ class Game {
       if (!paused) for (const p of this.players) p.updateAnimation(scaledDt, this.ball.owner === p);
       for (const p of this.players) p.render(alpha, this.realTime);
       for (const p of this.extras) { if (!paused) p.updateAnimation(scaledDt, false); p.render(alpha, this.realTime); }
+      if (!paused) this.ref.updateAnimation(scaledDt, false);
+      this.ref.render(alpha, this.realTime);
+      this._cardFrame();
       this.ball.render(alpha);
     }
     this.pitch.update(paused ? 0 : scaledDt);

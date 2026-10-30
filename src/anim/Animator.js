@@ -47,6 +47,11 @@ const ACTIONS = {
   stepover: { hand: 'legs' }, feint: { hand: 'legs' }, croqueta: { hand: 'legs' }, spin: { hand: 'legs' },
   dragback: { hand: 'legs' }, elastico: { hand: 'legs' }, flick: { hand: 'legs' },
   point: { hand: 'armR', fadeIn: 0.1, fadeOut: 0.25 },
+  // first-time finishes off a cross + the referee showing a card
+  volley: { hand: 'full', fadeIn: 0.05, fadeOut: 0.3 },
+  sidevolley: { hand: 'full', fadeIn: 0.05, fadeOut: 0.3 },
+  bicycle: { hand: 'full', fadeIn: 0.05, fadeOut: 0.35 },
+  card: { hand: 'upper', fadeIn: 0.12, fadeOut: 0.3, clip: (an, A) => A.set.idle },
   // celebrations
   kneeslide: { hand: 'full', fadeIn: 0.12, fadeOut: 0.3 },
   airplane: { hand: 'arms', fadeIn: 0.25, fadeOut: 0.3 },
@@ -566,7 +571,8 @@ export class Animator {
     } else if (r.state === 'ground') {
       r.omega -= r.omega * 8 * dt; r.phi = Math.min(lieTarget, r.phi + r.omega * dt);
       r.groundT += dt;
-      if (r.groundT > 0.22) { r.state = 'getup'; r.gt = 0; r.lying.set(out); }
+      // a fouled player stays down until the referee has dealt with it
+      if (r.groundT > 0.22 && !this.p.stayDown) { r.state = 'getup'; r.gt = 0; r.lying.set(out); }
     } else if (r.state === 'getup') {
       r.gt += dt * 2.6;
       if (r.gt >= r.getup.dur * 0.97) { this.rag = null; this.p.anim.action === 'fall' && (this.p.anim.action = null); return; }

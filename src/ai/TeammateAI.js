@@ -106,6 +106,7 @@ export class TeammateAI {
   _offBall(m, dt, line) {
     const g = this.game, ball = g.ball, T = CONFIG.teammate;
     const ai = m.ai;
+    if (!ai.target) { ai.target = new THREE.Vector3(m.pos.x, 0, m.pos.z); ai.retarget = 0; }
     const carrier = ball.owner || g.user;
     ai.retarget -= dt;
     if (ai.retarget <= 0) {

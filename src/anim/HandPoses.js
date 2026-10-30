@@ -367,6 +367,49 @@ export function handPose(name, k, T, anim, out) {
       T.shLz = 0.5; T.shRz = -0.5;
       break;
     }
+    // ---- first-time finishes from a cross (contact at k ≈ 0.4)
+    case 'volley': {
+      // lean back, kicking leg swings through at hip height, arms out
+      const back = k < 0.35, f = Math.min(1, (k - 0.35) / 0.25);
+      T['hip' + kick] = back ? ease(0.2, -0.7, k / 0.35) : k < 0.75 ? ease(-0.7, 1.55, f) : ease(1.55, 0.3, (k - 0.75) / 0.25);
+      T['knee' + kick] = back ? ease(0.3, 1.5, k / 0.35) : ease(1.5, 0.08, Math.min(1, (k - 0.35) / 0.18));
+      T['hip' + other] = -0.15; T['knee' + other] = 0.4;
+      T.lean = back ? 0 : -0.45; T.bodyY = k > 0.3 && k < 0.7 ? 0.12 : 0;
+      T.shLz = 1.2; T.shRz = -1.2; T.shL = 0.5; T.shR = 0.5; T.headPitch = -0.2;
+      break;
+    }
+    case 'sidevolley': {
+      // body tips right over sideways, the leg whips round horizontally
+      const sg = kick === 'R' ? 1 : -1;
+      const tilt = Math.sin(Math.min(1, k / 0.6) * Math.PI * 0.5) * (k > 0.75 ? 1 - (k - 0.75) / 0.25 : 1);
+      T.bodyRoll = -sg * 1.0 * tilt; T.bodyY = 0.2 * tilt;
+      T['hip' + kick] = k < 0.35 ? ease(0.3, -0.4, k / 0.35) : ease(-0.4, 1.6, Math.min(1, (k - 0.35) / 0.2));
+      T['knee' + kick] = k < 0.35 ? 1.3 : ease(1.3, 0.1, Math.min(1, (k - 0.35) / 0.15));
+      T['hip' + other] = 0.5 * tilt; T['knee' + other] = 0.9 * tilt;
+      T.twist = sg * 0.6 * tilt; T.shLz = 1.4; T.shRz = -1.4; T.shL = 0.3; T.shR = 0.3; T.headPitch = -0.3 * tilt;
+      break;
+    }
+    case 'bicycle': {
+      // jump, fall back, scissor the legs over the head, land on your back
+      const up = Math.min(1, k / 0.45);
+      const land = Math.max(0, (k - 0.6) / 0.4);
+      T.bodyPitch = -1.9 * Math.sin(up * Math.PI * 0.5) + land * 0.45;
+      T.bodyY = Math.sin(Math.min(1, k / 0.55) * Math.PI) * 0.75 - land * 0.55;
+      T['hip' + other] = 1.6 * up; T['knee' + other] = 1.4 * up;                 // the leg that swings up first
+      T['hip' + kick] = k < 0.38 ? ease(0.2, 0.8, k / 0.38) : ease(0.8, 2.7, Math.min(1, (k - 0.38) / 0.14)); // the strike over the head
+      T['knee' + kick] = k < 0.38 ? 1.2 : ease(1.2, 0.1, Math.min(1, (k - 0.38) / 0.12));
+      T.shL = T.shR = -0.4 - up * 0.6; T.shLz = 1.0; T.shRz = -1.0; T.elL = T.elR = 0.3; T.headPitch = 0.4 * up;
+      break;
+    }
+    // ---- referee
+    case 'card': {
+      // right arm straight up holding the card, left arm pointing at the spot
+      const v = Math.min(1, k / 0.15) * (k > 0.88 ? (1 - k) / 0.12 : 1);
+      T.shR = 3.05 * v; T.shRz = -0.12 * v; T.elR = 0.02;
+      T.shL = 0.9 * v; T.shLz = 0.35 * v; T.elL = 0.05;
+      T.headPitch = -0.1 * v; T.lean = -0.04 * v;
+      break;
+    }
     case 'point': {
       T.shR = 2.5; T.shRz = -0.3; T.elR = 0.1;
       break;

@@ -301,8 +301,11 @@ export class HUD {
     this._flashT = setTimeout(() => f.classList.remove('show'), 1400);
   }
 
-  showBig(text, kind) {
+  showBig(text, kind, hold = 1.2) {
     const b = this.big;
+    // big banners clear quickly so they don't sit over the play / celebration
+    clearTimeout(this._bigT);
+    if (hold > 0) this._bigT = setTimeout(() => this.hideBig(), hold * 1000);
     b.innerHTML = text.split('').map((c, i) => `<span style="animation-delay:${i * 40}ms">${c === ' ' ? '&nbsp;' : c}</span>`).join('');
     b.className = `bigbanner ${kind}`;
     void b.offsetWidth;

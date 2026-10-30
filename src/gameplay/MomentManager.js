@@ -29,6 +29,8 @@ export class MomentManager {
     this.game = game;
     this.match = {
       minute: 0, homeGoals: 0, awayGoals: 0, shots: 0, goals: 0,
+      cards: {},            // defender id → 'Y' | 'R'
+      sentOff: new Set(),   // defender ids sent off (gone for the rest of the match)
       moments: [], // { scenario, outcome, rating }
     };
     this.momentNo = 0;
@@ -231,6 +233,7 @@ export class MomentManager {
     });
     defs.forEach((s, i) => {
       const d = g.defenders[i];
+      if (!d) return; // a defender's been sent off — they play with one fewer
       d.place(clamp(s.x, -L + 3, L - 3), clamp(s.z, -W + 1.5, W - 1.5), -Math.PI / 2);
       d.ai.slot = { row: s.role, z: s.z };
     });

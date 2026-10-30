@@ -100,7 +100,7 @@ export const CONFIG = {
     sharpTurnBrake: 0.6,       // braking strength in sharp turns
     headingLerp: 12,           // visual body turn smoothing
     labelHeight: 2.25,
-    sprintBoost: 1.08,         // extra pace when holding SPRINT
+    sprintBoost: 1.2,         // extra pace when holding SPRINT
     cutAngle: 0.95,            // stick change (rad) on the ball that triggers a quick cut
     cutSnap: 0.55,              // fraction of the turn done instantly in a cut
     cutKeepSpeed: 0.8,         // speed kept through the cut
@@ -157,7 +157,7 @@ export const CONFIG = {
     trapDamping: 10,
     touchReach: 0.62,          // foot has to be this close to the ball to touch it
     touchAhead: 0.42,
-    sprintCarryExtra: 0.16,    // the ball runs this much further ahead when sprinting
+    sprintCarryExtra: 0.5,    // the ball runs this much further ahead when sprinting
     touchWindow: 0.08,         // a stride touch waits until the foot is this close (s) to planting          // take the next touch once the ball is less than this far in front           // ball damping when stopping with the ball
     loseDistance: 4.5,         // safety only — the ball normally never leaves the possession circle
     carryOffset: 0.5,          // possession circle: how far ahead of the body the ball sits (m)

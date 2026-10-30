@@ -52,7 +52,8 @@ export class CameraRig {
       const focus = this._focus || (this._focus = new THREE.Vector3());
       // follow the user but keep the ball in frame when a teammate has it
       focus.copy(u.pos);
-      if (game.ball.owner && game.ball.owner !== u) focus.lerp(game.ball.pos, 0.35);
+      if (game.ballCam) focus.copy(game.ball.pos);           // a pass is travelling: follow the ball
+      else if (game.ball.owner && game.ball.owner !== u) focus.lerp(game.ball.pos, 0.35);
       focus.y = 0;
       // yaw: mostly down the pitch, biased toward the goal
       const toGoal = Math.atan2(0 - focus.z, gx - focus.x);

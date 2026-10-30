@@ -307,6 +307,13 @@ export class Player {
     return sp;
   }
 
+  /** Show/hide the controlled-player markers without changing who's controlled. */
+  setMarkerVisible(on) {
+    if (!this.ring) return;
+    this.ring.visible = on; this.label.visible = on;
+    this.badge.visible = on && !!this.isCareer;
+  }
+
   /** Hand control to / take control from this player. */
   setControlled(on) {
     if (on && !this._privateMats) return;
@@ -532,6 +539,7 @@ export class Player {
     an.time += dt;
     if (an.action) {
       an.t += dt;
+      if (this.stayDown && an.action === 'fall') an.t = Math.min(an.t, an.dur * 0.5);
       if (an.t >= an.dur) {
         if (an.hold) an.t = an.dur;            // freeze on the last frame (e.g. kneeling after a knee slide)
         else if (an.loop) an.t = 0;

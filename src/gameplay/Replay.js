@@ -19,7 +19,8 @@ export class Replay {
     this.players = players.slice();
     this.stride = this.players.length * Player.RECORD_SIZE + 7;
     // build-up + tail + the live celebration recorded before playback starts
-    const seconds = CONFIG.juice.replaySeconds + CONFIG.juice.replayTail + 3.5;
+    // build-up + the whole celebration (a big late-goal one runs longest)
+    const seconds = CONFIG.juice.replaySeconds + CONFIG.juice.celebrateTime * 1.6 + 2;
     const cap = Math.ceil(seconds * 62);
     if (!this.buf || this.cap !== cap || this.buf.length !== cap * this.stride) {
       this.cap = cap;
@@ -55,7 +56,8 @@ export class Replay {
   }
 
   /** Start playback of sim-time range [from, to] (clamped to what was recorded). */
-  start(from, to, speed) {
+  start(from, to, speed, slowUntil = Infinity) {
+    this.slowUntil = slowUntil;
     if (this.frames < 4) return false;
     const newest = this.times[this._idx(this.frames - 1)];
     const oldest = this.times[this._idx(0)];
@@ -77,7 +79,8 @@ export class Replay {
   update(realDt) {
     if (!this.playing) return false;
     // ease in/out of the slowest section around the end
-    this.t += realDt * this.speed;
+    // slow-motion for the goal itself, then the celebration at normal speed
+    this.t += realDt * (this.t < this.slowUntil ? this.speed : 1);
     if (this.t >= this.t1) { this.t = this.t1; this._apply(); this.playing = false; return false; }
     this._apply();
     return true;

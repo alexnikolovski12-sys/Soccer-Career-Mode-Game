@@ -315,7 +315,13 @@ export class Passing {
       ball.kick(vx, vy, vz, { type: 'pass', by: passer, ignoreTime: 0.35, time: g.simTime });
       ball.pass = { from: passer, to: target, aim: new THREE.Vector3(aim.x, 0, aim.z), t0: g.simTime, kind };
       if (target) target.ai.receiving = true;
-      if (target && passer.isUser) g.switchControl(target, true); // you're straight onto the receiver
+      if (target && passer.isUser) {
+        // a cross to someone in the box → he'll finish it first time in the air
+        const L = CONFIG.pitch.length / 2, Pi = CONFIG.pitch;
+        const inBox = (q) => q.x > L - Pi.penaltyDepth && Math.abs(q.z) < Pi.penaltyWidth / 2;
+        if (inBox(target.pos) || inBox(aim)) ball.pass.finish = true;
+        g.startBallCam(target);
+      }
       g.audio.kick(0.55, 'pass');
       g.effects.puff(ball.pos.x, ball.pos.z, 0.8);
       g.events.emit('pass', { from: passer, to: target, aim, speed: Math.hypot(vx, vy, vz), kind });
@@ -336,7 +342,7 @@ export class Passing {
     ball.kick(fx * v0, 0, fz * v0, { type: 'pass', by: passer, ignoreTime: 0.3, time: g.simTime });
     ball.pass = { from: passer, to: target, aim: aim.clone(), t0: g.simTime, kind };
     if (target) target.ai.receiving = true;
-    if (target && passer.isUser) g.switchControl(target, true); // you're straight onto the receiver
+    if (target && passer.isUser) g.startBallCam(target);
     g.audio.kick(v0 / 30, 'pass');
     g.effects.puff(ball.pos.x, ball.pos.z, 0.8);
     g.events.emit('pass', { from: passer, to: target, aim, speed: v0 });

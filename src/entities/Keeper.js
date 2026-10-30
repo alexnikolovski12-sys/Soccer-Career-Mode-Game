@@ -122,6 +122,7 @@ export class Keeper {
   _tryClaim(dt) {
     const g = this.game, ball = g.ball, p = this.p, K = CONFIG.keeper;
     if (!ball.canTouch(p) || ball.inGoal) return;
+    if (ball.pass && ball.pass.finish) return; // a cross being met first time in the box
     const d = dist2D(p.pos, ball.pos);
     const inBox = ball.pos.x > this.goalX - CONFIG.pitch.penaltyDepth &&
       Math.abs(ball.pos.z) < CONFIG.pitch.penaltyWidth / 2;

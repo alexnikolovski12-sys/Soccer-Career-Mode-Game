@@ -163,7 +163,8 @@ export class Possession {
       ball.pos.x += (fx - ball.pos.x) * k * 0.5;
       ball.pos.z += (fz - ball.pos.z) * k * 0.5;
     }
-    this._leash(o, D.circleMax);
+    // sprinting = quicker, but the ball is further from your feet (easier to nick)
+    this._leash(o, D.circleMax + (o.sprinting ? D.sprintCarryExtra + 0.15 : 0));
   }
 
   /** Hard limit: the ball can never be further than `max` from the carrier. */
@@ -221,6 +222,8 @@ export class Possession {
     for (const p of g.players) {
       if (p.isKeeper || !ball.canTouch(p) || p.stumble > 0.25) continue;
       if (p.anim.action === 'fall') continue;
+      // a cross being met first time in the box: he volleys it rather than controlling it
+      if (ball.pass && ball.pass.finish && ball.pass.to === p && ball.pos.y > 0.3) continue;
       // passes are safe: an opponent can't cut out a pass on its way to a teammate
       if (ball.pass && ball.pass.to && p.team !== ball.pass.to.team) continue;
       const d = dist2D(p.pos, ball.pos);
