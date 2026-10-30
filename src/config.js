@@ -100,6 +100,12 @@ export const CONFIG = {
     strideLength: 1.9,         // metres per full run cycle (scaled by speed)
     labelHeight: 2.25,
     sprintBoost: 1.08,         // extra pace when holding SPRINT
+    cutAngle: 0.95,            // stick change (rad) on the ball that triggers a quick cut
+    cutSnap: 0.8,              // fraction of the turn done instantly in a cut
+    cutKeepSpeed: 0.8,         // speed kept through the cut
+    cutBurstTime: 0.4,         // seconds of extra acceleration after it
+    cutBurstAccel: 2.2,
+    cutCooldown: 0.28,
   },
 
   // --------------------------------------------------------------- automatic skill moves
@@ -121,6 +127,14 @@ export const CONFIG = {
     range: 3.4,                // defenders this close can be wrong-footed
     base: 0.62,                // base chance they buy it
     stumble: 0.85,             // how long they're stuck
+  },
+
+  // --------------------------------------------------------------- free kick shot (aim line + power bar)
+  freeKick: {
+    aimPeriod: 2.0,            // seconds for the aim line to sweep across the goal and back
+    powerPeriod: 1.3,          // seconds for the power marker to go up and back down
+    zoneLo: 0.5, zoneHi: 0.74, // the green zone
+    curve: 2.0,
   },
 
   // --------------------------------------------------------------- free kicks / penalties
@@ -181,9 +195,12 @@ export const CONFIG = {
 
   // --------------------------------------------------------------- passing
   pass: {
-    arriveSpeed: 5.5,          // desired speed when reaching the receiver
-    minSpeed: 7, maxSpeed: 26,
-    windup: 0.17,
+    arriveSpeed: 10,           // desired speed when reaching the receiver (zippy)
+    minSpeed: 11, maxSpeed: 32,
+    windup: 0.07,              // tap → ball's gone almost instantly
+    assist: 0.12,              // multiplier on pass error (fully assisted ≈ dead accurate)
+    loftHoldMin: 0.18,         // hold PASS at least this long for a lofted ball…
+    loftHoldFull: 0.45,        // …and this long for the highest, furthest one
     throughMin: 5,             // through ball: metres in front of the runner…
     throughMax: 11,            // …at most              // seconds between button and kick (marker shows)
     angleWeight: 2.2,          // importance of facing angle

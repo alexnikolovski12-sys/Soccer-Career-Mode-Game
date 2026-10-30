@@ -168,7 +168,7 @@ html, body {
 .act .tip.left  { left: calc(var(--u) * -34); top: 50%; transform: translate(-50%, -50%) rotate(-90deg); }
 .act .tip.right { right: calc(var(--u) * -36); top: 50%; transform: translate(50%, -50%) rotate(90deg); }
 .act.shoot.ready .ring { filter: drop-shadow(0 0 calc(var(--u) * 6) rgba(255,140,60,0.8)); }
-.act.shoot .meter {
+.act.shoot .meter, .act.pass .meter {
   display: block; position: absolute; inset: calc(var(--u) * -6); border-radius: 50%; pointer-events: none;
   --charge: 0%;
   background: conic-gradient(#fff var(--charge), transparent 0);
@@ -176,7 +176,43 @@ html, body {
           mask: radial-gradient(closest-side, transparent 88%, #000 90%, #000 99%, transparent 100%);
   opacity: 0; transition: opacity 0.1s;
 }
-.act.shoot.charging .meter { opacity: 1; }
+.act.shoot.charging .meter, .act.pass.charging .meter { opacity: 1; }
+
+/* ----------------------------------------------------------- button modes */
+.pad.mode-shoot .act:not(.shoot) { display: none; }
+.pad.mode-none { display: none; }
+
+/* ----------------------------------------------------------- free kick */
+.fk { position: absolute; inset: 0; display: none; pointer-events: none; }
+.fk.show { display: block; }
+.fk-choose { position: absolute; left: 50%; bottom: calc(var(--sab) + 22px); transform: translateX(-50%); display: none; gap: 18px; pointer-events: auto; }
+.fk.choose .fk-choose { display: flex; }
+.fk-btn {
+  width: calc(var(--u) * 150); height: calc(var(--u) * 64); border-radius: 999px; border: 0;
+  font-family: inherit; font-weight: 800; font-size: calc(var(--u) * 24); letter-spacing: 0.06em; color: #fff;
+  background: radial-gradient(circle at 50% 30%, rgba(46,52,60,0.95), rgba(14,17,22,0.95));
+  box-shadow: 0 0 0 calc(var(--u) * 5) var(--c), 0 8px 20px rgba(0,0,0,0.5);
+}
+.fk-pass { --c: #3aa0ff; } .fk-shoot { --c: #ff8a3a; }
+.fk-btn:active { transform: scale(0.95); }
+.fk-tap { position: absolute; inset: 0; display: none; pointer-events: auto; }
+.fk.aim .fk-tap, .fk.power .fk-tap { display: block; }
+.fk-power {
+  position: absolute; right: calc(var(--sar) + 28px); top: 50%; transform: translateY(-50%);
+  width: calc(var(--u) * 30); height: calc(var(--u) * 210); border-radius: 999px; display: none;
+  background: linear-gradient(0deg, #2b7bff 0%, #2b7bff var(--lo), #3ddc6c var(--lo), #3ddc6c var(--hi), #ff4b4b var(--hi), #ff4b4b 100%);
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.55), 0 8px 20px rgba(0,0,0,0.5);
+}
+.fk.power .fk-power { display: block; }
+.fk-mark {
+  position: absolute; left: -10px; right: -10px; height: 6px; bottom: var(--v); transform: translateY(50%);
+  background: #fff; border-radius: 3px; box-shadow: 0 0 10px #fff;
+}
+.fk-power span { position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); font-weight: 800; font-size: calc(var(--u) * 13); letter-spacing: 0.08em; }
+.fk-hint {
+  position: absolute; left: 50%; top: calc(var(--sat) + 70px); transform: translateX(-50%); white-space: nowrap;
+  font-weight: 800; font-size: calc(var(--u) * 17); letter-spacing: 0.06em; text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+}
 
 /* ----------------------------------------------------------- penalty timing circle */
 .pen-meter { position: absolute; left: 0; top: 0; pointer-events: none; display: none; }

@@ -144,6 +144,42 @@ export class Shooting {
     return this.fire(shooter, launch, { kind: 'driven', power: 0.9, pressure: 0, dist: 11 });
   }
 
+  /**
+   * Free kick from the aim line + timed power bar.
+   * power in the green zone → curls over the wall and dips under the bar;
+   * too little → into the wall; too much → over the bar.
+   */
+  freeKick(shooter, aimZ, power) {
+    const g = this.game, ball = g.ball, P = CONFIG.pitch, F = CONFIG.freeKick;
+    const gx = P.length / 2, hw = P.goalWidth / 2;
+    const start = ball.pos.clone(); start.y = Math.max(start.y, CONFIG.ball.radius);
+    const maxSp = CONFIG.statMap.maxShotSpeed(shooter.stats.shotPower) * CONFIG.shot.powerCap;
+    const sweet = power >= F.zoneLo && power <= F.zoneHi;
+    const mid = (F.zoneLo + F.zoneHi) / 2;
+    const q = sweet ? 1 - Math.abs(power - mid) / ((F.zoneHi - F.zoneLo) / 2) : 0; // 1 = dead centre of the zone
+    let y, speed, z = aimZ;
+    if (sweet) {
+      y = 1.45 + q * 0.6;
+      speed = maxSp * (0.78 + q * 0.1);
+      z += g.rng.gauss() * (1 - q) * 0.4;
+    } else if (power < F.zoneLo) {
+      y = 0.35 + power * 1.6; speed = maxSp * (0.6 + power * 0.3);
+      z += g.rng.gauss() * 0.4;
+    } else {
+      y = P.goalHeight + 0.3 + (power - F.zoneHi) * 6; speed = maxSp * 0.92;
+      z += g.rng.gauss() * 0.5;
+    }
+    z = clamp(z, -hw - 2, hw + 2);
+    // bend it back toward the middle of the goal (round the wall)
+    const curve = (z >= 0 ? 1 : -1) * F.curve;
+    const T = new THREE.Vector3(gx, y, z);
+    const launch = this.solve(start, T, speed, curve);
+    g.hud.flash(sweet ? (q > 0.6 ? 'PERFECT STRIKE!' : 'GOOD STRIKE') : power < F.zoneLo ? 'TOO SOFT' : 'TOO MUCH', sweet ? 'good' : 'bad');
+    const ok = this.fire(shooter, launch, { kind: 'finesse', power: 0.8, pressure: 0, dist: 20 });
+    if (ok && sweet && this.flight) for (const d of g.defenders) this.flight.blocked.add(d); // clears the wall
+    return ok;
+  }
+
   /** Chip: find a lob that clears the keeper and drops under the bar. */
   solveChip(start, T) {
     const yaw = Math.atan2(T.z - start.z, T.x - start.x);

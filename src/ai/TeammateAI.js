@@ -81,7 +81,9 @@ export class TeammateAI {
       m.sprinting = true;
       // get to the drop zone; once it's down, attack the ball itself
       const nearAim = Math.hypot(ball.pos.x - a.x, ball.pos.z - a.z) < 6;
-      const chase = nearAim && (ball.pass.kind === 'through' || ball.pos.y < 0.9);
+      // once the ball's slowing or has reached the spot, go and get it wherever it is
+      const slow = Math.hypot(ball.vel.x, ball.vel.z) < 7;
+      const chase = ball.pass.kind === 'through' ? (nearAim || slow) : (nearAim && ball.pos.y < 0.9);
       if (chase) m.moveTo(ball.pos.x + ball.vel.x * 0.3, ball.pos.z + ball.vel.z * 0.3, m.attrs.sprintSpeed, 0.2);
       else m.moveTo(a.x, a.z, m.attrs.sprintSpeed, 0.4);
       m.faceTowards(ball.pos.x, ball.pos.z);

@@ -70,7 +70,7 @@ export class Passing {
   }
 
   /** Choose the best receiver for `passer` in direction (dx, dz). */
-  selectTarget(passer, dx, dz, exclude = null) {
+  selectTarget(passer, dx, dz, exclude = null, idealDist = null) {
     const g = this.game;
     const P = CONFIG.pass, M = CONFIG.statMap;
     const l = Math.hypot(dx, dz) || 1;
@@ -91,7 +91,8 @@ export class Passing {
       const lane = this.laneClearance(passer.pos, lead, passer.team).clear;
       let score = 3;
       score -= P.angleWeight * (ang / cone);
-      score -= P.distWeight * Math.abs(d - P.idealDist) / P.idealDist;
+      const ideal = idealDist ?? P.idealDist;
+      score -= P.distWeight * Math.abs(d - ideal) / ideal;
       if (ang > P.maxAngle) score -= 2 * (ang - P.maxAngle);
       if (d > range) score -= (d - range) / 8;
       score -= P.laneWeight * laneAware * Math.max(0, (P.laneClear - lane) / P.laneClear);
@@ -169,9 +170,10 @@ export class Passing {
   }
 
   /** User pressed PASS / THROUGH. kind: ground | lofted | through */
-  requestUserPass(user, dirX, dirZ, kind = 'ground') {
+  requestUserPass(user, dirX, dirZ, kind = 'ground', power = 0.5) {
     if (this.pending) return;
-    let sel = this.selectTarget(user, dirX, dirZ);
+    // a harder-held lofted ball looks for someone further away
+    let sel = this.selectTarget(user, dirX, dirZ, null, kind === 'lofted' ? 12 + power * 28 : null);
     if (kind === 'through') {
       // prefer a teammate ahead of us for a through ball
       const fwd = this.selectTarget(user, dirX * 0.4 + 1, dirZ * 0.4);
@@ -190,7 +192,7 @@ export class Passing {
     const variant = this.pickVariant(user, kind, aim.x, aim.z);
     const dur = variant === 'lofted' || variant === 'chipped' ? 0.6 : variant === 'backheel' || variant === 'flick' ? 0.4 : 0.5;
     user.playAction('pass', dur, { kickLeg, variant });
-    this.pending = { passer: user, target: sel ? sel.target : null, aim: sel ? null : aim, t: CONFIG.pass.windup, kind };
+    this.pending = { passer: user, target: sel ? sel.target : null, aim: sel ? null : aim, t: CONFIG.pass.windup, kind, power };
   }
 
   /** AI pass (teammate). */
@@ -243,19 +245,20 @@ export class Passing {
     const aim = pd.target
       ? (kind === 'through' ? this.throughPoint(pd.passer, pd.target) : this.leadPoint(pd.passer, pd.target))
       : pd.aim;
-    this.execute(pd.passer, pd.target, aim, kind);
+    this.execute(pd.passer, pd.target, aim, kind, pd.power ?? 0.5);
   }
 
-  execute(passer, target, aim, kind = 'ground') {
+  execute(passer, target, aim, kind = 'ground', power = 0.5) {
     const g = this.game, ball = g.ball;
     const P = CONFIG.pass, M = CONFIG.statMap;
     const dx = aim.x - ball.pos.x, dz = aim.z - ball.pos.z;
     if (kind === 'lofted') {
       // cross / lofted ball: lands on the receiver's run
       const dist = Math.hypot(dx, dz) || 0.1;
-      const err = M.passError(passer.stats.passing) * 0.8 + this.pressureOn(passer) * 0.03;
+      const err = (M.passError(passer.stats.passing) * 0.8 + this.pressureOn(passer) * 0.03) * P.assist;
       const ax = aim.x + g.rng.gauss() * err * dist, az = aim.z + g.rng.gauss() * err * dist;
-      const elev = dist < 14 ? 0.82 : dist < 28 ? 0.62 : 0.5;
+      // more hold = higher arc
+      const elev = (dist < 14 ? 0.78 : dist < 28 ? 0.58 : 0.48) + power * 0.22;
       let [vx, vy, vz] = this.solveLoft(ball.pos, { x: ax, z: az }, elev);
       if (target) {
         // don't drop it further from the receiver than he can sprint before it lands
@@ -279,11 +282,12 @@ export class Passing {
     }
     const dist = Math.hypot(dx, dz) || 0.1;
     // pace scales with distance: arrives at a firm, controllable speed every time
-    const arrive = kind === 'through' ? P.arriveSpeed * 1.15 : P.arriveSpeed;
+    // a through ball is weighted to die into the runner's path
+    const arrive = kind === 'through' ? P.arriveSpeed * 0.45 : P.arriveSpeed;
     let v0 = this.solveGroundSpeed(dist, arrive) * M.passSpeedFactor(passer.stats.passing);
     v0 = clamp(v0, P.minSpeed, P.maxSpeed);
     const pressure = this.pressureOn(passer);
-    const sigma = M.passError(passer.stats.passing) + pressure * M.passPressureError(passer.stats.composure);
+    const sigma = (M.passError(passer.stats.passing) + pressure * M.passPressureError(passer.stats.composure)) * P.assist;
     const err = g.rng.gauss() * sigma;
     const c = Math.cos(err), s = Math.sin(err);
     const ux = dx / dist, uz = dz / dist;

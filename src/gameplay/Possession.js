@@ -61,6 +61,14 @@ export class Possession {
 
     const hx = Math.sin(o.heading), hz = Math.cos(o.heading);
     const rx = hz, rz = -hx; // right of the player
+    if (o.justCut) {
+      // quick cut: the ball goes with you off the outside of the boot
+      o.justCut = false;
+      st.turnT = 0.3;
+      st.side = o.anim.kickLeg || st.side;
+      st.push = 0.3;
+      if (o.isUser) g.audio.touch();
+    }
     // big change of direction: a proper turn — switch to the foot on the outside of it
     if (Math.abs(turnRate) > D.turnRateForCut && st.turnT <= 0 && o.speed > 0.6) {
       st.turnT = 0.45;
@@ -79,7 +87,15 @@ export class Possession {
       o.touchCooldown = Math.max(0.24, (1.25 - sprint * 0.25) / (o.speed + 1.2));
       // sometimes switch feet, otherwise keep using the same one for a run of touches
       if (g.rng.chance(D.switchFootChance)) st.side = -st.side;
-      st.push = D.touchPush + Math.min(o.speed, 9) * D.touchPushPerSpeed;
+      // every touch is a bit different: soft taps, normal touches, and the odd
+      // big knock-on when sprinting into space
+      let space = 99;
+      for (const d of g.opponentsOf(o)) if (!d.isKeeper) space = Math.min(space, dist2D(d.pos, o.pos));
+      const r = g.rng.next();
+      let mult = r < 0.25 ? 0.45 : r < 0.8 ? 1 : 1.5;
+      if (o.sprinting && space > 7 && g.rng.chance(0.35)) mult = 2.6;     // knock it on and chase
+      if (space < 2.5) mult = Math.min(mult, 0.6);                        // tight control in traffic
+      st.push = (D.touchPush + Math.min(o.speed, 9) * D.touchPushPerSpeed) * mult;
       this.kickLeg = st.side;
       if (!o.anim.action || o.anim.action === 'touch') {
         const r = g.rng.next();
@@ -102,7 +118,7 @@ export class Possession {
     const px = ball.pos.x, pz = ball.pos.z;
     ball.pos.x += (tx - ball.pos.x) * k;
     ball.pos.z += (tz - ball.pos.z) * k;
-    this._leash(o, D.circleMax);
+    this._leash(o, D.circleMax + (st.push > 0.45 ? 0.35 : 0));
     // keep ball velocity consistent with how it moved (rolling visuals, physics)
     ball.vel.x = (ball.pos.x - px) / Math.max(dt, 1e-3);
     ball.vel.z = (ball.pos.z - pz) / Math.max(dt, 1e-3);

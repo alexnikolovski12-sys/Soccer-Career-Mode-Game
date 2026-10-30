@@ -379,6 +379,8 @@ export class Player {
     const A = this.attrs;
     this.touchCooldown = Math.max(0, this.touchCooldown - dt);
     this.tackleCooldown = Math.max(0, this.tackleCooldown - dt);
+    this.cutBoost = Math.max(0, (this.cutBoost || 0) - dt);
+    this.cutCd = Math.max(0, (this.cutCd || 0) - dt);
 
     let desiredSpeed = this.moveSpeed;
     if (this.stumble > 0) {
@@ -399,7 +401,20 @@ export class Player {
 
     if (desiredSpeed > 0.01) {
       const want = Math.atan2(this.moveDir.x, this.moveDir.z);
-      const diff = angleDiff(curDir, want);
+      let diff = angleDiff(curDir, want);
+      // QUICK CUT: a sharp flick of the stick on the ball = plant the foot and
+      // snap most of the way to the new direction, then burst away
+      if (this.isUser && hasBall && this.cutCd <= 0 && curSpeed > 1.5 && Math.abs(diff) > P.cutAngle && this.stumble <= 0) {
+        const snap = diff * P.cutSnap;
+        curDir = wrapAngle(curDir + snap);
+        diff -= snap;
+        speed = curSpeed * P.cutKeepSpeed;
+        this.cutBoost = P.cutBurstTime;
+        this.cutCd = P.cutCooldown;
+        this.heading = wrapAngle(this.heading + snap * 0.8);
+        this.playAction('turn', 0.32, { variant: 'cut', side: Math.sign(snap) || 1, kickLeg: Math.sign(snap) > 0 ? -1 : 1 });
+        this.justCut = true;
+      }
       const t = clamp(curSpeed / A.sprintSpeed, 0, 1);
       let turnRate = P.turnRateStill + (P.turnRateRun - P.turnRateStill) * Math.sqrt(t);
       if (hasBall) turnRate *= A.turnControl;
@@ -407,12 +422,12 @@ export class Player {
       curDir = wrapAngle(curDir + clamp(diff, -maxTurn, maxTurn));
       // sharp turns brake the player (less with better control)
       const sharp = Math.abs(diff) - P.sharpTurnAngle;
-      if (sharp > 0 && curSpeed > 2) {
+      if (sharp > 0 && curSpeed > 2 && this.cutBoost <= 0) {
         const brake = P.sharpTurnBrake * sharp * (hasBall ? 1.6 - A.turnControl : 1);
         desiredSpeed *= Math.max(0.25, 1 - brake);
       }
     }
-    const a = desiredSpeed > speed ? A.accel : A.decel;
+    const a = desiredSpeed > speed ? A.accel * (this.cutBoost > 0 ? P.cutBurstAccel : 1) : A.decel;
     const ds = desiredSpeed - speed;
     speed += clamp(ds, -a * dt, a * dt);
     if (speed < 0.02 && desiredSpeed <= 0.01) speed = 0;
@@ -439,6 +454,44 @@ export class Player {
     Object.assign(this.anim, opts);
   }
 
+  /**
+   * Blend toward a new gait every couple of seconds (upright, hunched over the
+   * ball, arms out for balance, pumping, relaxed, driving forward) on top of the
+   * player's personal style, plus small never-repeating wobbles.
+   */
+  _gait(dt, hasBall) {
+    const G = this._g || (this._g = { t: 0, next: 0, cur: { ...this.style }, tgt: { ...this.style } });
+    G.t += dt;
+    if (G.t > G.next) {
+      G.next = G.t + 1.2 + Math.random() * 2.6;
+      const b = this.style;
+      const modes = hasBall
+        ? [
+          { arm: 0.7, elbow: 0.8, width: 0.25, lean: 0.12, bounce: 0.7, dribbleArms: 0.6, head: -0.1 },  // hunched close control
+          { arm: 0.9, elbow: 0.6, width: 0.4, lean: 0.05, bounce: 0.9, dribbleArms: 0.9, head: 0 },      // arms out, balance
+          { arm: 1.2, elbow: 1.2, width: 0.08, lean: 0.14, bounce: 1.2, dribbleArms: 0.3, head: 0.05 },  // driving at pace
+          { arm: 0.8, elbow: 1.0, width: 0.15, lean: 0.0, bounce: 0.85, dribbleArms: 0.45, head: 0.1 },  // upright, head up
+        ]
+        : [
+          { arm: 1.25, elbow: 1.3, width: 0.05, lean: 0.08, bounce: 1.1, dribbleArms: 0.3, head: 0.05 }, // pumping
+          { arm: 0.75, elbow: 0.7, width: 0.18, lean: 0.0, bounce: 0.8, dribbleArms: 0.3, head: 0.1 },   // relaxed
+          { arm: 1.0, elbow: 1.0, width: 0.1, lean: 0.05, bounce: 1.0, dribbleArms: 0.3, head: 0 },      // neutral
+          { arm: 1.1, elbow: 0.9, width: 0.22, lean: 0.1, bounce: 1.25, dribbleArms: 0.3, head: -0.05 }, // loping
+        ];
+      const m = modes[Math.floor(Math.random() * modes.length)];
+      G.tgt = {
+        arm: b.arm * m.arm, elbow: b.elbow * m.elbow, width: b.width * 0.5 + m.width, lean: b.lean + m.lean * 0.6,
+        bounce: b.bounce * m.bounce, dribbleArms: m.dribbleArms, head: b.head + m.head, cadence: b.cadence * (0.95 + Math.random() * 0.1),
+      };
+    }
+    const k = Math.min(1, dt * 1.6);
+    for (const key in G.tgt) G.cur[key] += (G.tgt[key] - G.cur[key]) * k;
+    // never-repeating little variations (two incommensurate sines)
+    const w = Math.sin(G.t * 1.7 + this.id.length) * 0.5 + Math.sin(G.t * 0.63 + 1.3) * 0.5;
+    G.cur.armAsym = w * 0.18;
+    return G.cur;
+  }
+
   /** Visual-only; dt is scaled sim time (freezes during aim, slows in slow-mo). */
   updateAnimation(dt, hasBall) {
     const an = this.anim;
@@ -448,7 +501,8 @@ export class Player {
     const speed = this.speed;
     this.renderSpeed = damp(this.renderSpeed, speed, 10, dt);
     const sp = this.renderSpeed;
-    const St = this.style;
+    // the running style keeps shifting between "gaits" so it never looks canned
+    const St = this._gait(dt, hasBall);
     // dribbling = shorter, choppier strides; sprinting = long strides
     const stride = CONFIG.player.strideLength * (0.75 + Math.min(sp, 9) / 18) * (hasBall ? 0.78 : 1) / St.cadence;
     an.phase += (sp / stride) * Math.PI * 2 * dt;
@@ -470,8 +524,8 @@ export class Player {
     T.kneeR = 0.12 + Math.max(0, c) * (0.2 + (1.0 + sprint * 0.35) * amp);
     // arms: sprinters pump with bent elbows; dribblers hold them out for balance
     const armAmp = (0.08 + 0.65 * amp) * St.arm * (sprint ? 1.25 : 1) * (hasBall ? 0.7 : 1);
-    T.shL = -s * armAmp;
-    T.shR = -T.shL;
+    T.shL = -s * armAmp * (1 + (St.armAsym || 0));
+    T.shR = s * armAmp * (1 - (St.armAsym || 0));
     T.shLz = 0.1 + amp * 0.05 + St.width + (hasBall ? St.dribbleArms * amp + 0.1 : 0);
     T.shRz = -T.shLz;
     T.elL = T.elR = (0.25 + amp * 1.0) * St.elbow * (sprint ? 1.2 : 1) * (hasBall ? 0.75 : 1);
@@ -537,7 +591,12 @@ export class Player {
         const v = Math.sin(k * Math.PI);
         const sd = this.anim.side || 1;
         const va = this.anim.variant;
-        if (va === 'dragback') {
+        if (va === 'cut') {
+          // plant the outside foot, drop the hips, push off the other way
+          T['hip' + kick] = 0.55 * v; T['knee' + kick] = 0.9 * v;
+          T['hip' + (kick === 'R' ? 'L' : 'R')] = -0.35 * v; T['knee' + (kick === 'R' ? 'L' : 'R')] = 0.7 * v;
+          T.bodyY = -0.16 * v; T.bodyRoll = sd * 0.38 * v; T.twist = sd * 0.5 * v; T.lean = 0.3 * v;
+        } else if (va === 'dragback') {
           // sole on the ball, roll it back and pivot
           T['hip' + kick] = 0.5 * v - 0.4 * Math.max(0, k - 0.4); T['knee' + kick] = 0.8 * v;
           T.lean = -0.18 * v; T.bodyY = -0.08 * v; T.twist = sd * 0.5 * v;

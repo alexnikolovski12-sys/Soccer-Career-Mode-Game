@@ -61,6 +61,15 @@ class Game {
     this.pitch = new Pitch(this.scene);
     this.effects = new Effects(this.scene);
     this.ball = new Ball(this.scene);
+    // free kick aim line (ball → goal) and its target ring
+    {
+      const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)]);
+      this.aimLine = new THREE.Line(geo, new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: 0.6, gapSize: 0.35, transparent: true, opacity: 0.95, depthTest: false }));
+      this.aimLine.renderOrder = 20; this.aimLine.visible = false;
+      this.aimRing = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.42, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthTest: false, side: THREE.DoubleSide }));
+      this.aimRing.rotation.y = Math.PI / 2; this.aimRing.renderOrder = 21; this.aimRing.visible = false;
+      this.scene.add(this.aimLine, this.aimRing);
+    }
 
     // ---- players (pools; each moment activates a subset)
     const rng = makeRng(20240611);
@@ -107,6 +116,7 @@ class Game {
       debug: () => this.debug.toggle(),
       cancelShot: () => { if (this.sm.is(STATES.SHOT_AIM)) this.sm.change(STATES.PLAYING); },
       next: () => this.nextMoment(),
+      fkAction: (a) => { if (this.setPiece && this.setPiece.fk) this.setPiece.fkAction = a; },
       retry: () => this.retryMoment(),
     });
     this.hud.setMuted(this.audio.muted);
@@ -276,6 +286,12 @@ class Game {
     if (sp.t > 0) return;
     if (sp.phase === 'down') { this._setUpFreeKick(); return; }
     sp.phase = 'ready'; // everyone holds until you take it
+    if (!sp.penalty) {
+      sp.fk = 'choose';
+      this.hud.setButtonMode('none');
+      this.hud.fkStage('choose', 'FREE KICK — PASS OR SHOOT?');
+    } else this.hud.setButtonMode('shoot');
+    this.input.joystick.setVisible(false); // no dribbling at a set piece
     if (sp.penalty) {
       sp.side = this.rng.chance(0.5) ? 1 : -1;
       sp.aimY = this.rng.chance(0.5) ? 0.45 : 1.75;
@@ -311,14 +327,75 @@ class Game {
       const sp = this.setPiece;
       this.setPiece = null;
       this.hud.setPenaltyMeter(false);
+      this.hud.setButtonMode('all');
+      this.input.joystick.setVisible(true);
       if (this.shooting.penalty(this.user, sp.meterSize ?? 1, sp.side, sp.aimY) === true) this.sm.change(STATES.SHOT_FLIGHT);
       return false;
     }
-    const go = mv.mag > 0.3 || inp.gestures.pass || inp.gestures.through || inp.gestures.shoot;
-    if (go) { this.setPiece = null; return true; }
+    // free kick: no dribbling — choose PASS or SHOOT, then aim line + power bar
+    inp.consumeGesture('pass'); inp.consumeGesture('through'); inp.consumeGesture('shoot');
+    void mv;
+    const sp = this.setPiece, a = sp.fkAction;
+    sp.fkAction = null;
     for (const p of this.players) p.savePrev();
     this.ball.savePrev();
+    if (!a) return false;
+    const u = this.user, F = CONFIG.freeKick, P = CONFIG.pitch;
+    if (sp.fk === 'choose' && a === 'pass') {
+      this._endFreeKickUI();
+      this.setPiece = null;
+      const gx = P.length / 2;
+      this.passing.requestUserPass(u, gx - u.pos.x, -u.pos.z * 0.5, 'ground');
+      return true;
+    }
+    if (sp.fk === 'choose' && a === 'shoot') {
+      sp.fk = 'aim'; sp.fkT = 0;
+      this.hud.fkStage('aim', 'TAP TO LOCK YOUR AIM');
+      return false;
+    }
+    if (sp.fk === 'aim' && a === 'tap') {
+      sp.fk = 'power'; sp.fkT = 0;
+      this.hud.fkStage('power', 'TAP IN THE GREEN!');
+      return false;
+    }
+    if (sp.fk === 'power' && a === 'tap') {
+      const power = sp.fkPower ?? 0;
+      this._endFreeKickUI();
+      this.setPiece = null;
+      if (this.shooting.freeKick(u, sp.aimZ ?? 0, power) === true) this.sm.change(STATES.SHOT_FLIGHT);
+      return false;
+    }
     return false;
+  }
+
+  _endFreeKickUI() {
+    this.input.joystick.setVisible(true);
+    this.hud.fkStage(null);
+    this.hud.setButtonMode('all');
+    this.aimLine.visible = false; this.aimRing.visible = false;
+  }
+
+  /** Per frame: sweep the aim line across the goal, run the power marker. */
+  _freeKickFrame(realDt) {
+    const sp = this.setPiece;
+    if (!sp || !sp.fk || sp.fk === 'choose') { if (this.aimLine.visible && !(sp && sp.fk)) { this.aimLine.visible = false; this.aimRing.visible = false; } return; }
+    const F = CONFIG.freeKick, P = CONFIG.pitch;
+    const gx = P.length / 2, hw = P.goalWidth / 2;
+    sp.fkT += realDt;
+    if (sp.fk === 'aim') sp.aimZ = Math.sin((sp.fkT / F.aimPeriod) * Math.PI * 2) * (hw - 0.35);
+    if (sp.fk === 'power') {
+      const ph = (sp.fkT / F.powerPeriod) % 1;
+      sp.fkPower = ph < 0.5 ? ph * 2 : 2 - ph * 2;
+      this.hud.fkPower(sp.fkPower, F.zoneLo, F.zoneHi);
+    }
+    const b = this.ball.pos, z = sp.aimZ ?? 0;
+    const pos = this.aimLine.geometry.attributes.position;
+    pos.setXYZ(0, b.x, 0.05, b.z); pos.setXYZ(1, gx, 1.2, z);
+    pos.needsUpdate = true;
+    this.aimLine.computeLineDistances();
+    this.aimLine.visible = true;
+    this.aimRing.position.set(gx - 0.05, 1.2, z);
+    this.aimRing.visible = true;
   }
 
   /**
@@ -379,6 +456,9 @@ class Game {
   resetWorld() {
     this.effects.clear();
     this.hud.setPenaltyMeter(false);
+    this.hud.fkStage(null);
+    this.hud.setButtonMode('all');
+    if (this.aimLine) { this.aimLine.visible = false; this.aimRing.visible = false; }
     this.passing.reset();
     this.shooting.clearFlight();
     if (this.shooting.aim) this.shooting.endAim();
@@ -574,8 +654,11 @@ class Game {
       } else if (tg) {
         this.passing.requestUserPass(u, dx, dz, 'through');
       } else if (pg) {
-        // tap = ground pass; swipe up/down off the button = lofted pass / cross
-        this.passing.requestUserPass(u, dx, dz, pg.dir === 'up' || pg.dir === 'down' ? 'lofted' : 'ground');
+        // tap = instant ground pass; hold (briefly) or swipe up/down = lofted ball, held longer = higher & further
+        const P = CONFIG.pass;
+        const lofted = pg.held >= P.loftHoldMin || pg.dir === 'up' || pg.dir === 'down';
+        const power = Math.min(1, Math.max(0, (pg.held - P.loftHoldMin) / (P.loftHoldFull - P.loftHoldMin)));
+        this.passing.requestUserPass(u, dx, dz, lofted ? 'lofted' : 'ground', power);
       }
     } else if ((pg || tg) && this.teammateAI.callForBall()) {
       u.playAction('point', 0.6);
@@ -762,6 +845,9 @@ class Game {
         const pen = g.setPiece && g.setPiece.penalty;
         g.hud.setShotCharge(has && !pen ? g.shooting.chargeFrom(g.input.chargeTime('shoot')) : 0);
         g._penaltyMeterFrame(realDt || 1 / 60);
+        g._freeKickFrame(realDt || 1 / 60);
+        const ph = g.input.chargeTime('pass'), PC = CONFIG.pass;
+        g.hud.setPassCharge(has && ph > PC.loftHoldMin ? Math.min(1, (ph - PC.loftHoldMin) / (PC.loftHoldFull - PC.loftHoldMin)) : 0);
         if (g.setPiece && g.setPiece.phase !== 'ready') {
           g.input.consumeGesture('pass'); g.input.consumeGesture('through'); g.input.consumeGesture('shoot');
           g.hud.setShootAvailable(false); return;

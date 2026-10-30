@@ -85,6 +85,20 @@ export class HUD {
     this.input.bindGesture(this.btnThrough, 'through');
     this.input.bindButton(this.btnSprint, 'sprint');
 
+    // ---- free kick: choose PASS / SHOOT, then tap to lock the aim line, then the power
+    this.fk = el('div', 'fk', `
+      <div class="fk-choose"><button class="fk-btn fk-pass">PASS</button><button class="fk-btn fk-shoot">SHOOT</button></div>
+      <div class="fk-tap"></div>
+      <div class="fk-power"><div class="fk-zone"></div><div class="fk-mark"></div><span>POWER</span></div>
+      <div class="fk-hint"></div>`);
+    r.appendChild(this.fk);
+    const fkTap = (sel, fn) => this.fk.querySelector(sel).addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation(); this.input.anyInteraction && this.input.anyInteraction(); fn();
+    });
+    fkTap('.fk-pass', () => this.h.fkAction && this.h.fkAction('pass'));
+    fkTap('.fk-shoot', () => this.h.fkAction && this.h.fkAction('shoot'));
+    fkTap('.fk-tap', () => this.h.fkAction && this.h.fkAction('tap'));
+
     // ---- penalty timing circle
     this.pen = el('div', 'pen-meter', '<div class="pm-ring"></div><div class="pm-dot"></div><div class="pm-hint">TAP SHOOT WHEN IT\'S SMALL &amp; GREEN</div>');
     r.appendChild(this.pen);
@@ -221,6 +235,36 @@ export class HUD {
     ring.style.cssText = `left:${x}px;top:${y}px;width:${d}px;height:${d}px;`;
     dot.style.cssText = `left:${x}px;top:${y}px;`;
     hint.style.cssText = `left:${x}px;top:${y + 100 * u}px;`;
+  }
+
+  /** Lofted-pass power ring on PASS while held (0..1, after the tap threshold). */
+  setPassCharge(v) {
+    const r = Math.round(v * 100);
+    if (this.last.pcharge === r) return;
+    this.last.pcharge = r;
+    this.btnPass.style.setProperty('--charge', `${r}%`);
+    this.btnPass.classList.toggle('charging', r > 0);
+  }
+
+  /** Which action buttons show: all | shoot (penalties) | none (free kicks). */
+  setButtonMode(mode) {
+    if (this.last.bmode === mode) return;
+    this.last.bmode = mode;
+    this.pad.classList.toggle('mode-shoot', mode === 'shoot');
+    this.pad.classList.toggle('mode-none', mode === 'none');
+  }
+
+  /** Free kick UI stage: null | choose | aim | power */
+  fkStage(stage, hint = '') {
+    this.fk.className = `fk ${stage ? 'show ' + stage : ''}`;
+    this.fk.querySelector('.fk-hint').textContent = hint;
+  }
+
+  fkPower(v, zoneLo, zoneHi) {
+    const bar = this.fk.querySelector('.fk-power');
+    bar.style.setProperty('--v', `${(v * 100).toFixed(1)}%`);
+    bar.style.setProperty('--lo', `${zoneLo * 100}%`);
+    bar.style.setProperty('--hi', `${zoneHi * 100}%`);
   }
 
   setPassLabel(txt) {
