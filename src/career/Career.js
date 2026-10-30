@@ -203,6 +203,8 @@ export class Career {
     s.date += DAY;
     const dow = dateOf(s.date).getUTCDay();
     if (dow === 1) this._weekly();
+    // post prompts go stale after a few days (the moment's gone)
+    s.tasks = s.tasks.filter((t) => s.date - (t.date ?? (t.date = s.date)) < 3 * DAY);
     // international break: national team news
     for (const b of s.season.intlBreaks) if (b === s.date) this._intlBreak();
     // occasional agent chatter
@@ -323,8 +325,9 @@ export class Career {
     const s = this.s, opp = club(fx.oppId);
     const res = r.gf > r.ga ? 'win' : r.gf < r.ga ? 'loss' : 'draw';
     // a social media prompt after every match
+    s.tasks = s.tasks.filter((t) => t.kind !== 'social'); // only the latest match is worth posting about
     s.tasks.push({
-      id: s.msgId++, kind: 'social', title: r.rating >= 7.3 ? 'Great performance — post about it?' : r.rating <= 5.9 ? 'Tough day — say something to the fans?' : 'Post about the match?',
+      id: s.msgId++, kind: 'social', date: s.date, title: r.rating >= 7.3 ? 'Great performance — post about it?' : r.rating <= 5.9 ? 'Tough day — say something to the fans?' : 'Post about the match?',
       sub: `${res === 'win' ? 'Won' : res === 'loss' ? 'Lost' : 'Drew'} ${r.gf}–${r.ga} vs ${opp.name} · rating ${r.rating}`,
       ctx: { res, rating: r.rating, goals: r.goals },
     });

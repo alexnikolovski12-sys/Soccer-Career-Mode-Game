@@ -378,7 +378,10 @@ class Game {
   _setUpFreeKick() {
     const sp = this.setPiece, S = CONFIG.setPiece, L = CONFIG.pitch.length / 2, P = CONFIG.pitch, W = CONFIG.pitch.width / 2;
     const ball = this.ball;
-    if (sp.victim.team === 'home' && !sp.victim.isKeeper) this.switchControl(sp.victim, true);
+    // penalties: your player always takes them (if he's still on the pitch); free kicks: whoever was fouled
+    const yours = this.user === this.career || this.teammates.includes(this.career);
+    if (sp.penalty && yours) this.switchControl(this.career, true);
+    else if (sp.victim.team === 'home' && !sp.victim.isKeeper) this.switchControl(sp.victim, true);
     const u = this.user;
     let x = sp.penalty ? L - 11 : Math.min(sp.spot.x, L - 1.5);
     let z = sp.penalty ? 0 : Math.max(-W + 1, Math.min(W - 1, sp.spot.z));

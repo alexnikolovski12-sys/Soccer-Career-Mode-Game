@@ -1,0 +1,11 @@
+const H = g.hub, C = H.career;
+C.create({ name: 'T', nationality: 'ENG', clubId: C.startingOffers()[0].clubId, wage: 500 });
+H.open(); g.sm.change('HUB');
+const fx = C.nextFixture();
+C.recordMatch(fx, { gf: 2, ga: 1, rating: 7.5, goals: 1, assists: 0, played: true });
+H.render();
+const count = () => [...document.querySelectorAll('.tasks .task')].map((b) => b.textContent.trim().slice(0, 30));
+const r = { day0: count() };
+for (let i = 0; i < 5; i++) C.advanceDay();
+H.render(); r.day5 = count(); r.msgsKept = C.s.messages.length;
+return r;

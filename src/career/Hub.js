@@ -148,7 +148,8 @@ export class Hub {
     // tasks underneath
     const tasks = left.querySelector('.tasks');
     const items = [];
-    const unread = C.unread();
+    // the home screen only nags about recent mail (older unread stays in Messages)
+    const unread = s.messages.filter((m) => !m.read && s.date - m.date < 4 * 86400000).length;
     if (unread) items.push({ icon: ICON.mail(20), t: `${unread} new message${unread > 1 ? 's' : ''}`, go: () => { this.tab = 'messages'; this.render(); } });
     for (const t of s.tasks) items.push({ icon: ICON.phone(20), t: t.title, sub: t.sub, go: () => this._socialPopup(t) });
     const done = S.objectives.filter((o) => C.objectiveDone(o)).length;
