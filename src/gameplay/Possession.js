@@ -98,7 +98,7 @@ export class Possession {
       if (turnAng > 2.2) {
         // DRAG-BACK: sole on top, roll it back the way you came, spin
         st.side = cross >= 0 ? -1 : 1;
-        v = 2.4 + o.speed * 0.2; cd = 0.38;
+        v = 1.4 + o.speed * 0.15; cd = 0.38;
         o.vel.multiplyScalar(0.25);
         anim = ['turn', 0.42, { variant: 'dragback', side: cross >= 0 ? 1 : -1, kickLeg: st.side }];
         if (o.isUser) g.camRig.addShake(0.025);
@@ -106,7 +106,7 @@ export class Possession {
         // CUT: inside of the foot across the body, or the outside to go the other way
         const inside = g.rng.chance(0.55);
         st.side = inside ? (cross >= 0 ? -1 : 1) : (cross >= 0 ? 1 : -1);
-        v = o.speed * 0.85 + 1.6; cd = 0.3;
+        v = o.speed * 0.85 + 0.7; cd = 0.3;
         o.vel.multiplyScalar(0.62);
         anim = ['turn', 0.32, { variant: inside ? 'inside' : 'outside', side: cross >= 0 ? 1 : -1, kickLeg: st.side }];
         if (o.isUser) g.camRig.addShake(0.018);
@@ -114,10 +114,10 @@ export class Possession {
         // stride touch: off the foot that's coming through, often the stronger one
         st.side = g.rng.chance(0.55) ? st.pref : strideFoot;
         const r = g.rng.next();
-        let push = r < 0.3 ? 0.55 : r < 0.8 ? 1.25 : 2.0;    // soft / normal / longer
-        if (space < 2.2) push = Math.min(push, 0.6);           // tight in traffic
-        if (o.sprinting && space > 7 && g.rng.chance(0.4)) push = 3.6; // knock it on and chase
-        if (o.burstTouch) { push = 3.2; o.burstTouch = false; }
+        let push = r < 0.35 ? 0.25 : r < 0.85 ? 0.55 : 0.85;  // soft / normal / slightly longer
+        if (space < 2.2) push = Math.min(push, 0.3);           // tight in traffic
+        if (o.sprinting && space > 7 && g.rng.chance(0.3)) push = 1.4; // knock it on and chase
+        if (o.burstTouch) { push = 1.3; o.burstTouch = false; }
         v = o.speed + push; cd = Math.max(0.2, 0.9 / (o.speed + 1.5));
         const r2 = g.rng.next();
         anim = ['touch', 0.24, { kickLeg: st.side, variant: r2 < 0.6 ? 'inside' : r2 < 0.85 ? 'outside' : 'laces' }];
@@ -132,13 +132,17 @@ export class Possession {
       if (!o.anim.action || o.anim.action === 'touch' || anim[0] === 'turn') o.playAction(anim[0], anim[1], anim[2]);
       if (o.isUser) g.audio.touch();
     }
-    // never let it get away: past the comfortable range the player "reaches" it
-    if (bd > D.circleMax * 0.85) {
+    // keep it close: if it's drifting away from him, it stops running away
+    // (relative to the player) and is eased back toward the working foot
+    if (bd > D.circleMax * 0.6) {
       const nx = bx / bd, nz = bz / bd;
-      const out = ball.vel.x * nx + ball.vel.z * nz - o.vel.x * nx - o.vel.z * nz;
-      if (out > 0) { ball.vel.x -= nx * out * 0.6; ball.vel.z -= nz * out * 0.6; }
+      const out = (ball.vel.x - o.vel.x) * nx + (ball.vel.z - o.vel.z) * nz;
+      if (out > 0) { ball.vel.x -= nx * out; ball.vel.z -= nz * out; }
+      const k = Math.min(1, dt * 3 * (bd / D.circleMax));
+      ball.pos.x += (fx - ball.pos.x) * k * 0.5;
+      ball.pos.z += (fz - ball.pos.z) * k * 0.5;
     }
-    this._leash(o, D.circleMax + 0.35);
+    this._leash(o, D.circleMax);
   }
 
   /** Hard limit: the ball can never be further than `max` from the carrier. */

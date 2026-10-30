@@ -149,8 +149,8 @@ export class Player {
     const r = () => Math.random();
     this.style = {
       arm: 0.8 + r() * 0.5, elbow: 0.75 + r() * 0.6, bounce: 0.75 + r() * 0.6,
-      lean: (r() - 0.5) * 0.1, width: r() * 0.18, cadence: 0.92 + r() * 0.16, head: (r() - 0.5) * 0.12,
-      dribbleArms: 0.25 + r() * 0.35, // balance arms when on the ball
+      lean: (r() - 0.5) * 0.1, width: r() * 0.06, cadence: 0.92 + r() * 0.16, head: (r() - 0.5) * 0.12,
+      dribbleArms: 0.05 + r() * 0.08, // slight balance lift when on the ball
     };
     this._lastHeadingAnim = 0;
     this.lean = 0;
@@ -298,7 +298,7 @@ export class Player {
     root.add(this.label);
     // your own career player also gets the yellow star badge above it
     this.badge = Player._sprite(markerTex('star'), 0.062, 0.062);
-    this.badge.position.y = CONFIG.player.labelHeight + 0.42;
+    this.badge.position.y = CONFIG.player.labelHeight + 0.62;
     this.badge.visible = false;
     root.add(this.badge);
   }
@@ -515,10 +515,10 @@ export class Player {
       const b = this.style;
       const modes = hasBall
         ? [
-          { arm: 0.7, elbow: 0.8, width: 0.25, lean: 0.12, bounce: 0.7, dribbleArms: 0.6, head: -0.1 },  // hunched close control
-          { arm: 0.9, elbow: 0.6, width: 0.4, lean: 0.05, bounce: 0.9, dribbleArms: 0.9, head: 0 },      // arms out, balance
-          { arm: 1.2, elbow: 1.2, width: 0.08, lean: 0.14, bounce: 1.2, dribbleArms: 0.3, head: 0.05 },  // driving at pace
-          { arm: 0.8, elbow: 1.0, width: 0.15, lean: 0.0, bounce: 0.85, dribbleArms: 0.45, head: 0.1 },  // upright, head up
+          { arm: 0.85, elbow: 0.9, width: 0.06, lean: 0.12, bounce: 0.75, dribbleArms: 0.1, head: -0.1 }, // hunched close control
+          { arm: 0.95, elbow: 0.8, width: 0.1, lean: 0.05, bounce: 0.9, dribbleArms: 0.15, head: 0 },     // slightly wider arms
+          { arm: 1.15, elbow: 1.15, width: 0.04, lean: 0.14, bounce: 1.15, dribbleArms: 0.05, head: 0.05 }, // driving at pace
+          { arm: 0.9, elbow: 1.0, width: 0.06, lean: 0.0, bounce: 0.85, dribbleArms: 0.08, head: 0.1 },  // upright, head up
         ]
         : [
           { arm: 1.25, elbow: 1.3, width: 0.05, lean: 0.08, bounce: 1.1, dribbleArms: 0.3, head: 0.05 }, // pumping
@@ -579,14 +579,15 @@ export class Player {
     T.kneeL = 0.12 + Math.max(0, -c) * (0.2 + (1.0 + sprint * 0.35) * amp);
     T.kneeR = 0.12 + Math.max(0, c) * (0.2 + (1.0 + sprint * 0.35) * amp);
     // arms: sprinters pump with bent elbows; dribblers hold them out for balance
-    const armAmp = (0.08 + 0.65 * amp) * St.arm * (sprint ? 1.25 : 1) * (hasBall ? 0.7 : 1);
+    const armAmp = (0.08 + 0.65 * amp) * St.arm * (sprint ? 1.25 : 1) * (hasBall ? 0.9 : 1);
     T.shL = -s * armAmp * (1 + (St.armAsym || 0));
     T.shR = s * armAmp * (1 - (St.armAsym || 0));
-    T.shLz = 0.1 + amp * 0.05 + St.width + (hasBall ? St.dribbleArms * amp + 0.1 : 0);
+    // arms hang down by the sides and swing; only a slight outward lift on the ball
+    T.shLz = 0.1 + amp * 0.04 + Math.min(St.width, 0.12) + (hasBall ? Math.min(St.dribbleArms, 0.15) * amp : 0);
     T.shRz = -T.shLz;
     T.elL = T.elR = (0.25 + amp * 1.0) * St.elbow * (sprint ? 1.2 : 1) * (hasBall ? 0.75 : 1);
     // one balance arm flares out more on the side away from the ball foot
-    if (hasBall && this.drib) { if (this.drib.side > 0) T.shLz += 0.25 * amp; else T.shRz -= 0.25 * amp; }
+    if (hasBall && this.drib) { if (this.drib.side > 0) T.shLz += 0.08 * amp; else T.shRz -= 0.08 * amp; }
     T.lean = 0.03 + St.lean + amp * 0.2 + (hasBall ? 0.12 : 0) + sprint * 0.1 + this.accLean;
     T.roll = 0; T.twist = -s * (0.12 + sprint * 0.06) * amp;
     T.bodyY = -Math.abs(c) * 0.045 * amp * St.bounce - (hasBall ? 0.04 * amp : 0)
@@ -670,8 +671,8 @@ export class Player {
           T['hip' + kick] = 0.45 * v; T['knee' + kick] = 0.55 * v;
           T.twist = sd * 0.45 * v; T.bodyRoll = sd * 0.22 * v; T.bodyY = -0.07 * v;
         }
-        // arms out for balance through the turn
-        T.shLz = 0.5 + 0.5 * v; T.shRz = -0.5 - 0.5 * v; T.lean = (T.lean || 0) + 0.15 * v;
+        // a little arm out for balance through the turn, then straight back down
+        T.shLz = 0.15 + 0.25 * v; T.shRz = -0.15 - 0.25 * v; T.lean = (T.lean || 0) + 0.15 * v;
         break;
       }
       case 'control': {

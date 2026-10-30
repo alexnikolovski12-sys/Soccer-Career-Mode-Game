@@ -155,12 +155,12 @@ export const CONFIG = {
     redirectReachMult: 1.5,
     trapDamping: 10,
     touchReach: 0.62,          // foot has to be this close to the ball to touch it
-    touchAhead: 0.55,          // take the next touch once the ball is less than this far in front           // ball damping when stopping with the ball
+    touchAhead: 0.42,          // take the next touch once the ball is less than this far in front           // ball damping when stopping with the ball
     loseDistance: 4.5,         // safety only — the ball normally never leaves the possession circle
     carryOffset: 0.5,          // possession circle: how far ahead of the body the ball sits (m)
     carrySpeedOffset: 0.03,    // ...plus this much per m/s of running speed
     carryStiffness: 18,        // how quickly the ball follows the feet
-    circleMax: 1.25,           // the ball can never be further than this from the carrier
+    circleMax: 0.95,           // the ball can never be further than this from the carrier
     touchPush: 0.18,           // each touch pushes the ball this far out…
     touchPushPerSpeed: 0.035,  // …plus this per m/s
     pushDecay: 0.9,            // how fast the player catches back up to it
