@@ -55,11 +55,16 @@ export class Possession {
     let dx, dz;
     if (moving) { dx = o.moveDir.x; dz = o.moveDir.z; } else { dx = Math.sin(o.heading); dz = Math.cos(o.heading); }
     const hx = Math.sin(o.heading), hz = Math.cos(o.heading);
-    const rx = hz, rz = -hx;
-    // which foot is coming through in the stride right now
-    const strideFoot = Math.sin(o.anim.phase) > 0 ? 1 : -1;
-    const fx = o.pos.x + hx * D.footOffset + rx * st.side * 0.11;
-    const fz = o.pos.z + hz * D.footOffset + rz * st.side * 0.11;
+    const rx = -hz, rz = hx; // the player's right
+    // the ball runs a little further ahead when sprinting
+    const carry = D.footOffset + (o.sprinting ? D.sprintCarryExtra : 0);
+    // which foot is about to land in the stride (from the running animation):
+    // a stride touch is taken with that foot, just before it plants
+    const dueR = o.footDue(1), dueL = o.footDue(-1);
+    const strideFoot = dueR < dueL ? 1 : -1;
+    const footDue = Math.min(dueR, dueL) < D.touchWindow || o.speed < 1.2;
+    const fx = o.pos.x + hx * carry + rx * st.side * 0.11;
+    const fz = o.pos.z + hz * carry + rz * st.side * 0.11;
     const footD = Math.hypot(ball.pos.x - fx, ball.pos.z - fz);
     const bx = ball.pos.x - o.pos.x, bz = ball.pos.z - o.pos.z;
     const bd = Math.hypot(bx, bz);
@@ -87,9 +92,14 @@ export class Possession {
     // angle between where he's facing and where he wants to go = how big a turn this is
     const turnAng = Math.acos(Math.max(-1, Math.min(1, hx * dx + hz * dz)));
     const reach = D.touchReach + (turnAng > 0.8 ? 0.25 : 0);
-    const caughtUp = ahead < D.touchAhead + o.speed * 0.06 || along < o.speed * 0.92;
+    const caughtUp = ahead < D.touchAhead + o.speed * 0.06 + (o.sprinting ? D.sprintCarryExtra : 0) || along < o.speed * 0.92;
     const wrongWay = offAng > D.redirectAngle;
-    if (o.touchCooldown <= 0 && footD < reach && (caughtUp || wrongWay)) {
+    // stride touches wait for the foot to come through (turns/cuts go at once; never wait too long)
+    // (and never let him run over it: if it's getting under his feet, play it now)
+    st.wait = caughtUp && !wrongWay && !footDue ? (st.wait || 0) + dt : 0;
+    const timed = wrongWay || turnAng > 0.75 || footDue || st.wait > 0.15 || ahead < carry * 0.85;
+    const under = ahead < carry * 0.85 && bd < D.circleMax;
+    if (o.touchCooldown <= 0 && (footD < reach || under) && (caughtUp || wrongWay) && timed) {
       let space = 99;
       for (const d of g.opponentsOf(o)) if (!d.isKeeper) space = Math.min(space, dist2D(d.pos, o.pos));
       const cross = hx * dz - hz * dx;                       // + = turning left
@@ -111,8 +121,8 @@ export class Possession {
         anim = ['turn', 0.32, { variant: inside ? 'inside' : 'outside', side: cross >= 0 ? 1 : -1, kickLeg: st.side }];
         if (o.isUser) g.camRig.addShake(0.018);
       } else {
-        // stride touch: off the foot that's coming through, often the stronger one
-        st.side = g.rng.chance(0.55) ? st.pref : strideFoot;
+        // stride touch: off the foot that's coming through
+        st.side = strideFoot;
         const r = g.rng.next();
         let push = r < 0.35 ? 0.25 : r < 0.85 ? 0.55 : 0.85;  // soft / normal / slightly longer
         if (space < 2.2) push = Math.min(push, 0.3);           // tight in traffic
@@ -130,11 +140,22 @@ export class Possession {
       ball.lastKick = { type: 'dribble', by: o, time: g.simTime };
       o.touchCooldown = cd;
       if (!o.anim.action || o.anim.action === 'touch' || anim[0] === 'turn') o.playAction(anim[0], anim[1], anim[2]);
+      // the touching foot meets the ball (foot IK)
+      o.reachFor(st.side, ball.pos.x - ux * 0.12, 0.08, ball.pos.z - uz * 0.12, 0, 0.12);
       if (o.isUser) g.audio.touch();
+    }
+    // never overrun it: a ball that has slipped under his feet is worked back
+    // out in front (as the next stride would), so it sits ~carry ahead
+    if (ahead < carry * 0.75 && bd < D.circleMax && ball.pos.y < 0.3) {
+      const k = Math.min(1, dt * 7);
+      const tx = o.pos.x + dx * carry, tz = o.pos.z + dz * carry;
+      ball.pos.x += (tx - ball.pos.x) * k; ball.pos.z += (tz - ball.pos.z) * k;
+      const lag = o.speed - (ball.vel.x * dx + ball.vel.z * dz);
+      if (lag > 0) { ball.vel.x += dx * lag * k; ball.vel.z += dz * lag * k; }
     }
     // keep it close: if it's drifting away from him, it stops running away
     // (relative to the player) and is eased back toward the working foot
-    if (bd > D.circleMax * 0.6) {
+    if (bd > Math.max(D.circleMax * 0.6, carry + 0.12)) {
       const nx = bx / bd, nz = bz / bd;
       const out = (ball.vel.x - o.vel.x) * nx + (ball.vel.z - o.vel.z) * nz;
       if (out > 0) { ball.vel.x -= nx * out; ball.vel.z -= nz * out; }
@@ -175,11 +196,13 @@ export class Possession {
     const bodyFirst = dist2D(winner.pos, o.pos) < dist2D(winner.pos, ball.pos) - F.foulBodyMargin;
     if (o.team === 'home' && bodyFirst && g.rng.next() < F.foulFromBehind) {
       winner.playAction('tackle', 0.55);
+      o.hit(o.pos.x - winner.pos.x, o.pos.z - winner.pos.z, 2 + winner.speed * 0.5);
       o.playAction('fall', 1.0, { side: g.rng.sign() });
       g.events.emit('foul', { by: winner, victim: o });
       return true;
     }
     o.stumble = 0.4;
+    o.hit(o.pos.x - winner.pos.x, o.pos.z - winner.pos.z, 1 + winner.speed * 0.3);
     o.playAction('stumble', 0.6, { side: g.rng.sign() });
     ball.lastKick = { type: 'tackle', by: winner, time: g.simTime };
     this.gain(winner);
@@ -265,10 +288,15 @@ export class Possession {
     g.events.emit('gain', { player: p, from, kick, pass });
   }
 
-  /** Soft separation so bodies don't overlap. */
+  /**
+   * Bodies are capsules: overlaps are pushed apart (the heavier, stronger
+   * player gives less ground) and a real coming-together — shoulder to
+   * shoulder at speed — exchanges momentum and staggers both of them.
+   */
   separate() {
     const ps = this.game.players;
-    const R = CONFIG.player.separation;
+    const R = CONFIG.player.separation, B = CONFIG.player.bump;
+    const t = this.game.simTime;
     for (let i = 0; i < ps.length; i++) {
       for (let j = i + 1; j < ps.length; j++) {
         const a = ps[i], b = ps[j];
@@ -276,10 +304,21 @@ export class Possession {
         const d2 = dx * dx + dz * dz;
         if (d2 < R * R && d2 > 1e-6) {
           const d = Math.sqrt(d2);
-          const push = (R - d) * 0.5;
           const nx = dx / d, nz = dz / d;
-          a.pos.x -= nx * push; a.pos.z -= nz * push;
-          b.pos.x += nx * push; b.pos.z += nz * push;
+          const ia = 1 / a.mass, ib = 1 / b.mass, is = ia + ib;
+          const push = R - d;
+          a.pos.x -= nx * push * (ia / is); a.pos.z -= nz * push * (ia / is);
+          b.pos.x += nx * push * (ib / is); b.pos.z += nz * push * (ib / is);
+          // closing speed along the line between them
+          const vn = (b.vel.x - a.vel.x) * nx + (b.vel.z - a.vel.z) * nz;
+          if (vn < -B.minSpeed && (a.bumpT || 0) < t && (b.bumpT || 0) < t) {
+            const J = (-(1 + B.restitution) * vn) / is * B.transfer;
+            a.vel.x -= nx * J * ia; a.vel.z -= nz * J * ia;
+            b.vel.x += nx * J * ib; b.vel.z += nz * J * ib;
+            a.hit(-nx, -nz, J * ia * B.react);
+            b.hit(nx, nz, J * ib * B.react);
+            a.bumpT = b.bumpT = t + B.cooldown;
+          }
         }
       }
     }

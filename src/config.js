@@ -90,14 +90,15 @@ export const CONFIG = {
   // --------------------------------------------------------------- player movement
   player: {
     radius: 0.32,
-    separation: 0.8,           // soft collision distance between players
+    separation: 0.8,           // soft collision distance between players (capsule diameter)
+    bump: { minSpeed: 1.6, restitution: 0.15, transfer: 0.5, react: 0.9, cooldown: 0.5 }, // shoulder-to-shoulder knocks
+    jockeyMaxSpeed: 3.4,       // defenders below this speed keep facing the ball (backpedal / side-step)
+    lateralAccel: 15,          // m/s² of sideways grip: caps the turn rate at speed (momentum)
     turnRateStill: 15,         // rad/s when (almost) stationary
     turnRateRun: 4.6,          // rad/s at top speed
     sharpTurnAngle: 0.75,      // radians; turns sharper than this brake the player
     sharpTurnBrake: 0.6,       // braking strength in sharp turns
     headingLerp: 12,           // visual body turn smoothing
-    animBlend: 12,             // pose blend rate
-    strideLength: 1.9,         // metres per full run cycle (scaled by speed)
     labelHeight: 2.25,
     sprintBoost: 1.08,         // extra pace when holding SPRINT
     cutAngle: 0.95,            // stick change (rad) on the ball that triggers a quick cut
@@ -155,7 +156,9 @@ export const CONFIG = {
     redirectReachMult: 1.5,
     trapDamping: 10,
     touchReach: 0.62,          // foot has to be this close to the ball to touch it
-    touchAhead: 0.42,          // take the next touch once the ball is less than this far in front           // ball damping when stopping with the ball
+    touchAhead: 0.42,
+    sprintCarryExtra: 0.16,    // the ball runs this much further ahead when sprinting
+    touchWindow: 0.08,         // a stride touch waits until the foot is this close (s) to planting          // take the next touch once the ball is less than this far in front           // ball damping when stopping with the ball
     loseDistance: 4.5,         // safety only — the ball normally never leaves the possession circle
     carryOffset: 0.5,          // possession circle: how far ahead of the body the ball sits (m)
     carrySpeedOffset: 0.03,    // ...plus this much per m/s of running speed
@@ -199,7 +202,7 @@ export const CONFIG = {
   pass: {
     arriveSpeed: 14,           // desired speed when reaching the receiver (crisp, fast)
     minSpeed: 14, maxSpeed: 38,
-    windup: 0.035,             // touch → ball's gone almost instantly
+    windup: 0.1,               // button → boot meets the ball (the kick clip's backswing is time-warped into this)
     homing: 3.0,               // rad/s a pass can bend toward where its receiver actually is
     assist: 0.12,              // multiplier on pass error (fully assisted ≈ dead accurate)
     loftHoldMin: 0.18,         // hold PASS at least this long for a lofted ball…
@@ -239,6 +242,9 @@ export const CONFIG = {
     fakeKeeperRange: 28,
     fakeKeeperChance: 0.6,
     // ----
+    strikeWindup: 0.15,        // SHOOT released → boot meets the ball (kick clip backswing, time-warped)
+    runUpTime: 0.75,           // free kick / penalty run-up before the strike
+    runUpDistance: 1.3,        // how far behind the ball the taker stands
     rangeMax: 30,              // metres from goal centre for SHOOT to glow
     minGoalAngleDeg: 9,        // angle subtended by the posts must exceed this
     freezeTime: 0.15,          // time-scale ease to 0

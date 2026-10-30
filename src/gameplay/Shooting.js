@@ -66,10 +66,79 @@ export class Shooting {
     return this.game.rng.chance(0.5) ? 1 : -1;
   }
 
+  // ------------------------------------------------------------ the strike
+  // Releasing SHOOT starts the kick: the clip's backswing is time-warped so the
+  // boot meets the ball after a short windup, and the ball leaves on that frame.
+  // Free kicks and penalties get a real run-up first. update() fires the shot.
+
+  /** Shot animation variant (decided at the start of the kick). */
+  _variant(shooter, kind, dist, pressure) {
+    const g = this.game;
+    const yaw = Math.atan2(CONFIG.pitch.length / 2 - shooter.pos.x, -shooter.pos.z);
+    const turn = Math.abs(((yaw - shooter.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    let variant = kind === 'normal' ? 'laces' : kind;
+    if (kind === 'normal' && dist < 8 && g.rng.chance(0.4)) variant = 'placed';
+    const offBalance = pressure > 0.8 || turn > 1.3 || (shooter.speed > 6.5 && g.rng.chance(0.35));
+    if (offBalance && kind !== 'chip') variant = 'offbalance';
+    return { variant, offBalance };
+  }
+
+  /** Free-kick pass: run up to the ball, then play the pass (its own kick clip). */
+  runUpThen(shooter, then) {
+    return this._startStrike(shooter, 'pass', then, true, false);
+  }
+
+  _startStrike(shooter, kind, fire, setPiece = false, kickAnim = true) {
+    const g = this.game, ball = g.ball, S = CONFIG.shot;
+    const dist = Math.hypot(CONFIG.pitch.length / 2 - ball.pos.x, ball.pos.z);
+    const { variant, offBalance } = this._variant(shooter, kind, dist, setPiece ? 0 : this._pressureOn(shooter));
+    const t = setPiece ? S.runUpTime * (kickAnim ? 1 : 0.8) : S.strikeWindup;
+    const kickLeg = setPiece ? 1 : (g.rng.chance(0.82) ? 1 : -1);
+    if (kickAnim) shooter.playAction('shoot', t + (variant === 'offbalance' ? 0.7 : 0.55), { kickLeg, variant, contactAt: t, setPiece });
+    this.strike = { shooter, t, T: t, fire, variant, offBalance, kickLeg, setPiece, kickAnim, from: shooter.pos.clone() };
+    if (setPiece) {
+      // run up from behind the ball; it can't be touched meanwhile
+      ball.frozen = true;
+      const gx = CONFIG.pitch.length / 2;
+      const l = Math.hypot(gx - ball.pos.x, ball.pos.z) || 1;
+      const ux = (gx - ball.pos.x) / l, uz = -ball.pos.z / l;
+      const back = kickAnim ? 0.32 : 0.5;
+      this.strike.to = new THREE.Vector3(ball.pos.x - ux * back + uz * 0.16, 0, ball.pos.z - uz * back - ux * 0.16);
+      this.strike.heading = Math.atan2(ux, uz);
+    }
+    return 'windup';
+  }
+
+  /** Fixed step: plays out a strike in progress, fires on the contact frame. */
+  update(dt) {
+    const k = this.strike;
+    if (!k) return;
+    const g = this.game, ball = g.ball, p = k.shooter;
+    k.t -= dt;
+    if (k.setPiece) {
+      const T = k.T, f = Math.min(1, 1 - k.t / T);
+      p.pos.lerpVectors(k.from, k.to, f);
+      p.vel.subVectors(k.to, k.from).multiplyScalar(1 / T);
+      p.heading = p.prevHeading = k.heading;
+      p.steer(0, 0, 0);
+    } else if (ball.owner !== p) { this.strike = null; return; }
+    if (k.t > 0) return;
+    this.strike = null;
+    if (k.setPiece) { ball.frozen = false; ball.owner = p; }
+    if (k.kickAnim) p.reachFor(k.kickLeg, ball.pos.x, ball.pos.y, ball.pos.z, 0, 0.1);
+    else p.vel.set(0, 0, 0);
+    const r = k.fire();
+    if (r === true && g.onShotFired) g.onShotFired();
+  }
+
   /** Release of the SHOOT button. kind: normal | driven | chip | finesse | fake */
   shoot(shooter, kind, charge) {
-    if (!this.canShoot(shooter)) return false;
+    if (!this.canShoot(shooter) || this.strike) return false;
     if (kind === 'fake') return this.fakeShot(shooter);
+    return this._startStrike(shooter, kind, () => (this.canShoot(shooter) ? this._shootNow(shooter, kind, charge) : false));
+  }
+
+  _shootNow(shooter, kind, charge) {
     const g = this.game, ball = g.ball, S = CONFIG.shot, P = CONFIG.pitch;
     const gx = P.length / 2, hw = P.goalWidth / 2;
     const start = ball.pos.clone();
@@ -120,6 +189,10 @@ export class Shooting {
    *  * red    → skied or dragged wide
    */
   penalty(shooter, size, side, aimY) {
+    return this._startStrike(shooter, 'driven', () => this._penaltyNow(shooter, size, side, aimY), true);
+  }
+
+  _penaltyNow(shooter, size, side, aimY) {
     const g = this.game, ball = g.ball, P = CONFIG.pitch, S = CONFIG.shot;
     const gx = P.length / 2, hw = P.goalWidth / 2;
     const start = ball.pos.clone(); start.y = Math.max(start.y, CONFIG.ball.radius);
@@ -150,6 +223,10 @@ export class Shooting {
    * too little → into the wall; too much → over the bar.
    */
   freeKick(shooter, aimZ, power) {
+    return this._startStrike(shooter, 'finesse', () => this._freeKickNow(shooter, aimZ, power), true);
+  }
+
+  _freeKickNow(shooter, aimZ, power) {
     const g = this.game, ball = g.ball, P = CONFIG.pitch, F = CONFIG.freeKick;
     const gx = P.length / 2, hw = P.goalWidth / 2;
     const start = ball.pos.clone(); start.y = Math.max(start.y, CONFIG.ball.radius);
@@ -337,15 +414,10 @@ export class Shooting {
     const g = this.game, ball = g.ball;
     // face the shot, and pick an animation variant that suits the situation
     const yaw = Math.atan2(L.vx, L.vz);
-    let turn = Math.abs(((yaw - shooter.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
     shooter.heading = shooter.prevHeading = yaw;
-    let variant = kind === 'normal' ? 'laces' : kind;
-    if (kind === 'normal' && dist < 8 && g.rng.chance(0.4)) variant = 'placed';
-    const offBalance = pressure > 0.8 || turn > 1.3 || (shooter.speed > 6.5 && g.rng.chance(0.35));
-    if (offBalance && kind !== 'chip') variant = 'offbalance';
-    const dur = variant === 'offbalance' ? 0.95 : variant === 'chip' ? 0.6 : 0.75;
-    shooter.playAction('shoot', dur, { kickLeg: g.rng.chance(0.82) ? 1 : -1, variant });
-    shooter.anim.t = dur * 0.24; // the leg is already coming through as the ball leaves
+    // the kick animation started with the strike (see _startStrike); the ball leaves on its contact frame
+    const offBalance = shooter.anim.action === 'shoot' && shooter.anim.variant === 'offbalance';
+    void dist;
     if (offBalance) shooter.stumble = Math.max(shooter.stumble, 0.35);
 
     ball.kick(L.vx, L.vy, L.vz, { curve: L.curve, type: 'shot', by: shooter, ignoreTime: 0.4, time: g.simTime });
@@ -401,6 +473,11 @@ export class Shooting {
         }
       }
     }
+  }
+
+  cancelStrike() {
+    if (this.strike && this.strike.setPiece) this.game.ball.frozen = false;
+    this.strike = null;
   }
 
   clearFlight() {

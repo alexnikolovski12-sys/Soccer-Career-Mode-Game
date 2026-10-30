@@ -225,6 +225,7 @@ export class DefenderAI {
         this._fail(d, c, false);
       } else if (c.team === 'home' && g.rng.next() < (bodyFirst ? D.foulFromBehind : D.foulMistimed)) {
         // caught the man before the ball → foul, free kick
+        c.hit(c.pos.x - d.pos.x, c.pos.z - d.pos.z, 2.5 + d.speed * 0.5);
         c.playAction('fall', 1.0, { side: g.rng.sign() });
         c.stumble = 0.4;
         g.audio.kick(0.3);
@@ -246,6 +247,7 @@ export class DefenderAI {
   _win(d, c) {
     const g = this.game, ball = g.ball;
     c.stumble = 0.5;
+    c.hit(c.pos.x - d.pos.x, c.pos.z - d.pos.z, 1.5 + d.speed * 0.4);
     c.playAction(g.rng.chance(0.4) ? 'fall' : 'stumble', g.rng.chance(0.4) ? 1.1 : 0.6, { side: g.rng.sign() });
     g.audio.kick(0.35);
     if (g.rng.chance(0.6)) {
@@ -266,6 +268,8 @@ export class DefenderAI {
   _fail(d, c, close) {
     const g = this.game;
     d.stumble = CONFIG.defender.stumbleTime * (close ? 1 : 0.7);
+    // missed: carried on by his own momentum
+    d.hit(d.vel.x || c.pos.x - d.pos.x, d.vel.z || c.pos.z - d.pos.z, 1 + d.speed * 0.4);
     d.playAction(close ? 'fall' : 'stumble', close ? 1.1 : 0.7, { side: g.rng.sign() });
     if (close) g.events.emit('beatDefender', { by: c, defender: d });
   }

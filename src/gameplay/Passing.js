@@ -191,8 +191,9 @@ export class Passing {
     }
     const variant = this.pickVariant(user, kind, aim.x, aim.z);
     const dur = variant === 'lofted' || variant === 'chipped' ? 0.6 : variant === 'backheel' || variant === 'flick' ? 0.4 : 0.5;
-    user.playAction('pass', dur, { kickLeg, variant });
-    this.pending = { passer: user, target: sel ? sel.target : null, aim: sel ? null : aim, t: CONFIG.pass.windup, kind, power };
+    // the kick clip is time-warped so the boot meets the ball as the windup ends
+    user.playAction('pass', dur, { kickLeg, variant, contactAt: CONFIG.pass.windup });
+    this.pending = { passer: user, target: sel ? sel.target : null, aim: sel ? null : aim, t: CONFIG.pass.windup, kind, power, kickLeg };
   }
 
   /** AI pass (teammate). */
@@ -200,8 +201,8 @@ export class Passing {
     if (this.pending) return;
     const kickLeg = (this.kickLeg = -this.kickLeg);
     const variant = this.pickVariant(passer, kind, target.pos.x, target.pos.z);
-    passer.playAction('pass', 0.5, { kickLeg, variant });
-    this.pending = { passer, target, t: CONFIG.pass.windup * 0.8, kind };
+    passer.playAction('pass', 0.5, { kickLeg, variant, contactAt: CONFIG.pass.windup * 0.8 });
+    this.pending = { passer, target, t: CONFIG.pass.windup * 0.8, kind, kickLeg };
     if (target.isUser) this.game.effects.showMarker(target);
   }
 
@@ -281,6 +282,7 @@ export class Passing {
       if (ball.owner || d > 1.6) return;
     }
     const kind = pd.kind || 'ground';
+    pd.passer.reachFor(pd.kickLeg ?? 1, ball.pos.x, ball.pos.y, ball.pos.z, 0, 0.1);
     const aim = pd.target
       ? (kind === 'through' ? this.throughPoint(pd.passer, pd.target) : this.leadPoint(pd.passer, pd.target))
       : pd.aim;

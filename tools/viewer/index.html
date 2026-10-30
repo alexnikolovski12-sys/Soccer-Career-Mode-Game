@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Mocap viewer</title>
+<style>html,body{margin:0;background:#334;overflow:hidden}#info{position:fixed;left:8px;top:8px;color:#fff;font:14px monospace}</style>
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js"}}</script>
+</head><body><div id="info"></div>
+<script type="module">
+// Dev tool: shows the game rig playing mocap clips / the locomotion blend tree.
+//   node server.mjs, then open /tools/viewer/?clip=run1   or  ?speed=6
+import * as THREE from 'three';
+import { Player } from '/src/entities/Player.js';
+import { clips } from '/src/anim/Clips.js';
+const qs = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ antialias: true });
+r.setSize(innerWidth, innerHeight);
+document.body.appendChild(r.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#556677');
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445533, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(5, 10, 3); scene.add(sun);
+const grid = new THREE.GridHelper(40, 40, 0x223322, 0x3b5b3b); scene.add(grid);
+const cam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 100);
+const look = { kitColour: '#f2f4f8', shortsColour: '#1b2a4a', socksColour: '#f2f4f8', skinTone: '#c68a5e', hairColour: '#2a1c14', height: 1.8, number: 9 };
+const stats = { pace: 80, acceleration: 80, dribbling: 75, ballControl: 75, passing: 70, vision: 70, finishing: 70, shotPower: 70, composure: 70, stamina: 70 };
+const p = new Player(scene, { id: 'v', team: 'away', role: 'def', look, stats });
+p.place(0, 0, 0);
+window.p = p; window.clips = clips();
+const st = { clip: qs.get('clip'), speed: +(qs.get('speed') || 0), t: 0, side: qs.get('side') || 'side', turn: +(qs.get('turn') || 0) };
+if (st.clip) p.animator.debugClip = st.clip;
+window.st = st;
+function step(dt) {
+  p.savePrev();
+  if (!st.clip) {
+    p.heading += st.turn * dt;
+    p.vel.set(Math.sin(p.heading) * st.speed, 0, Math.cos(p.heading) * st.speed);
+    p.pos.addScaledVector(p.vel, dt);
+  }
+  p.updateAnimation(dt, false);
+  p.render(1, st.t);
+}
+const views = { side: [4.2, 1.1, 0], front: [0, 1.1, 4.2], back: [0, 1.4, -4.2], top: [0.01, 6, 0], diag: [3, 1.6, 3] };
+window.frame = (t) => {
+  // deterministic: advance to time t at 60 Hz
+  while (st.t < t - 1e-6) { const dt = Math.min(1 / 60, t - st.t); st.t += dt; step(dt); }
+  const v = views[st.side] || views.side;
+  const c = p.parts.root.position;
+  cam.position.set(c.x + v[0], v[1], c.z + v[2]);
+  cam.lookAt(c.x, 0.9, c.z);
+  r.render(scene, cam);
+  document.getElementById('info').textContent = `${st.clip || 'speed ' + st.speed} t=${t.toFixed(2)}`;
+};
+window.frame(0.01);
+window.ready = true;
+</script></body></html>

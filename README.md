@@ -4,9 +4,14 @@ A 3D mobile football prototype for iPhone (runs in the browser). You play one
 polished **attacking moment**: the core gameplay unit of a future single-player
 career mode. All visuals, names and branding are original.
 
-- **Tech:** Three.js r186 (ES modules via an import map, pinned on jsDelivr), vanilla JS, no build step.
+- **Tech:** Three.js r186 (ES modules via an import map, pinned on jsDelivr), vanilla JS, no build step to play.
 - **Loop:** fixed 60 Hz simulation with interpolated rendering. Time scale drives the shot freeze and slow-mo.
-- **Assets:** everything is procedural (primitives, canvas textures, Web Audio).
+- **Movement:** real motion capture (CMU database) retargeted onto the players, a locomotion blend tree, foot IK and a light physics layer — see [Movement](#movement-motion-capture--physics).
+- **Assets:** bodies are procedural primitives; motion is mocap; sounds are real recordings (see credits).
+
+**Single file for iPhone:** `Breakaway.html` is the whole game in one file (three.js bundled, CSS, mocap and
+audio inlined, ~1.5 MB). AirDrop or save it to Files and open it — no server needed. Rebuild with
+`npm install && npm run build`.
 
 ## Run it
 
@@ -70,7 +75,13 @@ src/config.js               ALL tunable numbers + stat→gameplay formulas
 src/core/                   Loop (fixed step), StateMachine, Input (multi-touch), Audio (Web Audio),
                             Quality (adaptive), MathUtil
 src/world/                  Pitch (markings, goals, rippling nets, stadium, lights), Camera, Effects
-src/entities/               Player (shared body/anim/stats), Ball (pure integrator), Keeper
+src/entities/               Player (shared body/stats/rig), Ball (pure integrator), Keeper
+src/anim/                   Animator (blend tree, transitions, action layers, physics, foot IK),
+                            Clips (mocap decoding/sampling), HandPoses (non-mocap moves), clipData (generated)
+assets/mocap/clips.json     converted mocap keyframes (same data as src/anim/clipData.js)
+tools/mocap/                BVH → game-rig converter (fetch.mjs, convert.mjs, clips.mjs, inspect/survey)
+tools/build.mjs             single-file Breakaway.html build (esbuild)
+tools/playtest.mjs, tests/  headless Chromium playtests; tools/viewer/ mocap viewer
 src/ai/                     TeammateAI, DefenderAI
 src/gameplay/               MomentManager, Passing, Shooting, Possession (dribble/receive), Replay
 src/ui/                     HUD, Joystick, ShotOverlay, styles.css, safeArea
@@ -87,6 +98,45 @@ and `styles.css`.
 - All gameplay reads stats through `CONFIG.statMap`.
 - `MomentManager` exposes `setup()`, `update()` and `end()`, a per-moment `result` (outcome, rating items) and a `match` object, ready for a MatchManager to chain moments.
 
+## Movement: motion capture + physics
+
+Players move with **real motion capture** from the CMU Graphics Lab Motion Capture Database
+(free for games; see [CREDITS.md](CREDITS.md) for the exact clips). The pipeline:
+
+1. `tools/mocap/fetch.mjs` downloads the chosen BVH clips (listed in `tools/mocap/clips.mjs`) from a GitHub mirror.
+2. `tools/mocap/convert.mjs` retargets them onto the game rig (pelvis, torso, head, hips, knees, ankles,
+   shoulders, elbows): trunk frames from joint positions, limbs aimed along the real bone directions with
+   the knee/elbow bend plane for twist, hinges for knees/elbows/ankles. Clips are resampled to 30 fps,
+   made facing-relative (root motion stored separately), foot contacts detected, loops closed and
+   phase-aligned to the left footfall, left/right mirrored variants generated, kick contact frames found,
+   and everything quantised to int16 (71 clips, ~270 KB).
+
+At runtime (`src/anim/Animator.js`):
+- **Locomotion blend tree** — idle ↔ walk ↔ jog ↔ run ↔ sprint by real ground speed, plus backpedal and
+  side-step groups by the direction of travel (defenders jockey facing the ball). One shared stride phase;
+  playback rate = ground speed ÷ stride length, so planted feet don't slide. Above the sprint clip's speed
+  the stride lengthens rather than just the cadence. Turn clips blend in by angular velocity.
+- **Transitions** — explosive starts (lean to go) and braking stops (sit back) are mapped to the player's
+  actual speed; sharp direction changes play a plant-and-push-off cut; slow reversals play a 180° turn.
+- **Actions** — each kick variant uses a CMU soccer kick, time-warped so the boot meets the ball exactly
+  when the ball is released (passes after `pass.windup`, shots after `shot.strikeWindup`, free kicks and
+  penalties after a real run-up). Falls, stumbles, get-ups and celebrations are mocap too. Moves that
+  aren't in CMU (step-overs, elasticos, drag-backs, tackles, blocks, knee slide, keeper dive, …) keep their
+  hand-made poses, layered over the mocap base with per-joint masks so the rest of the body stays natural.
+  All layers cross-fade (no pops).
+- **Dribbling** — the run cycle is the base; stride touches are timed to the real footfall of the touching
+  foot and that foot reaches the ball with IK. The ball sits ~0.5 m ahead (a bit more when sprinting).
+- **Variation** — per-player stride, cadence, arm swing, posture, and 2–3 clip variants per gait.
+- **Physics layer** — momentum (turn rate limited by sideways grip from acceleration/dribbling stats, plus
+  the existing accel/brake limits), whole-body lean from acceleration and turning, torso/head springs,
+  capsule bumps that exchange momentum by mass and stagger both players, tackle impulses, and a
+  spring-driven ragdoll-lite for falls (inverted-pendulum topple in the direction of the hit, limbs from the
+  fall clip, then the matching get-up clip).
+- **Foot IK** — planted feet lock to the grass, feet never sink, touching/kicking feet reach the ball.
+
+Dev tools: `tools/viewer/` shows the rig playing any clip (`/tools/viewer/?clip=run1` or `?speed=6`);
+`tools/mocap/inspect.mjs` / `survey.mjs` print clip timelines; `npm test` runs the headless playtests.
+
 ## What's in `config.js`
 
 | Section | What it tunes |
@@ -95,7 +145,7 @@ and `styles.css`.
 | `pitch`, `colors` | real dimensions (105×68, 7.32×2.44 goals, boxes, arcs), palette |
 | `statMap` | every stat→gameplay formula: speed, acceleration, dribble touch size and error, reach, turn control, first touch, pass error/speed, vision cone, wobble, keeper modifier, shot speed, composure, stamina drain |
 | `teamMap` | team overall → reaction, speed, tackling, interceptions, decision time |
-| `player`, `dribble`, `ball` | turning, braking, touch timing, trap, receive reach, drag, Magnus, bounce, friction |
+| `player`, `dribble`, `ball` | turning, grip (momentum), bumps, jockeying, braking, touch timing, sprint carry, trap, receive reach, drag, Magnus, bounce, friction |
 | `pass` | targeting weights, lead, through balls, windup, pressure |
 | `shot` | range, freeze timing, pull length, cancel radius, power zones, lateral/height gain, curl, wobble terms, slow-mo, blocks |
 | `keeper` | rating, difficulty, reaction, dive speed, reach, save curve, corner penalties |
@@ -127,6 +177,14 @@ Headless Chromium (software WebGL) scripted playtests covered these checks:
 - **Keeper fairness:** a statistical table across shot types and distances.
 - **HUD safe areas:** no overlap with simulated notch and home-bar insets at 375×667, 390×844 and 430×932, in both orientations.
 - **Performance budget:** about 190 draw calls (300 with shadows), about 0.02 ms per simulation step, and about 0.5 ms per aim-solve frame.
+
+Movement rebuild (`npm test`, deterministic 60 fps stepping in headless Chromium):
+- **Planted feet:** ~0.05 m/s average drift while weight-bearing during dribbling (IK lock), 0.02–0.25 m/s across 1–9 m/s in the viewer.
+- **Touches:** the touching foot is ~5 cm from the ball at the touch; ball ~0.45–0.55 m ahead, ~0.6 m when sprinting.
+- **Passing:** 40/40 passes reached a teammate (also from the single-file build).
+- **Set pieces:** free kicks and penalties run up and release on the kick's contact frame (foot on the ball).
+- **Soak:** 14 moments with random input through every state and the replay: no errors, no NaN poses.
+- **Cost:** ~0.2 ms of animation CPU per frame for a moment, ~0.6 ms with all 23 bodies (desktop).
 
 **Not verified here:** real-device frame rate, touch feel and audio. Those need a
 physical iPhone, and the adaptive quality system steps down automatically if FPS drops.

@@ -139,6 +139,8 @@ class Game {
     this.debug = new DebugPanel(this, this.uiRoot);
 
     this.ts = null;
+    // a strike that started on a button press leaves the boot on its contact frame
+    this.onShotFired = () => { if (this.sm.is(STATES.PLAYING)) this.sm.change(STATES.SHOT_FLIGHT); };
     this._buildStates();
     this._wireEvents();
     this.loop = new Loop({
@@ -258,7 +260,9 @@ class Game {
     ball.reset(x, z);
     ball.owner = u; ball.lastTouch = u; ball.pass = null;
     ball.lastKick = { type: 'control', by: u, time: this.simTime };
-    this._reposition(u, x - ux * 0.6, z - uz * 0.6, heading);
+    // stand back and a little to the left of the ball: the taker runs up (see Shooting._startStrike)
+    const ru = CONFIG.shot.runUpDistance;
+    this._reposition(u, x - ux * ru + uz * 0.5, z - uz * ru - ux * 0.5, heading);
     u.stumble = 0;
 
     const boxEdge = L - P.penaltyDepth - 1.5;
@@ -359,7 +363,7 @@ class Game {
       this._endFreeKickUI();
       this.setPiece = null;
       const gx = P.length / 2;
-      this.passing.requestUserPass(u, gx - u.pos.x, -u.pos.z * 0.5, 'ground');
+      this.shooting.runUpThen(u, () => this.passing.requestUserPass(u, gx - u.pos.x, -u.pos.z * 0.5, 'ground'));
       return true;
     }
     if (sp.fk === 'choose' && a === 'shoot') {
@@ -505,6 +509,7 @@ class Game {
     this.hud.setButtonMode('all');
     if (this.aimLine) { this.aimLine.visible = false; this.aimRing.visible = false; }
     this.passing.reset();
+    this.shooting.cancelStrike();
     this.shooting.clearFlight();
     if (this.shooting.aim) this.shooting.endAim();
     this.overlay.clear();
@@ -611,6 +616,7 @@ class Game {
       this.teammateAI.update(dt);
       this.defenderAI.update(dt);
       this.keeper.update(dt);
+      this.shooting.update(dt);
       this.passing.update(dt);
     } else {
       this._resultControl(dt);
@@ -686,6 +692,11 @@ class Game {
         wx = ball.pos.x - u.pos.x; wz = ball.pos.z - u.pos.z; speed = u.runSpeed;
       }
     }
+    const strike = this.shooting.strike;
+    if (strike && strike.shooter === u) {
+      // mid-strike: plant and hit it (a set piece run-up is driven by Shooting)
+      if (strike.setPiece) speed = 0; else speed = Math.min(speed, u.speed * 0.55);
+    }
     u.steer(wx, wz, speed);
 
     const inp = this.input;
@@ -693,7 +704,7 @@ class Game {
     const pg = inp.consumeGesture('pass'), tg = inp.consumeGesture('through'), sg = inp.consumeGesture('shoot');
     let dx = wx, dz = wz;
     if (mag < 0.2) { dx = Math.sin(u.heading); dz = Math.cos(u.heading); }
-    if (ball.owner === u && !this.passing.pending) {
+    if (ball.owner === u && !this.passing.pending && !this.shooting.strike) {
       if (sg) {
         // SHOOT: hold for power; swipe down = driven, up = chip, right = finesse, left = fake
         const kind = { tap: 'normal', down: 'driven', up: 'chip', right: 'finesse', left: 'fake' }[sg.dir] || 'normal';
