@@ -425,6 +425,8 @@ export class Player {
     this.anim.action = name;
     this.anim.t = 0;
     this.anim.dur = dur;
+    // reset per-action options so a variant never leaks into the next action
+    this.anim.variant = null; this.anim.loop = false; this.anim.hold = false; this.anim.spinAmt = 0;
     Object.assign(this.anim, opts);
   }
 
@@ -474,7 +476,8 @@ export class Player {
       rate = 22;
       this._actionPose(an.action, k, T);
       if (an.t >= an.dur) {
-        if (an.action === 'celebrate' && an.loop) an.t = 0;
+        if (an.hold) an.t = an.dur;            // freeze on the last frame (e.g. kneeling after a knee slide)
+        else if (an.loop) an.t = 0;
         else an.action = null;
       }
     }
@@ -490,43 +493,210 @@ export class Player {
     switch (name) {
       case 'touch': {
         const v = Math.sin(k * Math.PI);
-        T['hip' + kick] = 0.15 + v * 0.55;
-        T['knee' + kick] = 0.3 + v * 0.2;
+        const va = this.anim.variant;
+        if (va === 'outside') {
+          T['hip' + kick] = 0.2 + v * 0.4; T['knee' + kick] = 0.35 + v * 0.25;
+          T.twist = (kick === 'R' ? -1 : 1) * 0.25 * v; T.bodyRoll = (kick === 'R' ? 1 : -1) * 0.08 * v;
+        } else if (va === 'sole') {
+          T['hip' + kick] = 0.3 * v; T['knee' + kick] = 0.4 + v * 0.7; T.lean = 0.12;
+        } else {
+          T['hip' + kick] = 0.15 + v * 0.55;
+          T['knee' + kick] = 0.3 + v * 0.2;
+        }
+        break;
+      }
+      case 'control': {
+        // receiving: cushion with the inside, on the thigh, or chest it down
+        const v = Math.sin(k * Math.PI);
+        const va = this.anim.variant;
+        if (va === 'chest') {
+          T.lean = -0.4 * v; T.headPitch = 0.3 * v; T.shLz = 0.7 * v + 0.1; T.shRz = -0.7 * v - 0.1;
+          T.shL = T.shR = 0.5 * v; T.kneeL = T.kneeR = 0.35; T.bodyY = -0.05 * v;
+        } else if (va === 'thigh') {
+          T['hip' + kick] = 1.1 * v; T['knee' + kick] = 1.3 * v; T.lean = -0.1 * v;
+          T.shLz = 0.5; T.shRz = -0.5;
+        } else if (va === 'heavy') {
+          T.lean = 0.35 * v; T.bodyRoll = 0.2 * v * (this.anim.side || 1);
+          T.shLz = 0.9 * v; T.shRz = -0.9 * v; T['hip' + kick] = 0.6 * v;
+        } else {
+          T['hip' + kick] = 0.35 * v; T['knee' + kick] = 0.45 * v; T.twist = (kick === 'R' ? 0.3 : -0.3) * v;
+          T.lean = 0.1;
+        }
         break;
       }
       case 'pass': {
-        // plant, swing back, side-foot through the ball, follow through
+        const va = this.anim.variant || 'side';
+        const sg = kick === 'R' ? 1 : -1;
         const back = k < 0.35;
         const fwd = Math.min(1, (k - 0.35) / 0.3);
-        T['hip' + kick] = back ? ease(0.1, -0.85, k / 0.35) : ease(-0.85, 1.05, fwd);
-        T['knee' + kick] = back ? ease(0.2, 1.35, k / 0.35) : ease(1.35, 0.1, fwd);
-        T['hip' + other] = -0.18; T['knee' + other] = 0.35;
-        T.twist = (kick === 'R' ? 1 : -1) * (back ? -0.3 * (k / 0.35) : 0.35 * Math.sin(fwd * Math.PI * 0.5));
-        T.shLz = 0.7; T.shRz = -0.7; T.shL = back ? 0.3 : -0.2; T.shR = back ? -0.3 : 0.2;
-        T.lean = back ? 0.05 : 0.18;
-        T.bodyY = -0.05;
+        if (va === 'backheel') {
+          // heel it backwards: leg swings behind the body
+          T['hip' + kick] = back ? ease(0, 0.45, k / 0.35) : ease(0.45, -0.95, fwd);
+          T['knee' + kick] = back ? ease(0.2, 0.3, k / 0.35) : ease(0.3, 1.0, fwd);
+          T['hip' + other] = 0.05; T['knee' + other] = 0.3;
+          T.lean = 0.28; T.headPitch = -0.2; T.shLz = 0.5; T.shRz = -0.5;
+        } else if (va === 'outside') {
+          // trivela: flick across the body with the outside of the boot
+          T['hip' + kick] = back ? ease(0, -0.6, k / 0.35) : ease(-0.6, 0.75, fwd);
+          T['knee' + kick] = back ? ease(0.2, 1.3, k / 0.35) : ease(1.3, 0.15, fwd);
+          T['hip' + other] = -0.12; T['knee' + other] = 0.3;
+          T.twist = -sg * (back ? 0.15 : 0.5 * Math.sin(fwd * Math.PI * 0.5));
+          T.bodyRoll = sg * 0.14 * Math.sin(k * Math.PI);
+          T.shLz = 0.6; T.shRz = -0.6; T.lean = 0.12;
+        } else if (va === 'flick') {
+          const v = Math.sin(k * Math.PI);
+          T['hip' + kick] = 0.15 + 0.5 * v; T['knee' + kick] = 0.5 * v; T.twist = sg * 0.3 * v; T.lean = 0.1;
+        } else if (va === 'lofted' || va === 'chipped') {
+          // lean back and get under it; a chipped ball is a short stab
+          const top = va === 'chipped' ? 0.65 : 1.55;
+          T['hip' + kick] = back ? ease(0, -1.0, k / 0.35) : ease(-1.0, top, fwd);
+          T['knee' + kick] = back ? ease(0.2, 1.5, k / 0.35) : ease(1.5, va === 'chipped' ? 0.7 : 0.2, fwd);
+          T['hip' + other] = -0.2; T['knee' + other] = 0.5;
+          T.lean = back ? 0.0 : -0.28; T.bodyRoll = -sg * 0.18 * Math.sin(k * Math.PI);
+          T.shLz = 1.0; T.shRz = -1.0; T.shL = back ? 0.2 : -0.3; T.shR = back ? -0.2 : 0.6;
+          T.bodyY = -0.06;
+        } else if (va === 'offbalance') {
+          T['hip' + kick] = back ? ease(0.1, -0.6, k / 0.35) : ease(-0.6, 0.8, fwd);
+          T['knee' + kick] = back ? ease(0.2, 1.2, k / 0.35) : ease(1.2, 0.2, fwd);
+          T['hip' + other] = 0.1; T['knee' + other] = 0.5;
+          T.bodyRoll = sg * 0.32 * Math.sin(k * Math.PI); T.lean = -0.15;
+          T.shL = 1.2 * Math.sin(k * 7); T.shR = -0.5; T.shLz = 1.1; T.shRz = -0.4;
+          T.bodyY = 0.06 * Math.sin(k * Math.PI);
+        } else {
+          // side-foot (and the bigger 'driven' version)
+          const big = va === 'driven' ? 1.35 : 1;
+          T['hip' + kick] = back ? ease(0.1, -0.85 * big, k / 0.35) : ease(-0.85 * big, 1.05 * big, fwd);
+          T['knee' + kick] = back ? ease(0.2, 1.35, k / 0.35) : ease(1.35, 0.1, fwd);
+          T['hip' + other] = -0.18; T['knee' + other] = 0.35;
+          T.twist = sg * (back ? -0.3 * (k / 0.35) : 0.35 * Math.sin(fwd * Math.PI * 0.5));
+          T.shLz = 0.7 * big; T.shRz = -0.7 * big; T.shL = back ? 0.3 : -0.2; T.shR = back ? -0.3 : 0.2;
+          T.lean = back ? 0.05 : va === 'driven' ? 0.3 : 0.18;
+          T.bodyY = -0.05;
+        }
         break;
       }
       case 'shoot': {
-        // big wind-up, laces through the ball, leg follows through high
+        const va = this.anim.variant || 'laces';
+        const sg = kick === 'R' ? 1 : -1;
         const back = k < 0.3;
         const fwd = Math.min(1, (k - 0.3) / 0.28);
-        T['hip' + kick] = back ? ease(0, -1.25, k / 0.3) : k < 0.75 ? ease(-1.25, 1.85, fwd) : ease(1.85, 0.2, (k - 0.75) / 0.25);
+        if (va === 'chip') {
+          T['hip' + kick] = back ? ease(0, -0.7, k / 0.3) : ease(-0.7, 0.75, Math.min(1, (k - 0.3) / 0.15));
+          T['knee' + kick] = back ? ease(0.2, 1.4, k / 0.3) : ease(1.4, 0.8, fwd);
+          T['hip' + other] = -0.2; T['knee' + other] = 0.45;
+          T.lean = back ? 0.05 : -0.35; T.shLz = 0.9; T.shRz = -0.9; T.headPitch = 0.25;
+          break;
+        }
+        if (va === 'placed') {
+          T['hip' + kick] = back ? ease(0, -0.75, k / 0.3) : ease(-0.75, 1.1, fwd);
+          T['knee' + kick] = back ? ease(0.2, 1.3, k / 0.3) : ease(1.3, 0.1, fwd);
+          T['hip' + other] = -0.15; T['knee' + other] = 0.35;
+          T.twist = sg * (back ? -0.25 : 0.55 * Math.sin(fwd * Math.PI * 0.5)); T.lean = 0.15;
+          T.shLz = 0.7; T.shRz = -0.7;
+          break;
+        }
+        // power family: laces / driven / finesse / off-balance
+        const peak = va === 'driven' ? 1.0 : va === 'finesse' ? 1.5 : 1.85;
+        T['hip' + kick] = back ? ease(0, -1.25, k / 0.3) : k < 0.75 ? ease(-1.25, peak, fwd) : ease(peak, 0.2, (k - 0.75) / 0.25);
         T['knee' + kick] = back ? ease(0.2, 1.9, k / 0.3) : ease(1.9, 0.05, Math.min(1, (k - 0.3) / 0.2));
         T['hip' + other] = back ? -0.1 : -0.3; T['knee' + other] = back ? 0.45 : 0.25;
         T.shLz = 1.0; T.shRz = -1.0; T.shL = back ? 0.6 : -0.4; T.shR = back ? -0.6 : 0.5;
         T.lean = back ? 0.25 : k < 0.75 ? -0.2 : 0.05;
-        T.twist = (kick === 'R' ? 1 : -1) * (back ? -0.45 * (k / 0.3) : 0.55 * Math.sin(fwd * Math.PI * 0.6));
-        T.bodyRoll = (kick === 'R' ? -1 : 1) * 0.12 * Math.sin(k * Math.PI);
+        T.twist = sg * (back ? -0.45 * (k / 0.3) : 0.55 * Math.sin(fwd * Math.PI * 0.6));
+        T.bodyRoll = -sg * 0.12 * Math.sin(k * Math.PI);
         T.bodyY = k > 0.35 && k < 0.75 ? 0.07 : -0.04;
+        if (va === 'driven') {
+          // knee over the ball, keep it down
+          T.lean = back ? 0.35 : 0.32; T.bodyY = -0.08; T.headPitch = -0.35;
+        } else if (va === 'finesse') {
+          // open the body, wrap the inside of the foot round it, lean away
+          T.twist = sg * (back ? -0.3 : 0.85 * Math.sin(fwd * Math.PI * 0.6));
+          T.bodyRoll = sg * 0.28 * Math.sin(k * Math.PI);
+          T.shL = back ? 0.4 : 1.4; T.shLz = 1.2; T.lean = back ? 0.15 : -0.1;
+        } else if (va === 'offbalance') {
+          // snatched at while falling away
+          const fall = Math.max(0, (k - 0.5) / 0.5);
+          T.bodyRoll = -sg * (0.15 + 0.55 * fall); T.lean = -0.3; T.bodyY = -0.35 * fall;
+          T.shL = 1.6 * Math.sin(k * 8); T.shLz = 1.4; T.shRz = -1.2;
+        }
         break;
       }
       case 'tackle': {
+        if (this.anim.variant === 'stand') {
+          // standing poke: lunge a leg in
+          const v = Math.sin(k * Math.PI);
+          T.hipR = 1.25 * v; T.kneeR = 0.15; T.hipL = -0.2 * v; T.kneeL = 0.7 * v;
+          T.lean = 0.35 * v; T.bodyY = -0.18 * v; T.shLz = 0.8 * v; T.shRz = -0.8 * v;
+          break;
+        }
         const v = k < 0.25 ? k / 0.25 : k > 0.75 ? (1 - k) / 0.25 : 1;
         T.bodyY = -0.62 * v; T.bodyPitch = -0.75 * v;
         T.hipR = 1.4 * v; T.kneeR = 0.1; T.hipL = 0.5 * v; T.kneeL = 1.3 * v;
         T.shL = -0.6 * v; T.shR = 0.4 * v; T.shLz = 0.9 * v; T.shRz = -0.9 * v;
         T.lean = -0.3 * v;
+        break;
+      }
+      case 'block': {
+        // throws himself in front of a shot that never comes
+        const v = k < 0.2 ? k / 0.2 : k > 0.7 ? (1 - k) / 0.3 : 1;
+        const sd = this.anim.side || 1;
+        T.hipL = 1.0 * v; T.kneeL = 0.2; T.hipR = -0.2; T.kneeR = 0.9 * v;
+        T.bodyRoll = sd * 0.5 * v; T.bodyY = -0.3 * v; T.shL = T.shR = -0.4 * v; T.shLz = 0.2; T.shRz = -0.2;
+        T.lean = 0.25 * v; T.headPitch = -0.3 * v;
+        break;
+      }
+      // ---- goal celebrations
+      case 'kneeslide': {
+        const v = Math.min(1, k / 0.12);
+        T.bodyY = -0.46 * v; T.hipL = T.hipR = -0.05; T.kneeL = T.kneeR = 1.75 * v;
+        T.lean = -0.45 * v; T.headPitch = 0.45 * v;
+        T.shL = T.shR = 0.3 + 1.1 * v; T.shLz = 1.25 * v; T.shRz = -1.25 * v; T.elL = T.elR = 0.15;
+        if (k > 0.55) { T.shL = T.shR = 2.6; T.shLz = 0.6; T.shRz = -0.6; } // arms up to the crowd
+        break;
+      }
+      case 'airplane': {
+        T.shLz = 1.5; T.shRz = -1.5; T.shL = T.shR = 0; T.elL = T.elR = 0.05;
+        T.bodyRoll = Math.sin(this.anim.t * 2.4) * 0.32; T.lean = 0.1; T.headPitch = 0.15;
+        break;
+      }
+      case 'jumpfist': {
+        const t = this.anim.t;
+        T.bodyY = Math.abs(Math.sin(t * 5.5)) * 0.38;
+        T.shR = 2.95 - Math.abs(Math.sin(t * 5.5)) * 0.4; T.elR = 0.5; T.shRz = -0.2;
+        T.shL = 0.4; T.elL = 1.6; T.shLz = 0.3;
+        T.kneeL = T.kneeR = 0.3 + Math.abs(Math.cos(t * 5.5)) * 0.6; T.hipL = T.hipR = 0.25; T.headPitch = 0.3;
+        break;
+      }
+      case 'spinjump': {
+        const sd = this.anim.side || 1;
+        if (k < 0.55) {
+          const j = k / 0.55;
+          T.bodyY = Math.sin(j * Math.PI) * 0.55; this.spinYaw = sd * Math.PI * j;
+          T.kneeL = T.kneeR = 0.4 + Math.sin(j * Math.PI) * 0.6; T.hipL = T.hipR = 0.35 * Math.sin(j * Math.PI);
+          T.shL = T.shR = 1.2; T.shLz = 0.6; T.shRz = -0.6;
+        } else {
+          this.spinYaw = sd * Math.PI;
+          // land wide, arms down and out, chest out
+          T.bodyY = -0.12; T.kneeL = T.kneeR = 0.35; T.hipL = 0.25; T.hipR = -0.25;
+          T.shL = T.shR = -0.25; T.shLz = 0.75; T.shRz = -0.75; T.elL = T.elR = 0.05; T.lean = -0.2; T.headPitch = 0.25;
+        }
+        break;
+      }
+      case 'pointsky': {
+        const t = this.anim.t;
+        T.shL = T.shR = 2.95; T.elL = T.elR = 0.05; T.shLz = 0.15; T.shRz = -0.15;
+        T.headPitch = 0.55; T.lean = -0.15; T.bodyY = Math.sin(t * 3) * 0.02;
+        break;
+      }
+      case 'teamjump': {
+        const t = this.anim.t + (this.anim.offset || 0);
+        T.bodyY = Math.abs(Math.sin(t * 6.5)) * 0.28;
+        T.shL = 2.6 + Math.sin(t * 6.5) * 0.25; T.shR = 2.6 - Math.sin(t * 6.5) * 0.25; T.elL = T.elR = 0.3;
+        T.shLz = 0.4; T.shRz = -0.4; T.kneeL = T.kneeR = 0.3 + Math.abs(Math.cos(t * 6.5)) * 0.5; T.headPitch = 0.2;
+        break;
+      }
+      case 'armsup': {
+        T.shL = 2.5; T.shR = 2.5; T.elL = T.elR = 0.2; T.shLz = 0.5; T.shRz = -0.5; T.headPitch = 0.2;
         break;
       }
       case 'stumble': {

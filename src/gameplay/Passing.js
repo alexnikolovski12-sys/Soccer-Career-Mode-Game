@@ -127,30 +127,102 @@ export class Passing {
     return hi;
   }
 
-  /** User pressed PASS with the ball. */
-  requestUserPass(user, dirX, dirZ) {
+  /**
+   * Pick an animation variant that fits the pass: lofted, through, driven,
+   * outside-of-the-boot, back-heel, off-balance or a plain side-foot.
+   */
+  pickVariant(passer, kind, tx, tz) {
+    const rng = this.game.rng;
+    if (kind === 'lofted') return rng.chance(0.25) ? 'chipped' : 'lofted';
+    const dx = tx - passer.pos.x, dz = tz - passer.pos.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const fx = Math.sin(passer.heading), fz = Math.cos(passer.heading);
+    const ang = Math.acos(clamp((dx * fx + dz * fz) / d, -1, 1));
+    if (this.pressureOn(passer) > 0.75 && rng.chance(0.6)) return 'offbalance';
+    if (ang > 2.3 && d < 14 && rng.chance(0.55)) return 'backheel';
+    if (ang > 0.8 && rng.chance(0.5)) return 'outside';
+    if (kind === 'through') return rng.chance(0.4) ? 'outside' : 'driven';
+    if (d > 22) return 'driven';
+    if (d < 8 && rng.chance(0.25)) return 'flick';
+    return rng.chance(0.15) ? 'outside' : 'side';
+  }
+
+  /** Where a through ball goes: in front of the runner, toward the goal we attack. */
+  throughPoint(passer, t, out = new THREE.Vector3()) {
+    const gx = CONFIG.pitch.length / 2;
+    const dx = gx - 5 - t.pos.x, dz = -t.pos.z * 0.45;
+    const l = Math.hypot(dx, dz) || 1;
+    // more space in front → lead it further
+    let space = 99;
+    for (const o of this.game.opponentsOf(t)) {
+      if (o.isKeeper) continue;
+      const ahead = (o.pos.x - t.pos.x) * (dx / l) + (o.pos.z - t.pos.z) * (dz / l);
+      if (ahead > 0) space = Math.min(space, Math.hypot(o.pos.x - t.pos.x, o.pos.z - t.pos.z));
+    }
+    const lead = clamp(Math.min(space * 0.8, CONFIG.pass.throughMax), CONFIG.pass.throughMin, CONFIG.pass.throughMax);
+    out.set(t.pos.x + (dx / l) * lead, 0, t.pos.z + (dz / l) * lead);
+    const L = gx - 2.5, W = CONFIG.pitch.width / 2 - 1.5;
+    out.x = clamp(out.x, -L, L); out.z = clamp(out.z, -W, W);
+    return out;
+  }
+
+  /** User pressed PASS / THROUGH. kind: ground | lofted | through */
+  requestUserPass(user, dirX, dirZ, kind = 'ground') {
     if (this.pending) return;
-    const sel = this.selectTarget(user, dirX, dirZ);
+    let sel = this.selectTarget(user, dirX, dirZ);
+    if (kind === 'through') {
+      // prefer a teammate ahead of us for a through ball
+      const fwd = this.selectTarget(user, dirX * 0.4 + 1, dirZ * 0.4);
+      if (fwd && fwd.target.pos.x > user.pos.x - 2) sel = fwd;
+    }
     const kickLeg = (this.kickLeg = -this.kickLeg);
-    user.playAction('pass', 0.5, { kickLeg });
+    let aim;
     if (sel) {
+      aim = kind === 'through' ? this.throughPoint(user, sel.target) : this.leadPoint(user, sel.target);
       this.game.effects.showMarker(sel.target);
-      this.pending = { passer: user, target: sel.target, t: CONFIG.pass.windup };
     } else {
       const l = Math.hypot(dirX, dirZ) || 1;
-      const aim = new THREE.Vector3(
-        user.pos.x + (dirX / l) * CONFIG.pass.spaceDistance, 0, user.pos.z + (dirZ / l) * CONFIG.pass.spaceDistance);
-      this.pending = { passer: user, target: null, aim, t: CONFIG.pass.windup };
+      const far = kind === 'ground' ? CONFIG.pass.spaceDistance : CONFIG.pass.spaceDistance * 1.6;
+      aim = new THREE.Vector3(user.pos.x + (dirX / l) * far, 0, user.pos.z + (dirZ / l) * far);
     }
+    const variant = this.pickVariant(user, kind, aim.x, aim.z);
+    const dur = variant === 'lofted' || variant === 'chipped' ? 0.6 : variant === 'backheel' || variant === 'flick' ? 0.4 : 0.5;
+    user.playAction('pass', dur, { kickLeg, variant });
+    this.pending = { passer: user, target: sel ? sel.target : null, aim: sel ? null : aim, t: CONFIG.pass.windup, kind };
   }
 
   /** AI pass (teammate). */
-  requestAIPass(passer, target) {
+  requestAIPass(passer, target, kind = 'ground') {
     if (this.pending) return;
     const kickLeg = (this.kickLeg = -this.kickLeg);
-    passer.playAction('pass', 0.5, { kickLeg });
-    this.pending = { passer, target, t: CONFIG.pass.windup * 0.8 };
+    const variant = this.pickVariant(passer, kind, target.pos.x, target.pos.z);
+    passer.playAction('pass', 0.5, { kickLeg, variant });
+    this.pending = { passer, target, t: CONFIG.pass.windup * 0.8, kind };
     if (target.isUser) this.game.effects.showMarker(target);
+  }
+
+  /** Initial velocity for a lofted pass that lands on `aim`. */
+  solveLoft(start, aim, elev) {
+    const r = CONFIG.ball.radius;
+    const dx = aim.x - start.x, dz = aim.z - start.z;
+    const d = Math.hypot(dx, dz) || 0.1;
+    const ux = dx / d, uz = dz / d, ce = Math.cos(elev), se = Math.sin(elev);
+    const dt = 1 / 120;
+    const land = (v) => {
+      const s = { px: start.x, py: r + 0.01, pz: start.z, vx: ux * v * ce, vy: v * se, vz: uz * v * ce, curve: 0 };
+      for (let i = 0; i < 600; i++) {
+        Ball.integrate(s, dt);
+        if (i > 4 && s.py <= r + 1e-3) break;
+      }
+      return Math.hypot(s.px - start.x, s.pz - start.z);
+    };
+    let lo = 3, hi = 40;
+    for (let i = 0; i < 20; i++) {
+      const mid = (lo + hi) / 2;
+      if (land(mid) < d) lo = mid; else hi = mid;
+    }
+    const v = (lo + hi) / 2;
+    return [ux * v * ce, v * se, uz * v * ce];
   }
 
   update(dt) {
@@ -165,16 +237,47 @@ export class Passing {
       const d = Math.hypot(ball.pos.x - pd.passer.pos.x, ball.pos.z - pd.passer.pos.z);
       if (ball.owner || d > 1.6) return;
     }
-    const aim = pd.target ? this.leadPoint(pd.passer, pd.target) : pd.aim;
-    this.execute(pd.passer, pd.target, aim);
+    const kind = pd.kind || 'ground';
+    const aim = pd.target
+      ? (kind === 'through' ? this.throughPoint(pd.passer, pd.target) : this.leadPoint(pd.passer, pd.target))
+      : pd.aim;
+    this.execute(pd.passer, pd.target, aim, kind);
   }
 
-  execute(passer, target, aim) {
+  execute(passer, target, aim, kind = 'ground') {
     const g = this.game, ball = g.ball;
     const P = CONFIG.pass, M = CONFIG.statMap;
     const dx = aim.x - ball.pos.x, dz = aim.z - ball.pos.z;
+    if (kind === 'lofted') {
+      // cross / lofted ball: lands on the receiver's run
+      const dist = Math.hypot(dx, dz) || 0.1;
+      const err = M.passError(passer.stats.passing) * 0.8 + this.pressureOn(passer) * 0.03;
+      const ax = aim.x + g.rng.gauss() * err * dist, az = aim.z + g.rng.gauss() * err * dist;
+      const elev = dist < 14 ? 0.82 : dist < 28 ? 0.62 : 0.5;
+      let [vx, vy, vz] = this.solveLoft(ball.pos, { x: ax, z: az }, elev);
+      if (target) {
+        // don't drop it further from the receiver than he can sprint before it lands
+        const tf = (2 * vy) / CONFIG.ball.gravity;
+        const reach = target.attrs.sprintSpeed * tf * 0.7;
+        const rx = ax - target.pos.x, rz = az - target.pos.z, rd = Math.hypot(rx, rz);
+        if (rd > reach) {
+          const k = reach / rd;
+          [vx, vy, vz] = this.solveLoft(ball.pos, { x: target.pos.x + rx * k, z: target.pos.z + rz * k }, elev);
+          aim = { x: target.pos.x + rx * k, z: target.pos.z + rz * k };
+        } else aim = { x: ax, z: az };
+      } else aim = { x: ax, z: az };
+      ball.kick(vx, vy, vz, { type: 'pass', by: passer, ignoreTime: 0.35, time: g.simTime });
+      ball.pass = { from: passer, to: target, aim: new THREE.Vector3(aim.x, 0, aim.z), t0: g.simTime, kind };
+      if (target) target.ai.receiving = true;
+      g.audio.kick(0.55, 'pass');
+      g.effects.puff(ball.pos.x, ball.pos.z, 0.8);
+      g.events.emit('pass', { from: passer, to: target, aim, speed: Math.hypot(vx, vy, vz), kind });
+      return;
+    }
     const dist = Math.hypot(dx, dz) || 0.1;
-    let v0 = this.solveGroundSpeed(dist, P.arriveSpeed) * M.passSpeedFactor(passer.stats.passing);
+    // pace scales with distance: arrives at a firm, controllable speed every time
+    const arrive = kind === 'through' ? P.arriveSpeed * 1.15 : P.arriveSpeed;
+    let v0 = this.solveGroundSpeed(dist, arrive) * M.passSpeedFactor(passer.stats.passing);
     v0 = clamp(v0, P.minSpeed, P.maxSpeed);
     const pressure = this.pressureOn(passer);
     const sigma = M.passError(passer.stats.passing) + pressure * M.passPressureError(passer.stats.composure);
@@ -183,9 +286,9 @@ export class Passing {
     const ux = dx / dist, uz = dz / dist;
     const fx = ux * c - uz * s, fz = ux * s + uz * c;
     ball.kick(fx * v0, 0, fz * v0, { type: 'pass', by: passer, ignoreTime: 0.3, time: g.simTime });
-    ball.pass = { from: passer, to: target, aim: aim.clone(), t0: g.simTime };
+    ball.pass = { from: passer, to: target, aim: aim.clone(), t0: g.simTime, kind };
     if (target) target.ai.receiving = true;
-    g.audio.kick(v0 / 30);
+    g.audio.kick(v0 / 30, 'pass');
     g.effects.puff(ball.pos.x, ball.pos.z, 0.8);
     g.events.emit('pass', { from: passer, to: target, aim, speed: v0 });
   }

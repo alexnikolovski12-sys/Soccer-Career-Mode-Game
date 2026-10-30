@@ -68,13 +68,21 @@ export class HUD {
 
     // ---- action buttons
     const pad = el('div', 'pad');
-    this.btnShoot = el('button', 'act shoot', '<span>SHOOT</span>');
-    this.btnPass = el('button', 'act pass', '<span>PASS</span>');
-    pad.append(this.btnShoot, this.btnPass);
+    // FC-mobile style cluster: THROUGH / SHOOT on top, PASS / SPRINT below.
+    const chev = (dirs) => dirs.map((d) => `<i class="chev ${d}"></i>`).join('');
+    const btn = (cls, label, dirs) => el('button', `act ${cls}`,
+      `<b class="ring"></b><b class="meter"></b>${chev(dirs)}<span>${label}</span>`);
+    this.btnThrough = btn('through', 'THROUGH', ['up', 'down']);
+    this.btnShoot = btn('shoot', 'SHOOT', []);
+    this.btnPass = btn('pass', 'PASS', ['up', 'down', 'left', 'right']);
+    this.btnSprint = btn('sprint', 'SPRINT', ['up', 'down', 'left', 'right']);
+    pad.append(this.btnThrough, this.btnShoot, this.btnPass, this.btnSprint);
     r.appendChild(pad);
     this.pad = pad;
-    this.input.bindButton(this.btnShoot, 'shoot');
-    this.input.bindButton(this.btnPass, 'pass');
+    this.input.bindGesture(this.btnShoot, 'shoot');
+    this.input.bindGesture(this.btnPass, 'pass');
+    this.input.bindGesture(this.btnThrough, 'through');
+    this.input.bindButton(this.btnSprint, 'sprint');
 
     // ---- banners
     this.intro = el('div', 'banner intro', `
@@ -130,7 +138,7 @@ export class HUD {
         <div class="o-help">
           <div><b>Left thumb</b> move · <b>PASS</b> · hold <b>SPRINT</b></div>
           <div><b>SHOOT</b> freezes time — pull back &amp; release</div>
-          <div class="desk">Desktop: WASD · Space pass · Shift sprint (or push the stick all the way) · F shoot · mouse drag</div>
+          <div class="desk">Desktop: WASD move · Shift sprint · Space pass (C = lofted) · T through · hold F shoot (G driven, H chip, J finesse, K fake)</div>
         </div>
       </div>`);
     r.appendChild(this.startEl);
@@ -185,6 +193,15 @@ export class HUD {
     if (this.last.shoot === on) return;
     this.last.shoot = on;
     this.btnShoot.classList.toggle('ready', on);
+  }
+
+  /** Shot power ring on the SHOOT button while it's held (0..1). */
+  setShotCharge(v) {
+    const r = Math.round(v * 100);
+    if (this.last.charge === r) return;
+    this.last.charge = r;
+    this.btnShoot.style.setProperty('--charge', `${r}%`);
+    this.btnShoot.classList.toggle('charging', r > 0);
   }
 
   setPassLabel(txt) {

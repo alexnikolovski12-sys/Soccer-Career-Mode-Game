@@ -206,7 +206,7 @@ export class DefenderAI {
 
   _startTackle(d, c) {
     d.ai.tackling = { t: 0, target: c, resolved: false };
-    d.playAction('tackle', 0.55);
+    d.playAction('tackle', 0.55, { variant: this.game.rng.chance(0.5) ? 'stand' : 'slide' });
     d.tackleCooldown = CONFIG.defender.tackleCooldown;
   }
 

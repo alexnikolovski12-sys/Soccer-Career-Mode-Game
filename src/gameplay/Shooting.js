@@ -1,14 +1,14 @@
-// THE SLINGSHOT SHOT.
-// Freeze → pull back anywhere → arrow points opposite the drag → release.
-//  * horizontal pull  → aim across the goal
-//  * vertical pull    → height (pull DOWN = more loft, small vertical = driven low)
-//  * pull length      → power (green / yellow / red)
-// The aim point (+ smooth wobble) is solved into a launch velocity with the
-// exact same integrator the live ball uses, so the white circle is honest.
+// SHOOTING (FC-mobile style, real time — no freeze).
+// Hold SHOOT: longer = more power and a little more height. On release the
+// shot is auto-aimed at the corner away from the keeper, with generous
+// assistance so it's forgiving. Swipe off the button while releasing:
+//   down  → driven: low, very fast, stays on the ground
+//   up    → chip: power is worked out for you, dropped over the keeper
+//   right → finesse: harder than normal, bends a lot into the far corner
+//   left  → fake shot: wind up and don't strike it — defenders and keeper bite
 import * as THREE from 'three';
 import { CONFIG, clamp, lerp } from '../config.js';
 import { Ball } from '../entities/Ball.js';
-import { SmoothNoise } from '../core/MathUtil.js';
 
 const DEG = Math.PI / 180;
 
@@ -32,106 +32,23 @@ export class Shooting {
 
   canShoot(p) {
     const ball = this.game.ball;
-    if (ball.owner !== p || ball.pos.y > 0.6 || ball.frozen) return false;
-    const gx = CONFIG.pitch.length / 2;
-    const d = Math.hypot(gx - ball.pos.x, ball.pos.z);
-    return d <= CONFIG.shot.rangeMax && this.goalAngleDeg(ball.pos) >= CONFIG.shot.minGoalAngleDeg;
+    return ball.owner === p && ball.pos.y < 0.6 && !ball.frozen;
   }
 
-  // ------------------------------------------------------------ aim lifecycle
-  beginAim(shooter) {
-    const rng = this.game.rng;
-    this.aim = {
-      shooter,
-      active: false, inCancel: true,
-      start: { x: 0, y: 0 }, cur: { x: 0, y: 0 },
-      power: 0, time: 0,
-      n1: new SmoothNoise(rng), n2: new SmoothNoise(rng),
-      launch: null, pred: null, wobbleAmp: 0,
-      target: new THREE.Vector3(),
-    };
-    this._pressure = this._pressureOn(shooter);
-    this._setUpStance(shooter);
+  /** In range for a realistic strike (SHOOT button glows). */
+  inRange(p) {
+    const ball = this.game.ball;
+    const d = Math.hypot(CONFIG.pitch.length / 2 - ball.pos.x, ball.pos.z);
+    return this.canShoot(p) && d <= CONFIG.shot.rangeMax && this.goalAngleDeg(ball.pos) >= CONFIG.shot.minGoalAngleDeg;
   }
 
-  /** Step the shooter into a run-up stance beside the ball (masked by the camera move). */
-  _setUpStance(p) {
-    const S = CONFIG.shot, b = this.game.ball.pos;
-    const gx = CONFIG.pitch.length / 2;
-    const dx = gx - b.x, dz = -b.z;
-    const l = Math.hypot(dx, dz) || 1;
-    const fx = dx / l, fz = dz / l;
-    const lx = fz, lz = -fx; // left of the shot direction
-    p.pos.set(b.x - fx * S.runUpBack + lx * S.runUpSide, 0, b.z - fz * S.runUpBack + lz * S.runUpSide);
-    p.prevPos.copy(p.pos);
-    p.vel.set(0, 0, 0);
-    p.heading = p.prevHeading = Math.atan2(fx, fz);
-    p.anim.action = null;
-  }
+  chargeFrom(held) { return clamp(held / CONFIG.shot.chargeTime, 0, 1); }
 
-  endAim() {
-    this.aim = null;
-    this.game.overlay.clear();
-  }
-
-  metrics() {
-    const m = Math.min(window.innerWidth, window.innerHeight);
-    const S = CONFIG.shot;
-    return {
-      maxPull: Math.max(S.maxPullMinPx, S.maxPullFrac * m),
-      cancelR: Math.max(S.cancelRadiusPx, S.cancelRadiusFrac * m),
-    };
-  }
-
-  pointerDown(x, y) {
-    const a = this.aim;
-    if (!a) return;
-    a.active = true;
-    a.start.x = x; a.start.y = y;
-    a.cur.x = x; a.cur.y = y;
-    a.inCancel = true;
-  }
-
-  pointerMove(x, y) {
-    const a = this.aim;
-    if (!a || !a.active) return;
-    a.cur.x = x; a.cur.y = y;
-  }
-
-  /** Returns 'fire' if the shot should be released, otherwise null (still aiming). */
-  pointerUp(x, y) {
-    const a = this.aim;
-    if (!a || !a.active) return null;
-    a.cur.x = x; a.cur.y = y;
-    this._computePull();
-    a.active = false;
-    if (a.inCancel || !a.launch) {
-      this.game.overlay.clear();
-      return null;
-    }
-    return 'fire';
-  }
-
-  _computePull() {
-    const a = this.aim;
-    const S = CONFIG.shot;
-    const { maxPull, cancelR } = this.metrics();
-    const dx = a.cur.x - a.start.x, dy = a.cur.y - a.start.y;
-    const L = Math.hypot(dx, dy);
-    a.inCancel = L < cancelR;
-    a.power = clamp(L / maxPull, 0, 1);
-    const px = clamp(-dx / maxPull, -1.25, 1.25);
-    const py = clamp(dy / maxPull, -0.2, 1.15);
-    a.lateralN = px;
-    // camera-relative: screen right should map to the goal side on screen right
-    const rightSign = this.game.camRig.right.z >= 0 ? 1 : -1;
-    a.aimZ = px * S.lateralGain * rightSign;
-    a.aimY = S.groundHeight + Math.max(0, py - S.heightDeadZone) * S.heightGain;
-    a.dx = dx; a.dy = dy; a.L = L; a.maxPull = maxPull;
-  }
+  // kept for older call sites (the slingshot aim mode is gone)
+  endAim() { this.aim = null; }
 
   _pressureOn(p) {
-    const R = CONFIG.shot.wobblePressureRadius;
+    const R = CONFIG.shot.pressureRadius;
     let s = 0;
     for (const o of this.game.opponentsOf(p)) {
       if (o.isKeeper) continue;
@@ -141,59 +58,119 @@ export class Shooting {
     return clamp(s, 0, 1.5);
   }
 
-  wobbleAmplitude(power) {
-    const S = CONFIG.shot, M = CONFIG.statMap;
-    const p = this.aim.shooter;
-    const st = p.stats;
-    const base = M.finishingWobble(st.finishing);
-    const pressure = this._pressure * S.wobblePressure * M.composureMult(st.composure);
-    const stam = p.stamina < M.lowStaminaThreshold
-      ? M.lowStaminaWobble * (1 - p.stamina / M.lowStaminaThreshold) : 0;
-    const red = power > S.yellowMax ? ((power - S.yellowMax) / (1 - S.yellowMax)) * S.wobbleRedZone : 0;
-    const ball = this.game.ball;
-    const dist = Math.hypot(CONFIG.pitch.length / 2 - ball.pos.x, ball.pos.z);
-    const distW = Math.max(0, dist - 12) * S.wobbleDistance;
-    return (base + pressure + stam + red + distW) * S.wobbleScale;
+  /** Pick the side of the goal away from the keeper (far post when he's central). */
+  _side(start) {
+    const kz = this.game.keeperPlayer.pos.z;
+    if (Math.abs(kz) > 0.35) return kz > 0 ? -1 : 1;
+    if (Math.abs(start.z) > 1) return start.z > 0 ? -1 : 1;
+    return this.game.rng.chance(0.5) ? 1 : -1;
   }
 
-  shotSpeed(power) {
-    const S = CONFIG.shot;
-    const max = CONFIG.statMap.maxShotSpeed(this.aim.shooter.stats.shotPower) * S.powerCap;
-    return lerp(S.minSpeed, Math.max(S.minSpeed + 1, max), Math.pow(power, S.powerCurve));
-  }
+  /** Release of the SHOOT button. kind: normal | driven | chip | finesse | fake */
+  shoot(shooter, kind, charge) {
+    if (!this.canShoot(shooter)) return false;
+    if (kind === 'fake') return this.fakeShot(shooter);
+    const g = this.game, ball = g.ball, S = CONFIG.shot, P = CONFIG.pitch;
+    const gx = P.length / 2, hw = P.goalWidth / 2;
+    const start = ball.pos.clone();
+    start.y = Math.max(start.y, CONFIG.ball.radius);
+    const dist = Math.hypot(gx - start.x, start.z);
+    const side = this._side(start);
+    const st = shooter.stats;
+    const maxSp = CONFIG.statMap.maxShotSpeed(st.shotPower) * S.powerCap;
 
-  /** Per-frame while frozen (real dt). */
-  updateAim(realDt) {
-    const a = this.aim;
-    if (!a) return;
-    a.time += realDt * CONFIG.shot.wobbleSpeed;
-    const ov = this.game.overlay;
-    if (!a.active) { ov.drawIdle(a); return; }
-    this._computePull();
-    if (a.inCancel) {
-      a.launch = null;
-      ov.drawCancel(a, this.metrics());
-      ov.setTarget(null);
-      return;
-    }
-    const amp = this.wobbleAmplitude(a.power);
-    a.wobbleAmp = amp;
-    const wz = amp * a.n1.sample(a.time * 1.4);
-    const wy = amp * 0.7 * a.n2.sample(a.time * 1.4 + 3.1);
-    const gx = CONFIG.pitch.length / 2;
-    a.target.set(gx, Math.max(CONFIG.ball.radius, a.aimY + wy), a.aimZ + wz);
-    const speed = this.shotSpeed(a.power);
-    const curve = clamp(a.aimZ / CONFIG.shot.lateralGain, -1, 1) * CONFIG.shot.curvePerLateral;
-    const sol = this.solve(this.game.ball.pos, a.target, speed, curve);
-    a.launch = sol;
-    a.pred = sol.result;
-    ov.drawArrow(a, this.metrics(), this.game.camRig.camera, this.game.ball.mesh.position);
-    if (sol.result.cross) {
-      const c = sol.result.cross;
-      ov.setTarget(new THREE.Vector3(gx, c.y, c.z), sol.result.onTarget, this.game.camRig.camera);
+    // assistance: pull the charge toward the right power for this distance
+    const ideal = clamp(0.35 + dist / 45, 0.45, 0.85);
+    const eff = lerp(charge, ideal, S.assist);
+    // forgiving error — grows with distance and pressure, shrinks with finishing/composure
+    const pressure = this._pressureOn(shooter);
+    const skill = 1.25 - (st.finishing * 0.6 + st.composure * 0.4) / 100;
+    const sigma = (S.errBase + Math.max(0, dist - 11) * S.errPerMetre + pressure * S.errPressure) * skill;
+    const rng = g.rng;
+
+    let T, speed, curve = 0, launch;
+    if (kind === 'chip') {
+      T = new THREE.Vector3(gx, 2.05, side * (hw - 1.2) + rng.gauss() * sigma * 0.4);
+      launch = this.solveChip(start, T);
     } else {
-      ov.setTarget(sol.result.end, false, this.game.camRig.camera);
+      if (kind === 'driven') {
+        T = new THREE.Vector3(gx, 0.18, side * (hw - 0.75) + rng.gauss() * sigma);
+        speed = lerp(maxSp * 0.82, maxSp * 1.05, charge);
+      } else if (kind === 'finesse') {
+        T = new THREE.Vector3(gx, 0.85 + eff * 0.55 + rng.gauss() * sigma * 0.4, side * (hw - 0.6) + rng.gauss() * sigma * 0.7);
+        speed = lerp(maxSp * 0.8, maxSp * 0.98, eff);
+        curve = side * S.finesseCurve;
+      } else {
+        T = new THREE.Vector3(gx, 0.35 + eff * 1.45 + rng.gauss() * sigma * 0.6, side * (hw - 0.8 + (1 - eff) * 0.15) + rng.gauss() * sigma);
+        speed = lerp(S.minSpeed, maxSp, Math.pow(eff, 0.8));
+        curve = side * 0.35;
+        // a properly overhit shot (held right to the end from distance) can still fly
+        if (charge > 0.97 && dist > 16 && rng.chance(0.25)) T.y += 0.9;
+      }
+      T.y = Math.max(CONFIG.ball.radius, T.y);
+      launch = this.solve(start, T, speed, curve);
     }
+    return this.fire(shooter, launch, { kind, power: kind === 'chip' ? 0.4 : eff, pressure, dist });
+  }
+
+  /** Chip: find a lob that clears the keeper and drops under the bar. */
+  solveChip(start, T) {
+    const yaw = Math.atan2(T.z - start.z, T.x - start.x);
+    const kx = this.game.keeperPlayer.pos.x;
+    let best = null;
+    for (const elev of [0.62, 0.72, 0.82, 0.92]) {
+      let lo = 4, hi = 30, res = null, v = 0;
+      for (let i = 0; i < 18; i++) {
+        const mid = (lo + hi) / 2;
+        const [vx, vy, vz] = this._vel(yaw, elev, mid);
+        const r = this.simulate(start, vx, vy, vz, 0, true);
+        // landed before the goal line → too soft
+        let bounced = false;
+        for (let j = 5; j < r.path.length; j++) if (r.path[j].y <= CONFIG.ball.radius + 0.02) { bounced = true; break; }
+        if (!r.cross || bounced) { lo = mid; continue; }
+        if (r.vyAt > 0 || r.cross.y > T.y) hi = mid; else lo = mid;
+      }
+      v = (lo + hi) / 2;
+      const [vx, vy, vz] = this._vel(yaw, elev, v);
+      res = this.simulate(start, vx, vy, vz, 0, true);
+      if (!res.cross) continue;
+      // height when passing the keeper
+      let hk = 0;
+      for (const pt of res.path) if (pt.x >= kx - 0.3) { hk = pt.y; break; }
+      const cand = { vx, vy, vz, curve: 0, speed: v, result: res, hk };
+      if (!best || (best.hk < 2.6 && hk > best.hk)) best = cand;
+      if (hk > 2.7) break;
+    }
+    Object.assign(best.result, this.classify(best.result));
+    return best;
+  }
+
+  /** Swipe left: shape to shoot, don't. Nearby defenders and the keeper bite. */
+  fakeShot(shooter) {
+    const g = this.game, ball = g.ball, S = CONFIG.shot;
+    shooter.playAction('fakeshot', 0.6, { kickLeg: 1, side: g.rng.sign() });
+    g.audio.anticipate();
+    g.hud.flash('FAKE SHOT', 'good');
+    let fooled = 0;
+    for (const d of g.defenders) {
+      if (d.stumble > 0) continue;
+      const dd = Math.hypot(d.pos.x - shooter.pos.x, d.pos.z - shooter.pos.z);
+      if (dd > S.fakeRadius) continue;
+      if (g.rng.next() < S.fakeDefenderChance) {
+        d.stumble = 1.0; d.ai.tackling = null; d.ai.onBall = 0;
+        d.tackleCooldown = Math.max(d.tackleCooldown, 1.6);
+        d.playAction(g.rng.chance(0.5) ? 'block' : 'tackle', 0.8, { side: g.rng.sign() });
+        g.events.emit('beatDefender', { by: shooter, defender: d, skill: 'fakeshot' });
+        fooled++;
+      }
+    }
+    const dist = Math.hypot(CONFIG.pitch.length / 2 - ball.pos.x, ball.pos.z);
+    if (dist < S.fakeKeeperRange && g.rng.next() < S.fakeKeeperChance) {
+      g.keeper.fool(g.rng.sign());
+      fooled++;
+    }
+    if (fooled) g.audio.skillCheer();
+    return 'fake';
   }
 
   // ------------------------------------------------------------ prediction
@@ -218,7 +195,7 @@ export class Shooting {
         const f = (gx - px) / (s.px - px || 1e-6);
         const cross = { y: py + (s.py - py) * f, z: pz + (s.pz - pz) * f, t: t - dt + dt * f };
         const vxAt = s.vx;
-        return { cross, path, end: new THREE.Vector3(gx, cross.y, cross.z), speedAt: Math.hypot(vxAt, s.vy, s.vz) };
+        return { cross, path, end: new THREE.Vector3(gx, cross.y, cross.z), speedAt: Math.hypot(vxAt, s.vy, s.vz), vyAt: s.vy };
       }
       if (s.vx * s.vx + s.vz * s.vz < 0.05 && s.py <= CONFIG.ball.radius + 0.01) break;
     }
@@ -289,21 +266,27 @@ export class Shooting {
   }
 
   // ------------------------------------------------------------ release & flight
-  fire() {
-    const a = this.aim;
-    if (!a || !a.launch) return false;
+  fire(shooter, L, { kind, power, pressure, dist }) {
     const g = this.game, ball = g.ball;
-    const L = a.launch;
-    const shooter = a.shooter;
-    shooter.playAction('shoot', 0.75, { kickLeg: 1 });
-    shooter.anim.t = 0.75 * 0.24; // already wound up from the run-up: the leg comes straight through
-    shooter.pose.hipR = -1.2; shooter.pose.kneeR = 1.8; shooter.pose.twist = -0.4;
+    // face the shot, and pick an animation variant that suits the situation
+    const yaw = Math.atan2(L.vx, L.vz);
+    let turn = Math.abs(((yaw - shooter.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    shooter.heading = shooter.prevHeading = yaw;
+    let variant = kind === 'normal' ? 'laces' : kind;
+    if (kind === 'normal' && dist < 8 && g.rng.chance(0.4)) variant = 'placed';
+    const offBalance = pressure > 0.8 || turn > 1.3 || (shooter.speed > 6.5 && g.rng.chance(0.35));
+    if (offBalance && kind !== 'chip') variant = 'offbalance';
+    const dur = variant === 'offbalance' ? 0.95 : variant === 'chip' ? 0.6 : 0.75;
+    shooter.playAction('shoot', dur, { kickLeg: g.rng.chance(0.82) ? 1 : -1, variant });
+    shooter.anim.t = dur * 0.24; // the leg is already coming through as the ball leaves
+    if (offBalance) shooter.stumble = Math.max(shooter.stumble, 0.35);
+
     ball.kick(L.vx, L.vy, L.vz, { curve: L.curve, type: 'shot', by: shooter, ignoreTime: 0.4, time: g.simTime });
     ball.owner = null;
-    g.audio.kick(0.4 + a.power * 0.6);
-    g.effects.puff(ball.pos.x, ball.pos.z, 1 + a.power);
-    if (a.power > CONFIG.shot.yellowMax) g.camRig.addShake(CONFIG.juice.shotShake * (1 + a.power));
-    const info = { ...L.result, speed: L.speed, power: a.power };
+    g.audio.kick(kind === 'chip' ? 0.35 : 0.45 + power * 0.55, kind === 'driven' ? 'driven' : 'shot');
+    g.effects.puff(ball.pos.x, ball.pos.z, 1 + power);
+    if (power > 0.7 || kind === 'driven') g.camRig.addShake(CONFIG.juice.shotShake * (1 + power));
+    const info = { ...L.result, speed: L.speed, power, kind };
     const kp = g.keeper.onShot(L.result.path, info, shooter);
     const edgeClose = info.onTarget ? info.edgeDistance < CONFIG.shot.closeCallMargin * 0.6 : info.missDistance < CONFIG.shot.closeCallMargin;
     const keeperClose = kp && kp.prob > 0.2 && kp.prob < 0.8;
@@ -312,9 +295,8 @@ export class Shooting {
       closeCall: !!(edgeClose || keeperClose), slow: false,
       blocked: new Set(), postHit: false, shooter,
     };
-    this.lastLaunch = { power: a.power, speed: L.speed, onTarget: info.onTarget };
-    g.events.emit('shot', { shooter, info, power: a.power });
-    this.endAim();
+    this.lastLaunch = { power, speed: L.speed, onTarget: info.onTarget, kind };
+    g.events.emit('shot', { shooter, info, power });
     return true;
   }
 

@@ -141,3 +141,29 @@ Add `src/gameplay/MatchManager.js` to run a whole match:
 - **Emit a `MatchReport`** `{ rating, goals, shots, keyPasses, minutes }`. This is the object the career/player-card system will consume to grow stats.
 
 `MomentManager.setup({ scenario })` and its `match` object are already the hooks this needs.
+
+## Controls (FC-mobile style)
+
+| Button | Tap | Hold / swipe off the button |
+|---|---|---|
+| **PASS** (blue) | Ground pass to the best teammate, pace scaled to distance | Swipe up or down → lofted pass / cross |
+| **THROUGH** (yellow) | Through ball into space in front of a runner, toward goal | — |
+| **SHOOT** (orange) | Hold for power (ring fills); auto-aimed away from the keeper | Down → driven (low, fast) · Up → chip · Right → finesse curler · Left → fake shot |
+| **SPRINT** (green) | Hold to sprint (no stamina limit) | — |
+
+Quick changes of direction near a defender can wrong-foot him. Skill moves still fire automatically when a defender closes in.
+
+Desktop: WASD move · Shift sprint · Space pass (C lofted) · T through · hold F shoot (G driven, H chip, J finesse, K fake).
+
+## Sound credits
+
+All CC0 (public domain). Crowd clips via the CC0 set credited in [chloeeeyan/Claude docs/credits.md](https://github.com/chloeeeyan/Claude/pull/14):
+
+| File | Source | Author | Licence |
+|---|---|---|---|
+| cheer | [Crowd Cheering](https://freesound.org/people/SoundsExciting/sounds/365132/) | SoundsExciting | CC0 1.0 |
+| applause | [Large crowd applause](https://freesound.org/people/Bansemer/sounds/160493/) | Bansemer | CC0 1.0 |
+| boo | [To_Be_Booed2_ses1](https://freesound.org/people/freesound/sounds/25270/) | freesound | CC0 1.0 |
+| thud (ball strike) | "Beefy Thud 1", [CC0-Public-Domain-Sounds](https://github.com/lavenderdotpet/CC0-Public-Domain-Sounds) | BB sample pack | CC0 |
+
+They're embedded in `src/core/sfxData.js` (mono 64 kbps MP3) and reshaped live into the crowd bed, roars, oohs, awws and boos.

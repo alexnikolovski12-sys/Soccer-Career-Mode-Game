@@ -32,9 +32,26 @@ export class Keeper {
 
   rating() { return CONFIG.keeper.rating; }
 
+  /** Bought a fake shot: dives the wrong way, then has to get up. */
+  fool(side) {
+    if (this.state !== 'set') return;
+    this.state = 'fooled';
+    this.t = 0;
+    this.foolSide = side;
+    this.p.playAction('dive', 1.0, { side, roll: 1.2, lift: 0.18 });
+  }
+
   update(dt) {
     const g = this.game, ball = g.ball, p = this.p, K = CONFIG.keeper;
     this.t += dt;
+
+    if (this.state === 'fooled') {
+      p.steer(0, 0, 0);
+      p.vel.set(0, 0, 0);
+      if (this.t < 0.45) p.pos.z += this.foolSide * 3.2 * dt;
+      if (this.t > 1.05) { this.state = 'down'; this.t = 0; }
+      return;
+    }
 
     if (this.state === 'holding') {
       p.steer(0, 0, 0);
@@ -174,6 +191,9 @@ export class Keeper {
       if (dist < K.standReach) prob += K.centralBonus * (1 - dist / K.standReach);
       prob += CONFIG.statMap.finishingSaveMod(shooter.stats.finishing);
       prob += (rating - 70) * 0.006;
+      if (info.kind === 'finesse') prob -= 0.12;            // bending away from him
+      if (info.kind === 'chip' && I.y > 1.7) prob *= 0.3;  // dropping over his head
+      if (this.state === 'fooled' || (this.state === 'down' && this.t < 0.5)) prob *= 0.15; // on the floor after a fake
       prob *= K.difficulty;
       prob = clamp(prob, 0.03, 0.97);
     }

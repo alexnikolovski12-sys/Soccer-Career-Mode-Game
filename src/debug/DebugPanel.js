@@ -155,7 +155,7 @@ export class DebugPanel {
     const gp = sec('Gameplay');
     slider(gp, 'Moment timer (s)', 8, 45, 1, () => CONFIG.moment.duration, (v) => { CONFIG.moment.duration = v; });
     slider(gp, 'Shot power cap ×', 0.6, 1.4, 0.05, () => CONFIG.shot.powerCap, (v) => { CONFIG.shot.powerCap = v; });
-    slider(gp, 'Wobble ×', 0, 3, 0.05, () => CONFIG.shot.wobbleScale, (v) => { CONFIG.shot.wobbleScale = v; });
+    slider(gp, 'Shot assist', 0, 1, 0.05, () => CONFIG.shot.assist, (v) => { CONFIG.shot.assist = v; });
     slider(gp, 'Shot range (m)', 15, 40, 1, () => CONFIG.shot.rangeMax, (v) => { CONFIG.shot.rangeMax = v; });
 
     // camera

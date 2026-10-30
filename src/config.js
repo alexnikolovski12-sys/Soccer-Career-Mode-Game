@@ -99,6 +99,7 @@ export const CONFIG = {
     animBlend: 12,             // pose blend rate
     strideLength: 1.9,         // metres per full run cycle (scaled by speed)
     labelHeight: 2.25,
+    sprintBoost: 1.08,         // extra pace when holding SPRINT
   },
 
   // --------------------------------------------------------------- automatic skill moves
@@ -110,6 +111,16 @@ export const CONFIG = {
     cooldown: 1.0,
     beatStumble: 0.9,          // how long a beaten defender is wrong-footed
     rainbowLift: 5.0,          // upward speed of the rainbow flick (m/s)
+  },
+
+  // --------------------------------------------------------------- jinking (quick changes of direction)
+  juke: {
+    cutAngle: 0.85,            // a stick change bigger than this (rad, ~50°) counts as a cut
+    sharpAngle: 1.9,           // ~110°: one cut this sharp is enough on its own
+    window: 1.3,               // two cuts within this many seconds
+    range: 3.4,                // defenders this close can be wrong-footed
+    base: 0.62,                // base chance they buy it
+    stumble: 0.85,             // how long they're stuck
   },
 
   // --------------------------------------------------------------- free kicks / penalties
@@ -164,7 +175,9 @@ export const CONFIG = {
   pass: {
     arriveSpeed: 5.5,          // desired speed when reaching the receiver
     minSpeed: 7, maxSpeed: 26,
-    windup: 0.17,              // seconds between button and kick (marker shows)
+    windup: 0.17,
+    throughMin: 5,             // through ball: metres in front of the runner…
+    throughMax: 11,            // …at most              // seconds between button and kick (marker shows)
     angleWeight: 2.2,          // importance of facing angle
     distWeight: 0.6,
     idealDist: 14,
@@ -181,7 +194,20 @@ export const CONFIG = {
 
   // --------------------------------------------------------------- shooting (signature mechanic)
   shot: {
-    rangeMax: 28,              // metres from goal centre for SHOOT to appear
+    // ---- hold-to-shoot (current system)
+    chargeTime: 0.9,           // seconds of holding SHOOT for full power
+    assist: 0.55,              // 0 = raw power, 1 = power always perfect for the distance
+    errBase: 0.12,             // metres of aim scatter (very forgiving)…
+    errPerMetre: 0.022,        // …plus this per metre beyond 11 m
+    errPressure: 0.25,         // …plus this at full defender pressure
+    pressureRadius: 3.5,
+    finesseCurve: 2.4,         // sidespin on the finesse (swipe right) shot
+    fakeRadius: 6,             // defenders this close can fall for a fake shot
+    fakeDefenderChance: 0.75,
+    fakeKeeperRange: 28,
+    fakeKeeperChance: 0.6,
+    // ----
+    rangeMax: 30,              // metres from goal centre for SHOOT to glow
     minGoalAngleDeg: 9,        // angle subtended by the posts must exceed this
     freezeTime: 0.15,          // time-scale ease to 0
     unfreezeTime: 0.2,
@@ -325,6 +351,7 @@ export const CONFIG = {
 
   // --------------------------------------------------------------- juice
   juice: {
+    celebrateTime: 4.2,        // seconds of celebration before the replay
     replaySeconds: 3.2,
     replayTail: 0.7,
     replaySpeed: 0.45,

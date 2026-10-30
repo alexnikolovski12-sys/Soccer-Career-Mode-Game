@@ -263,9 +263,9 @@ class Game {
     this.camRig.snap();
     sp.phase = 'set';
     sp.t = S.setupTime;
-    sp.shoot = this.shooting.canShoot(u);
+    sp.shoot = this.shooting.inRange(u);
     this.hud.hideBig();
-    this.hud.flash(sp.penalty ? 'PENALTY' : sp.shoot ? 'FREE KICK — SHOOT!' : 'FREE KICK', 'good');
+    this.hud.flash(sp.penalty ? 'PENALTY — HOLD SHOOT' : sp.shoot ? 'FREE KICK — HOLD SHOOT' : 'FREE KICK', 'good');
   }
 
   _setPieceUpdate(dt) {
@@ -275,8 +275,63 @@ class Game {
     sp.t -= dt;
     if (sp.t > 0) return;
     if (sp.phase === 'down') { this._setUpFreeKick(); return; }
-    this.setPiece = null;
-    if (sp.shoot && this.shooting.canShoot(this.user)) this.sm.change(STATES.SHOT_AIM);
+    sp.phase = 'ready'; // everyone holds until you take it
+  }
+
+  /** Free kick set: play restarts the moment you touch the stick or a button. */
+  _setPieceReady() {
+    const inp = this.input, mv = inp.poll();
+    const go = mv.mag > 0.3 || inp.gestures.pass || inp.gestures.through || inp.gestures.shoot;
+    if (go) { this.setPiece = null; return true; }
+    for (const p of this.players) p.savePrev();
+    this.ball.savePrev();
+    return false;
+  }
+
+  /**
+   * Jinking: quick changes of direction with a defender closing in can
+   * wrong-foot him — he's delayed and stumbles, and you're through.
+   */
+  _juke(u, wx, wz, mag, dt) {
+    const J = CONFIG.juke;
+    const st = this._jk || (this._jk = { dir: null, cuts: [], t: 0 });
+    st.t += dt;
+    if (this.ball.owner !== u || !this.sm.is(STATES.PLAYING)) { st.dir = null; st.cuts.length = 0; return; }
+    if (mag < 0.35) return; // flicking through the centre of the stick doesn't reset anything
+    const l = Math.hypot(wx, wz) || 1;
+    const dx = wx / l, dz = wz / l;
+    if (!st.dir) { st.dir = { x: dx, z: dz }; return; }
+    const dot = dx * st.dir.x + dz * st.dir.z;
+    if (dot < Math.cos(J.cutAngle)) {
+      st.cuts.push({ t: st.t, sharp: dot < Math.cos(J.sharpAngle) });
+      st.dir.x = dx; st.dir.z = dz;
+    } else {
+      // follow gentle curves so only real cuts count
+      const k = Math.min(1, dt * 5);
+      st.dir.x += (dx - st.dir.x) * k; st.dir.z += (dz - st.dir.z) * k;
+      const n = Math.hypot(st.dir.x, st.dir.z) || 1; st.dir.x /= n; st.dir.z /= n;
+    }
+    st.cuts = st.cuts.filter((c) => st.t - c.t < J.window);
+    const n = st.cuts.length;
+    if (!(n >= 2 || st.cuts.some((c) => c.sharp))) return;
+    let beat = 0;
+    for (const d of this.defenders) {
+      if (d.stumble > 0 || (d.ai.jukeCd || 0) > this.simTime) continue;
+      const dd = Math.hypot(d.pos.x - u.pos.x, d.pos.z - u.pos.z);
+      if (dd > J.range) continue;
+      let p = J.base + (u.stats.dribbling + u.stats.ballControl - 2 * d.rating) / 300 + (n >= 3 ? 0.12 : 0);
+      if (this.rng.next() < Math.min(0.9, Math.max(0.15, p))) {
+        d.stumble = J.stumble; d.ai.tackling = null; d.ai.onBall = 0;
+        d.tackleCooldown = Math.max(d.tackleCooldown, J.stumble + 0.5);
+        d.vel.multiplyScalar(0.3);
+        d.playAction('stumble', 0.8, { side: this.rng.sign() });
+        d.ai.jukeCd = this.simTime + 2.5;
+        this.events.emit('beatDefender', { by: u, defender: d, skill: 'juke' });
+        beat++;
+      } else d.ai.jukeCd = this.simTime + 1.0;
+    }
+    if (beat) this.hud.flash(beat > 1 ? 'SKINNED THEM!' : 'FAKED HIM!', 'good');
+    st.cuts.length = 0;
   }
 
   activate(nMates, nDefs) {
@@ -427,18 +482,17 @@ class Game {
     let wx = f.x * mv.y + rt.x * mv.x;
     let wz = f.z * mv.y + rt.z * mv.x;
     const mag = mv.mag;
-    // no sprint button: pushing the stick right to the edge sprints (Shift still works on desktop)
-    const wantsSprint = (!!this.input.held.sprint && mag > 0.2) || mag > CONFIG.dribble.autoSprintTilt;
-    u.sprinting = wantsSprint && u.stamina > 0.02;
+    // hold SPRINT to sprint — no stamina limit, no cooldown
+    u.sprinting = !!this.input.held.sprint && mag > 0.2;
     let speed = 0;
     if (mag > 0) {
-      if (u.sprinting) speed = u.attrs.sprintSpeed;
+      if (u.sprinting) speed = u.attrs.sprintSpeed * CONFIG.player.sprintBoost;
       else if (mag < D.jogTilt) speed = u.jogSpeed * (0.35 + 0.65 * (mag / D.jogTilt));
       else speed = u.jogSpeed + (u.runSpeed - u.jogSpeed) * ((mag - D.jogTilt) / (1 - D.jogTilt));
     }
     // stamina
-    if (u.sprinting && u.speed > 3) u.stamina = Math.max(0, u.stamina - M.staminaDrain(u.stats.stamina) * dt);
-    else u.stamina = Math.min(1, u.stamina + M.staminaRecover * dt);
+    u.stamina = Math.min(1, u.stamina + M.staminaRecover * dt);
+    this._juke(u, wx, wz, mag, dt);
 
     // assists when the stick is idle
     if (mag < 0.05) {
@@ -459,42 +513,94 @@ class Game {
     }
     u.steer(wx, wz, speed);
 
-    if (!this.sm.is(STATES.PLAYING)) { this.input.consume('pass'); this.input.consume('shoot'); return; }
-    if (this.input.consume('pass')) {
-      if (ball.owner === u) {
-        let dx = wx, dz = wz;
-        if (mag < 0.2) { dx = Math.sin(u.heading); dz = Math.cos(u.heading); }
-        this.passing.requestUserPass(u, dx, dz);
-      } else if (this.teammateAI.callForBall()) {
-        u.playAction('point', 0.6);
-        this.hud.flash('CALLING FOR IT', 'neutral');
+    const inp = this.input;
+    if (!this.sm.is(STATES.PLAYING)) { inp.consumeGesture('pass'); inp.consumeGesture('through'); inp.consumeGesture('shoot'); return; }
+    const pg = inp.consumeGesture('pass'), tg = inp.consumeGesture('through'), sg = inp.consumeGesture('shoot');
+    let dx = wx, dz = wz;
+    if (mag < 0.2) { dx = Math.sin(u.heading); dz = Math.cos(u.heading); }
+    if (ball.owner === u && !this.passing.pending) {
+      if (sg) {
+        // SHOOT: hold for power; swipe down = driven, up = chip, right = finesse, left = fake
+        const kind = { tap: 'normal', down: 'driven', up: 'chip', right: 'finesse', left: 'fake' }[sg.dir] || 'normal';
+        const r = this.shooting.shoot(u, kind, this.shooting.chargeFrom(sg.held));
+        if (r === true) this.sm.change(STATES.SHOT_FLIGHT);
+      } else if (tg) {
+        this.passing.requestUserPass(u, dx, dz, 'through');
+      } else if (pg) {
+        // tap = ground pass; swipe up/down off the button = lofted pass / cross
+        this.passing.requestUserPass(u, dx, dz, pg.dir === 'up' || pg.dir === 'down' ? 'lofted' : 'ground');
       }
+    } else if ((pg || tg) && this.teammateAI.callForBall()) {
+      u.playAction('point', 0.6);
+      this.hud.flash('CALLING FOR IT', 'neutral');
     }
-    if (this.input.consume('shoot') && this.shooting.canShoot(u) && !this.passing.pending) {
-      this.sm.change(STATES.SHOT_AIM);
-    }
-    this.input.consume('confirm');
+    inp.consume('confirm');
   }
 
-  _resultControl() {
+  _resultControl(dt) {
     const u = this.user, ball = this.ball;
     const goal = this.resultOutcome === 'GOAL';
+    const t = this.sm.time;
+    const cel = this.celebration;
     for (const p of this.players) {
       if (p.isKeeper) continue;
-      if (goal && p === u) {
-        const L = CONFIG.pitch.length / 2, W = CONFIG.pitch.width / 2;
-        const side = u.pos.z >= 0 ? 1 : -1;
-        if (this.sm.time < 1.6) u.moveTo(L - 5, side * (W - 5), u.runSpeed, 3);
-        else { u.steer(0, 0, 0); if (u.anim.action !== 'celebrate') u.playAction('celebrate', 2.4, { loop: true }); }
+      if (goal && p === u && cel) { this._celebrate(u, cel, t, dt); continue; }
+      if (goal && p.team === 'home' && t > 0.4) {
+        // teammates chase after the scorer, then jump around him
+        const ang = (this.teammates.indexOf(p) + 1) * 1.3;
+        const tx = u.pos.x - Math.cos(ang) * 1.8 - 1.2, tz = u.pos.z + Math.sin(ang) * 1.8;
+        const d = p.moveTo(tx, tz, p.attrs.sprintSpeed, 2);
+        p.faceTowards(u.pos.x, u.pos.z);
+        if (d < 2.6 && p.anim.action !== 'teamjump') p.playAction('teamjump', 0.9, { loop: true, offset: ang });
+        else if (d > 4 && p.anim.action !== 'armsup' && p.anim.action !== 'teamjump') p.playAction('armsup', 9, {});
         continue;
       }
-      if (goal && p.team === 'home' && this.sm.time > 0.5) {
-        p.moveTo(u.pos.x - 2, u.pos.z + (p.pos.z > u.pos.z ? 2 : -2), p.runSpeed, 3);
-        continue;
-      }
+      if (goal && p.team === 'away') { p.steer(0, 0, 0); continue; }
       p.steer(0, 0, 0);
       if (!goal && p !== u) p.faceTowards(ball.pos.x, ball.pos.z);
     }
+  }
+
+  /** Scorer's celebration: run to the fans, then the move. */
+  _celebrate(u, cel, t, dt) {
+    const L = CONFIG.pitch.length / 2, W = CONFIG.pitch.width / 2;
+    if (!cel.target) {
+      const side = u.pos.z >= 0 ? 1 : -1;
+      cel.target = { x: L - 9, z: side * (W - 4) };
+    }
+    if (cel.phase === 'run') {
+      const d = u.moveTo(cel.target.x, cel.target.z, u.attrs.sprintSpeed, 1);
+      if (cel.type === 'airplane' && u.anim.action !== 'airplane') u.playAction('airplane', 9, { loop: true });
+      if (d < (cel.type === 'kneeslide' ? 6.5 : 1.5) || t > 2.0) {
+        cel.phase = 'move';
+        const hx = Math.sin(u.heading), hz = Math.cos(u.heading);
+        if (cel.type === 'kneeslide') {
+          cel.slide = { x: hx, z: hz, v: Math.max(5.5, u.speed) };
+          u.playAction('kneeslide', 2.6, { hold: true });
+        } else if (cel.type === 'jumpfist') u.playAction('jumpfist', 9, { loop: true });
+        else if (cel.type === 'spinjump') u.playAction('spinjump', 1.4, { hold: true, side: this.rng.sign() });
+        else if (cel.type === 'pointsky') u.playAction('pointsky', 9, { loop: true });
+        else u.playAction('celebrate', 2.4, { loop: true });
+        u.faceTowards(0, u.pos.z * 0.3); // turn to the fans / your teammates
+      }
+      return;
+    }
+    if (cel.slide) {
+      // knee slide: glide along the grass, slowing down
+      const s = cel.slide;
+      u.steer(0, 0, 0); u.vel.set(0, 0, 0);
+      u.pos.x += s.x * s.v * dt; u.pos.z += s.z * s.v * dt;
+      s.v *= Math.exp(-1.5 * dt);
+      if (s.v < 0.2) cel.slide = null;
+      return;
+    }
+    if (cel.type === 'airplane') {
+      // keep wheeling away, arms out
+      cel.a = (cel.a || 0) + dt * 0.9;
+      u.moveTo(cel.target.x - 4 + Math.cos(cel.a) * 5, cel.target.z * 0.85 + Math.sin(cel.a) * 5, u.runSpeed, 1);
+      return;
+    }
+    u.steer(0, 0, 0);
   }
 
   // ------------------------------------------------------------ flow
@@ -598,49 +704,22 @@ class Game {
         if (prev === S.INTRO) g.audio.whistle(false);
       },
       update(dt) {
-        if (g.setPiece) { g._setPieceUpdate(dt); return; }
+        if (g.setPiece) {
+          if (g.setPiece.phase !== 'ready') { g._setPieceUpdate(dt); return; }
+          if (!g._setPieceReady()) return;
+        }
         g.simulate(dt);
       },
       frame() {
-        if (g.setPiece) { g.input.consume('pass'); g.input.consume('shoot'); g.hud.setShootAvailable(false); return; }
-        g.hud.setShootAvailable(g.shooting.canShoot(g.user));
+        const has = g.ball.owner === g.user;
+        g.hud.setShotCharge(has ? g.shooting.chargeFrom(g.input.chargeTime('shoot')) : 0);
+        if (g.setPiece && g.setPiece.phase !== 'ready') {
+          g.input.consumeGesture('pass'); g.input.consumeGesture('through'); g.input.consumeGesture('shoot');
+          g.hud.setShootAvailable(false); return;
+        }
+        g.hud.setShootAvailable(g.shooting.inRange(g.user));
         const mateHas = g.ball.owner && g.ball.owner.team === 'home' && !g.ball.owner.isUser;
         g.hud.setPassLabel(mateHas ? 'CALL' : 'PASS');
-      },
-    });
-
-    sm.add(S.SHOT_AIM, {
-      enter() {
-        g.setTimeScale(0, CONFIG.shot.freezeTime);
-        g.shooting.beginAim(g.user);
-        g.input.setAimMode({
-          down: (x, y) => g.shooting.pointerDown(x, y),
-          move: (x, y) => g.shooting.pointerMove(x, y),
-          up: (x, y) => {
-            if (g.shooting.pointerUp(x, y) === 'fire' && g.shooting.fire()) sm.change(S.SHOT_FLIGHT);
-          },
-        });
-        g.hud.setAim(true);
-        g.setControls(false);
-        g.host.classList.add('frozen');
-        g.camRig.setMode('shot');
-        g.user.setGhost(CONFIG.camera.shot.ghost);
-        g.audio.whoosh();
-      },
-      update(dt) { g.simulate(dt); },
-      frame(realDt) {
-        g.shooting.updateAim(realDt);
-        if (g.input.consume('cancel')) sm.change(S.PLAYING);
-      },
-      exit(next) {
-        g.input.setAimMode(null);
-        g.user.setGhost(1);
-        g.hud.setAim(false);
-        g.host.classList.remove('frozen');
-        if (next !== S.SHOT_FLIGHT) {
-          g.shooting.endAim();
-          g.setTimeScale(1, CONFIG.shot.unfreezeTime);
-        }
       },
     });
 
@@ -649,6 +728,7 @@ class Game {
         g.setTimeScale(1, CONFIG.shot.unfreezeTime);
         g.camRig.setMode('flight', { origin: g.shooting.flight ? g.shooting.flight.origin : g.ball.pos.clone() });
         g.setControls(false, true);
+        g.hud.setShotCharge(0);
       },
       update(dt) {
         g.simulate(dt);
@@ -675,7 +755,10 @@ class Game {
         const info = { GOAL: 'good', SAVED: 'neutral', POST: 'neutral', BLOCKED: 'neutral' };
         const titles = { GOAL: 'GOAL!', SAVED: 'SAVED', OFF_TARGET: 'OFF TARGET', POST: 'HIT THE POST', BLOCKED: 'BLOCKED', TACKLED: 'TACKLED', INTERCEPTED: 'INTERCEPTED', TIME_UP: 'TIME UP', OUT: 'OUT OF PLAY' };
         g.hud.showBig(titles[outcome] || outcome, info[outcome] || 'bad');
+        g.celebration = null;
         if (outcome === 'GOAL') {
+          const types = ['kneeslide', 'kneeslide', 'airplane', 'jumpfist', 'spinjump', 'pointsky'];
+          g.celebration = { type: types[Math.floor(Math.random() * types.length)], phase: 'run' };
           g.audio.roar();
           g.audio.net();
           g.camRig.addShake(CONFIG.juice.goalShake);
@@ -693,7 +776,7 @@ class Game {
         const goal = g.resultOutcome === 'GOAL';
         if (g.resultPhase === 'live') {
           if (goal && sm.time > 1.3 && g.camRig.mode === 'goalview') g.camRig.setMode('celebrate', { target: g.user.pos });
-          if (goal && sm.time > 2.4 && g.pendingResult) {
+          if (goal && sm.time > CONFIG.juice.celebrateTime && g.pendingResult) {
             const J = CONFIG.juice;
             if (g.replay.start(g.goalSimTime - J.replaySeconds, g.goalSimTime + J.replayTail, J.replaySpeed)) {
               g.resultPhase = 'replay';

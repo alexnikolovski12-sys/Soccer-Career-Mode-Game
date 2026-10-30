@@ -75,6 +75,18 @@ export class TeammateAI {
 
   _receive(m) {
     const ball = this.game.ball;
+    if (ball.pass && ball.pass.kind && ball.pass.kind !== 'ground' && ball.pass.aim) {
+      // through ball / cross: sprint onto the spot it's played into
+      const a = ball.pass.aim;
+      m.sprinting = true;
+      // get to the drop zone; once it's down, attack the ball itself
+      const nearAim = Math.hypot(ball.pos.x - a.x, ball.pos.z - a.z) < 6;
+      const chase = nearAim && (ball.pass.kind === 'through' || ball.pos.y < 0.9);
+      if (chase) m.moveTo(ball.pos.x + ball.vel.x * 0.3, ball.pos.z + ball.vel.z * 0.3, m.attrs.sprintSpeed, 0.2);
+      else m.moveTo(a.x, a.z, m.attrs.sprintSpeed, 0.4);
+      m.faceTowards(ball.pos.x, ball.pos.z);
+      return;
+    }
     // run to the closest point on the ball's path ahead
     const v = ball.vel;
     const sp = Math.hypot(v.x, v.z) || 1;

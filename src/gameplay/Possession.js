@@ -54,7 +54,10 @@ export class Possession {
     if (o.speed > 1 && o.touchCooldown <= 0) {
       o.touchCooldown = Math.max(0.28, 1.1 / (o.speed + 1));
       this.kickLeg = -this.kickLeg;
-      if (!o.anim.action || o.anim.action === 'touch') o.playAction('touch', 0.2, { kickLeg: this.kickLeg });
+      if (!o.anim.action || o.anim.action === 'touch') {
+        const r = g.rng.next();
+        o.playAction('touch', 0.2, { kickLeg: this.kickLeg, variant: r < 0.7 ? 'inside' : r < 0.88 ? 'outside' : 'sole' });
+      }
       if (o.isUser) g.audio.touch();
     }
   }
@@ -95,7 +98,9 @@ export class Possession {
 
   checkReceive() {
     const g = this.game, ball = g.ball, D = CONFIG.dribble;
-    if (ball.pos.y > D.receiveMaxHeight) return;
+    // the intended receiver of a lofted ball can take it on the chest
+    const loftTo = ball.pass && ball.pass.kind === 'lofted' ? ball.pass.to : null;
+    if (ball.pos.y > (loftTo ? 1.75 : D.receiveMaxHeight)) return;
     // a struck shot can't be "received" — blocks/saves resolve it instead
     if (ball.lastKick && ball.lastKick.type === 'shot' && ball.speed > 7) return;
     let best = null, bestD = Infinity;
@@ -103,7 +108,8 @@ export class Possession {
       if (p.isKeeper || !ball.canTouch(p) || p.stumble > 0.25) continue;
       if (p.anim.action === 'fall') continue;
       const d = dist2D(p.pos, ball.pos);
-      const r = D.receiveReach + p.attrs.reach * 0.25;
+      if (loftTo && p !== loftTo && ball.pos.y > D.receiveMaxHeight) continue;
+      const r = D.receiveReach + p.attrs.reach * 0.25 + (p === loftTo ? 0.7 : 0);
       if (d < r && d < bestD) { best = p; bestD = d; }
     }
     if (!best) return;
@@ -155,6 +161,11 @@ export class Possession {
     ball.curve = 0;
     ball.lastKick = { type: 'control', by: p, time: g.simTime };
     p.touchCooldown = 0.18;
+    // receiving animation: chest / thigh for a dropping ball, cushion on the floor,
+    // and a heavy, off-balance touch when a fast ball meets poor control
+    const h = ball.pos.y;
+    const variant = h > 0.95 ? 'chest' : h > 0.45 ? 'thigh' : (incSpeed > 13 && q < 0.75 && g.rng.chance(0.5)) ? 'heavy' : 'cushion';
+    if (!p.isKeeper) p.playAction('control', variant === 'chest' ? 0.5 : 0.35, { kickLeg: g.rng.sign(), variant, side: g.rng.sign() });
     if (p.isUser) g.audio.touch();
     g.events.emit('gain', { player: p, from, kick, pass });
   }
