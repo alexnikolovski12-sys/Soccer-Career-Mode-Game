@@ -108,7 +108,7 @@ export class Audio {
         const bin = atob(uri.slice(uri.indexOf(',') + 1));
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        const done = (b) => { this.buf[name] = b; if (this.buf.bed && this.buf.cheer_loop && this.buf.murmur && !this.bed) this._buildBed(); };
+        const done = (b) => { this.buf[name] = b; if (this.buf.bed && this.buf.cheer_loop && !this.bed) this._buildBed(); };
         const pr = c.decodeAudioData(bytes.buffer, done, () => {});
         if (pr && pr.catch) pr.catch(() => {});
       } catch (_) { /* fall back to synthesis */ }
@@ -135,7 +135,8 @@ export class Audio {
       return g;
     };
     loop(this.buf.bed, 0.55);
-    loop(this.buf.murmur, 0.35);
+    if (this.buf.murmur) loop(this.buf.murmur, 0.35);
+    else loop(this.buf.bed, 0.3, 0.93); // second, slightly slower copy for density
     const hype = loop(this.buf.cheer_loop, 0.0);
     this.bed = { gain, filter, hype };
     this._chantT = 6 + Math.random() * 8;
@@ -148,7 +149,7 @@ export class Audio {
     this._chantT -= dt;
     if (this._chantT <= 0) {
       this._chantT = 18 + Math.random() * 20;
-      if (live) this._playRandom('chant_', 4, { gain: 0.32 + Math.random() * 0.12, attack: 1.5, release: 2.5 });
+      if (live) this._playRandom('chant_', 2, { gain: 0.32 + Math.random() * 0.12, attack: 1.5, release: 2.5 });
     }
   }
 
@@ -349,7 +350,7 @@ export class Audio {
   /** Big cheer ("AHHH!") — level 0..1.5 */
   cheer(level = 1) {
     if (this.buf && this.buf.roar_1) {
-      this._playRandom('roar_', 4, { gain: 0.5 + 0.35 * Math.min(level, 1.2), attack: 0.1, release: 1.5 });
+      this._playRandom('roar_', 2, { gain: 0.5 + 0.35 * Math.min(level, 1.2), attack: 0.1, release: 1.5 });
       if (level > 0.6) this.fanWhistles(Math.round(level * 4), 2.5);
       return;
     }
@@ -375,9 +376,9 @@ export class Audio {
     if (!this._throttle('roar', 2)) return;
     if (this.buf && this.buf.goal_1) {
       // a real stadium erupting
-      this._playRandom('goal_', 4, { gain: 1.0, attack: 0.03, release: 2.0 });
+      this._playRandom('goal_', 2, { gain: 1.0, attack: 0.03, release: 2.0 });
       this._play('bigcheer', { gain: 0.6, delay: 0.25, attack: 0.3, release: 2.5 });
-      this._playRandom('roar_', 4, { gain: 0.55, delay: 5.5, attack: 0.5, release: 2.0 });
+      this._playRandom('roar_', 2, { gain: 0.55, delay: 5.5, attack: 0.5, release: 2.0 });
       this._play('applause', { gain: 0.45, delay: 7.5, release: 1.5 });
       this.fanWhistles(6, 3);
       return;
@@ -457,7 +458,7 @@ export class Audio {
   skillCheer() {
     if (!this._throttle('skill', 0.8)) return;
     if (this.buf && this.buf.roar_1) {
-      this._playRandom('roar_', 4, { gain: 0.55, attack: 0.08, release: 1.4, dur: 3.2 });
+      this._playRandom('roar_', 2, { gain: 0.55, attack: 0.08, release: 1.4, dur: 3.2 });
       return;
     }
     if (this.buf && this.buf.cheer) {
