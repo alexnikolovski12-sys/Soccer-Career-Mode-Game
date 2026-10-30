@@ -362,7 +362,7 @@ export class Career {
     if (!s.country.calledUp) {
       if (objs.every((o) => o.ok)) {
         s.country.calledUp = true;
-        this.message('country', `Called up by ${n.name}!`, `${n.flag} You've been named in the ${n.name} squad for the upcoming internationals. Congratulations!`);
+        this.message('country', `Called up by ${n.name}!`, `You've been named in the ${n.name} squad for the upcoming internationals. Congratulations!`);
         s.followers = Math.round(s.followers * 1.15);
       }
     } else {

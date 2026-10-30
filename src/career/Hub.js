@@ -5,14 +5,16 @@
 import { world, club, league, nation, NATIONS, kitSVG, crestSVG, countryOf } from './data.js';
 import { Career, fmtDate, fmtMoney, overallOf, STAT_KEYS, SHOP, AGENT_TIERS } from './Career.js';
 import { HUB_CSS } from './hubStyles.js';
+import { ICON, flag } from './icons.js';
+import { AvatarView } from './AvatarView.js';
 
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtNum = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : `${n}`);
 const STAT_LABEL = { pace: 'PAC', acceleration: 'ACC', dribbling: 'DRI', ballControl: 'CTL', passing: 'PAS', vision: 'VIS', finishing: 'FIN', shotPower: 'POW', composure: 'COM', stamina: 'STA' };
 const FROM = {
-  coach: { name: 'Head Coach', icon: '📋' }, agent: { name: 'Your Agent', icon: '💼' }, sponsor: { name: 'Sponsorship', icon: '🤝' },
-  club: { name: 'Club', icon: '🏟️' }, country: { name: 'National Team', icon: '🌍' },
+  coach: { name: 'Head Coach', icon: ICON.clipboard }, agent: { name: 'Your Agent', icon: ICON.briefcase }, sponsor: { name: 'Sponsorship', icon: ICON.deal },
+  club: { name: 'Club', icon: ICON.shield }, country: { name: 'National Team', icon: ICON.globe },
 };
 
 export class Hub {
@@ -73,7 +75,7 @@ export class Hub {
     return `<button class="offer" data-i="${i}">
       <div class="of-top">${crestSVG(c, 44)}${kitSVG(c.kit, 44)}</div>
       <div class="of-name">${esc(c.name)}</div>
-      <div class="of-lg">${co.flag} ${esc(L.name)}</div>
+      <div class="of-lg">${flag(c.country, 18)} ${esc(L.name)}</div>
       <div class="of-meta"><span>Club rating <b>${c.rating}</b></span><span>Wage <b>${fmtMoney(o.wage)}/wk</b></span></div>${extra}
     </button>`;
   }
@@ -84,7 +86,7 @@ export class Hub {
     const wrap = h('div', 'hub-setup hub-scroll');
     wrap.innerHTML = `<div class="hub-brand">BREAKAWAY <b>CAREER</b></div>
       <h1>Choose your nationality</h1><p class="hub-sub">Big football nations are harder to get called up for.</p>
-      <div class="nation-grid">${NATIONS.map((n) => `<button class="nat" data-id="${n.id}"><span>${n.flag}</span>${esc(n.name)}</button>`).join('')}</div>`;
+      <div class="nation-grid">${NATIONS.map((n) => `<button class="nat" data-id="${n.id}">${flag(n.id, 30)}${esc(n.name)}</button>`).join('')}</div>`;
     el.appendChild(wrap);
     wrap.querySelectorAll('.nat').forEach((b) => {
       b.onclick = () => {
@@ -131,36 +133,40 @@ export class Hub {
       const ord = (n) => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) % 4] || 'th'}`;
       const when = fx.date === s.date ? 'Today' : fmtDate(fx.date);
       fixtureHTML = `<div class="fixture">
-        <div class="fx-league">${countryOf(c.country).flag} ${esc(league(c.league).name)} <span>${when}</span></div>
+        <div class="fx-league">${flag(c.country, 18)} ${esc(league(c.league).name)} <span>${when}</span></div>
         <div class="fx-teams"><div class="fx-crests">${crestSVG(H, 40)}${crestSVG(A, 40)}</div>
           <div class="fx-names"><div>${esc(H.name.toUpperCase())} <em>${S.md ? ord(pos(H.id)) : ''}</em></div><div>${esc(A.name.toUpperCase())} <em>${S.md ? ord(pos(A.id)) : ''}</em></div></div>
         </div></div>`;
     }
     let action = '';
     if (s.seasonOver) action = `<button class="hub-btn primary act-review">Season Review</button>`;
-    else if (ev && ev.type === 'match') action = `<button class="hub-btn primary act-play">▶ Play Match</button><button class="hub-btn act-simmatch">Sim Match</button>`;
+    else if (ev && ev.type === 'match') action = `<button class="hub-btn primary act-play">${ICON.play(16)} Play Match</button><button class="hub-btn act-simmatch">Sim Match</button>`;
     else if (ev && ev.type === 'training') action = `<button class="hub-btn primary act-train">Training Day — Sim</button>`;
-    else action = `<button class="hub-btn primary act-sim">Sim ⏩</button>`;
+    else action = `<button class="hub-btn primary act-sim">Sim ${ICON.ffwd(16)}</button>`;
     left.innerHTML = `<div class="date">${d}</div><div class="md">${label}</div>${fixtureHTML}<div class="actions">${action}</div><div class="tasks"></div>`;
     body.appendChild(left);
     // tasks underneath
     const tasks = left.querySelector('.tasks');
     const items = [];
     const unread = C.unread();
-    if (unread) items.push({ icon: '✉️', t: `${unread} new message${unread > 1 ? 's' : ''}`, go: () => { this.tab = 'messages'; this.render(); } });
-    for (const t of s.tasks) items.push({ icon: '📱', t: t.title, sub: t.sub, go: () => this._socialPopup(t) });
+    if (unread) items.push({ icon: ICON.mail(20), t: `${unread} new message${unread > 1 ? 's' : ''}`, go: () => { this.tab = 'messages'; this.render(); } });
+    for (const t of s.tasks) items.push({ icon: ICON.phone(20), t: t.title, sub: t.sub, go: () => this._socialPopup(t) });
     const done = S.objectives.filter((o) => C.objectiveDone(o)).length;
-    items.push({ icon: '🎯', t: `Club objectives ${done}/${S.objectives.length}`, go: () => { this.tab = 'club'; this.render(); } });
-    if (s.country.calledUp) items.push({ icon: nation(s.player.nationality).flag, t: `International: ${s.country.caps} caps`, go: () => { this.tab = 'country'; this.render(); } });
-    tasks.innerHTML = items.map((it, i) => `<button class="task" data-i="${i}"><span class="ti">${it.icon}</span><span class="tt">${esc(it.t)}${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</span><span class="tg">›</span></button>`).join('');
+    items.push({ icon: ICON.target(20), t: `Club objectives ${done}/${S.objectives.length}`, go: () => { this.tab = 'club'; this.render(); } });
+    if (s.country.calledUp) items.push({ icon: flag(s.player.nationality, 22), t: `International: ${s.country.caps} caps`, go: () => { this.tab = 'country'; this.render(); } });
+    tasks.innerHTML = items.map((it, i) => `<button class="task" data-i="${i}"><span class="ti">${it.icon}</span><span class="tt">${esc(it.t)}${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</span><span class="tg">${ICON.chevron(16)}</span></button>`).join('');
     tasks.querySelectorAll('.task').forEach((b) => { b.onclick = items[+b.dataset.i].go; });
     // right: avatar
     const right = h('div', 'home-right');
     const P = s.player;
-    right.innerHTML = `<div class="avatar-card">${this._avatar(P, c)}<div class="av-name">${esc(P.name)}</div>
-      <div class="av-meta">${nation(P.nationality).flag} ${P.position} · Age ${P.age} · <b>${overallOf(P.stats)}</b> OVR</div>
+    right.innerHTML = `<div class="avatar-card"><div class="av3d"></div><div class="av-name">${esc(P.name)}</div>
+      <div class="av-meta">${flag(P.nationality, 18)} ${P.position} · Age ${P.age} · <b>${overallOf(P.stats)}</b> OVR</div>
       <button class="hub-btn small act-custom">Customise</button></div>`;
     body.appendChild(right);
+    // your real 3D player in the club kit
+    this.avatar = this.avatar || new AvatarView();
+    this.avatar.setPlayer({ kit: c.kit, skin: P.look.skin, hair: P.look.hair });
+    requestAnimationFrame(() => this.avatar.attach(right.querySelector('.av3d')));
     const q = (sel) => left.querySelector(sel);
     if (q('.act-sim')) q('.act-sim').onclick = () => this._sim();
     if (q('.act-train')) q('.act-train').onclick = () => this._train();
@@ -239,13 +245,13 @@ export class Hub {
 
   _socialPopup(t) {
     const opts = t.ctx.res === 'win'
-      ? [['celebrate', '🔥 Celebrate the win'], ['fans', '🙏 Thank the fans'], ['hype', '⚡ Hype the next game'], ['none', "Don't post"]]
+      ? [['celebrate', 'Celebrate the win', 'fire'], ['fans', 'Thank the fans', 'heart'], ['hype', 'Hype the next game', 'bolt'], ['none', "Don't post", 'mute']]
       : t.ctx.res === 'loss'
-        ? [['fans', '🙏 Thank the travelling fans'], ['focus', '💪 "We go again"'], ['none', "Don't post"]]
-        : [['fans', '🙏 Thank the fans'], ['focus', '💪 "Onto the next one"'], ['hype', '⚡ Hype the next game'], ['none', "Don't post"]];
+        ? [['fans', 'Thank the travelling fans', 'heart'], ['focus', '"We go again"', 'fist'], ['none', "Don't post", 'mute']]
+        : [['fans', 'Thank the fans', 'heart'], ['focus', '"Onto the next one"', 'fist'], ['hype', 'Hype the next game', 'bolt'], ['none', "Don't post", 'mute']];
     this._popup('Social media', `<p><b>${esc(t.title)}</b><br><small>${esc(t.sub)}</small></p><p>What do you post?</p>`,
-      opts.map(([k, label]) => ({
-        label, fn: () => {
+      opts.map(([k, label, ic]) => ({
+        label, icon: ICON[ic](16), fn: () => {
           const g = this.career.socialPost(t.id, k);
           if (k !== 'none') this._toast(`+${fmtNum(g)} followers`);
         },
@@ -264,15 +270,15 @@ export class Hub {
       this.career.save();
       list.querySelectorAll('.msg').forEach((x) => x.classList.toggle('on', +x.dataset.id === m.id));
       list.querySelector(`.msg[data-id="${m.id}"]`)?.classList.remove('unread');
-      const f = FROM[m.from] || { name: m.from, icon: '✉️' };
-      detail.innerHTML = `<div class="md-from">${f.icon} ${f.name} · <span>${fmtDate(m.date)}</span></div><h2>${esc(m.subject)}</h2><p>${esc(m.body)}</p>
+      const f = FROM[m.from] || { name: m.from, icon: ICON.mail };
+      detail.innerHTML = `<div class="md-from">${f.icon(16)} ${f.name} · <span>${fmtDate(m.date)}</span></div><h2>${esc(m.subject)}</h2><p>${esc(m.body)}</p>
         ${m.actions && !m.done ? `<div class="md-acts">${m.actions.map((a, i) => `<button class="hub-btn ${i === 0 ? 'primary' : ''}" data-i="${i}">${esc(a.label)}</button>`).join('')}</div>` : m.choice ? `<p class="md-done">You chose: <b>${esc(m.choice)}</b></p>` : ''}`;
       detail.querySelectorAll('.md-acts button').forEach((b) => { b.onclick = () => { this.career.act(m.id, +b.dataset.i); this.render(); }; });
       this.render.bind(this);
     };
     list.innerHTML = s.messages.map((m) => {
-      const f = FROM[m.from] || { name: m.from, icon: '✉️' };
-      return `<button class="msg ${m.read ? '' : 'unread'}" data-id="${m.id}"><span class="mi">${f.icon}</span><span class="mt"><b>${esc(m.subject)}</b><small>${f.name}</small></span></button>`;
+      const f = FROM[m.from] || { name: m.from, icon: ICON.mail };
+      return `<button class="msg ${m.read ? '' : 'unread'}" data-id="${m.id}"><span class="mi">${f.icon(20)}</span><span class="mt"><b>${esc(m.subject)}</b><small>${f.name}</small></span></button>`;
     }).join('');
     list.querySelectorAll('.msg').forEach((b) => { b.onclick = () => show(s.messages.find((m) => m.id === +b.dataset.id)); });
     show(s.messages[0]);
@@ -282,13 +288,13 @@ export class Hub {
   _tab_club(body) {
     const C = this.career, s = C.s, c = club(s.clubId), S = s.season, L = league(c.league);
     const left = h('div', 'club-left hub-scroll');
-    left.innerHTML = `<div class="club-card">${crestSVG(c, 54)}${kitSVG(c.kit, 54)}<div><h2>${esc(c.name)}</h2><span>${countryOf(c.country).flag} ${esc(L.name)} · ${C.position()}${['th', 'st', 'nd', 'rd'][C.position()] || 'th'} place</span></div></div>
+    left.innerHTML = `<div class="club-card">${crestSVG(c, 54)}${kitSVG(c.kit, 54)}<div><h2>${esc(c.name)}</h2><span>${flag(c.country, 18)} ${esc(L.name)} · ${C.position()}${['th', 'st', 'nd', 'rd'][C.position()] || 'th'} place</span></div></div>
       <div class="club-row"><div><b>${fmtMoney(s.wage)}</b><span>Wage / week</span></div><div><b>${S.apps}</b><span>Apps</span></div><div><b>${S.goals}</b><span>Goals</span></div><div><b>${C._avg().toFixed(1)}</b><span>Avg rating</span></div></div>
       <h3>Season objectives <small>complete them all to be offered a new deal</small></h3>
       ${S.objectives.map((o) => {
         const p = C.objectiveProgress(o), done = C.objectiveDone(o);
         const pct = Math.min(100, (p / o.target) * 100);
-        return `<div class="obj ${done ? 'done' : ''}"><div class="ob-t">${done ? '✅' : '⬜'} ${esc(o.label)}<span>${o.id === 'avg' ? p.toFixed(1) : p}/${o.target}</span></div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+        return `<div class="obj ${done ? 'done' : ''}"><div class="ob-t"><span class="obl">${done ? ICON.check(18) : ICON.box(18)} ${esc(o.label)}</span><span>${o.id === 'avg' ? p.toFixed(1) : p}/${o.target}</span></div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
       }).join('')}`;
     const right = h('div', 'club-right hub-scroll');
     const T = C.table();
@@ -302,11 +308,11 @@ export class Hub {
     const C = this.career, s = C.s, n = nation(s.player.nationality);
     const objs = C.nationObjectives();
     const wrap = h('div', 'country hub-scroll');
-    wrap.innerHTML = `<div class="nat-head"><span class="flag">${n.flag}</span><div><h2>${esc(n.name)}</h2>
+    wrap.innerHTML = `<div class="nat-head"><span class="bigflag">${flag(n.id, 54)}</span><div><h2>${esc(n.name)}</h2>
       <span class="${s.country.calledUp ? 'ok' : 'no'}">${s.country.calledUp ? 'In the squad' : 'Not called up yet'}</span></div>
       <div class="caps"><b>${s.country.caps}</b><span>Caps</span></div><div class="caps"><b>${s.country.goals}</b><span>Goals</span></div></div>
       <h3>${s.country.calledUp ? 'Stay in the squad' : 'Earn a call-up'} <small>${s.country.calledUp ? 'easy — just keep playing well' : 'checked at every international break'}</small></h3>
-      ${objs.map((o) => `<div class="obj ${o.ok ? 'done' : ''}"><div class="ob-t">${o.ok ? '✅' : '⬜'} ${esc(o.label)}<span>${o.value}</span></div></div>`).join('')}`;
+      ${objs.map((o) => `<div class="obj ${o.ok ? 'done' : ''}"><div class="ob-t"><span class="obl">${o.ok ? ICON.check(18) : ICON.box(18)} ${esc(o.label)}</span><span>${o.value}</span></div></div>`).join('')}`;
     body.appendChild(wrap);
   }
 
@@ -329,7 +335,7 @@ export class Hub {
     }).join('');
     const inv = s.investments.map((v, i) => `<div class="shop-item"><div><b>${esc(v.title)}</b><small>Worth ${fmtMoney(v.value)}${v.risk ? ' · pays out at season end' : ''}</small></div>
       ${v.risk ? '' : `<button class="hub-btn" data-cash="${i}">Cash out</button>`}</div>`).join('');
-    const sp = (s.sponsors || []).filter((x) => x.weeks > 0).map((x) => `<div class="shop-item"><div><b>🤝 ${esc(x.brand)}</b><small>${fmtMoney(x.weekly)}/wk · ${x.weeks} weeks left</small></div></div>`).join('');
+    const sp = (s.sponsors || []).filter((x) => x.weeks > 0).map((x) => `<div class="shop-item"><div><b>${ICON.deal(16)} ${esc(x.brand)}</b><small>${fmtMoney(x.weekly)}/wk · ${x.weeks} weeks left</small></div></div>`).join('');
     wrap.innerHTML = `<div class="bank"><div><b>${fmtMoney(s.money)}</b><span>Bank</span></div><div><b>${fmtMoney(s.wage)}</b><span>Wage / week</span></div><div><b>${fmtNum(s.followers)}</b><span>Followers</span></div></div>
       <h3>Shop</h3>${items}${inv ? `<h3>Your investments</h3>${inv}` : ''}${sp ? `<h3>Sponsorships</h3>${sp}` : ''}`;
     body.appendChild(wrap);
@@ -344,7 +350,7 @@ export class Hub {
     const C = this.career, s = C.s, c = club(s.clubId);
     const done = C.allObjectivesDone();
     const offers = s.offersPending || [];
-    const objs = s.season.objectives.map((o) => `<li class="${C.objectiveDone(o) ? 'ok' : 'no'}">${C.objectiveDone(o) ? '✅' : '❌'} ${esc(o.label)}</li>`).join('');
+    const objs = s.season.objectives.map((o) => `<li class="${C.objectiveDone(o) ? 'ok' : 'no'}">${C.objectiveDone(o) ? ICON.check(18) : ICON.cross(18)} ${esc(o.label)}</li>`).join('');
     const html = `<p>${esc(c.name)} finished <b>${C.position()}${['th', 'st', 'nd', 'rd'][C.position()] || 'th'}</b>. You played ${s.season.apps}, scored ${s.season.goals}, average ${C._avg().toFixed(2)}.</p>
       <ul class="rev">${objs}</ul>
       <p>${done ? 'You hit every objective — the club want to keep you.' : "You didn't hit every objective, so the club won't renew. Your agent found you these options:"}</p>
@@ -359,7 +365,7 @@ export class Hub {
   _popup(title, html, buttons) {
     this._closePopup();
     const p = h('div', 'hub-pop');
-    p.innerHTML = `<div class="pop-card hub-scroll"><h2>${esc(title)}</h2><div class="pop-body">${html}</div><div class="pop-btns">${buttons.map((b, i) => `<button class="hub-btn ${b.primary ? 'primary' : ''}" data-i="${i}">${esc(b.label)}</button>`).join('')}</div></div>`;
+    p.innerHTML = `<div class="pop-card hub-scroll"><h2>${esc(title)}</h2><div class="pop-body">${html}</div><div class="pop-btns">${buttons.map((b, i) => `<button class="hub-btn ${b.primary ? 'primary' : ''}" data-i="${i}">${b.icon || ''}${esc(b.label)}</button>`).join('')}</div></div>`;
     this.el.appendChild(p);
     p.querySelectorAll('.pop-btns button').forEach((x) => {
       x.onclick = () => { this._closePopup(); const b = buttons[+x.dataset.i]; if (b.fn) b.fn(); else this.render(); };

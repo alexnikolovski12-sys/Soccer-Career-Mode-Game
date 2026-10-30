@@ -8,29 +8,29 @@ export const CLUBS_PER_LEAGUE = 16;
 
 /** Countries with leagues (Europe). flavour = how club names are built. */
 export const LEAGUE_COUNTRIES = [
-  { id: 'ENG', name: 'England', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', strength: 1.0, flavour: 'en' },
-  { id: 'ESP', name: 'Spain', flag: '🇪🇸', strength: 0.98, flavour: 'es' },
-  { id: 'GER', name: 'Germany', flag: '🇩🇪', strength: 0.95, flavour: 'de' },
-  { id: 'ITA', name: 'Italy', flag: '🇮🇹', strength: 0.94, flavour: 'it' },
-  { id: 'FRA', name: 'France', flag: '🇫🇷', strength: 0.92, flavour: 'fr' },
-  { id: 'POR', name: 'Portugal', flag: '🇵🇹', strength: 0.86, flavour: 'pt' },
-  { id: 'NED', name: 'Netherlands', flag: '🇳🇱', strength: 0.85, flavour: 'nl' },
+  { id: 'ENG', name: 'England', strength: 1.0, flavour: 'en' },
+  { id: 'ESP', name: 'Spain', strength: 0.98, flavour: 'es' },
+  { id: 'GER', name: 'Germany', strength: 0.95, flavour: 'de' },
+  { id: 'ITA', name: 'Italy', strength: 0.94, flavour: 'it' },
+  { id: 'FRA', name: 'France', strength: 0.92, flavour: 'fr' },
+  { id: 'POR', name: 'Portugal', strength: 0.86, flavour: 'pt' },
+  { id: 'NED', name: 'Netherlands', strength: 0.85, flavour: 'nl' },
 ];
 
 /** Nationalities you can pick (any of these can earn a national call-up). */
 export const NATIONS = [
-  ...LEAGUE_COUNTRIES.map((c) => ({ id: c.id, name: c.name, flag: c.flag, tier: c.strength > 0.93 ? 1 : 2 })),
-  { id: 'SCO', name: 'Scotland', flag: '🏴󠁧󠁢󠁳󠁣󠁴󠁿', tier: 3 }, { id: 'BEL', name: 'Belgium', flag: '🇧🇪', tier: 2 },
-  { id: 'CRO', name: 'Croatia', flag: '🇭🇷', tier: 2 }, { id: 'IRL', name: 'Ireland', flag: '🇮🇪', tier: 3 },
-  { id: 'BRA', name: 'Brazil', flag: '🇧🇷', tier: 1 }, { id: 'ARG', name: 'Argentina', flag: '🇦🇷', tier: 1 },
-  { id: 'URU', name: 'Uruguay', flag: '🇺🇾', tier: 2 }, { id: 'COL', name: 'Colombia', flag: '🇨🇴', tier: 2 },
-  { id: 'USA', name: 'USA', flag: '🇺🇸', tier: 3 }, { id: 'MEX', name: 'Mexico', flag: '🇲🇽', tier: 3 },
-  { id: 'AUS', name: 'Australia', flag: '🇦🇺', tier: 3 }, { id: 'JPN', name: 'Japan', flag: '🇯🇵', tier: 3 },
-  { id: 'KOR', name: 'South Korea', flag: '🇰🇷', tier: 3 }, { id: 'MAR', name: 'Morocco', flag: '🇲🇦', tier: 2 },
-  { id: 'SEN', name: 'Senegal', flag: '🇸🇳', tier: 2 }, { id: 'NGA', name: 'Nigeria', flag: '🇳🇬', tier: 2 },
-  { id: 'GHA', name: 'Ghana', flag: '🇬🇭', tier: 3 }, { id: 'CIV', name: "Côte d'Ivoire", flag: '🇨🇮', tier: 2 },
-  { id: 'CAN', name: 'Canada', flag: '🇨🇦', tier: 3 }, { id: 'POL', name: 'Poland', flag: '🇵🇱', tier: 3 },
-  { id: 'SUI', name: 'Switzerland', flag: '🇨🇭', tier: 3 }, { id: 'DEN', name: 'Denmark', flag: '🇩🇰', tier: 2 },
+  ...LEAGUE_COUNTRIES.map((c) => ({ id: c.id, name: c.name, tier: c.strength > 0.93 ? 1 : 2 })),
+  { id: 'SCO', name: 'Scotland', tier: 3 }, { id: 'BEL', name: 'Belgium', tier: 2 },
+  { id: 'CRO', name: 'Croatia', tier: 2 }, { id: 'IRL', name: 'Ireland', tier: 3 },
+  { id: 'BRA', name: 'Brazil', tier: 1 }, { id: 'ARG', name: 'Argentina', tier: 1 },
+  { id: 'URU', name: 'Uruguay', tier: 2 }, { id: 'COL', name: 'Colombia', tier: 2 },
+  { id: 'USA', name: 'USA', tier: 3 }, { id: 'MEX', name: 'Mexico', tier: 3 },
+  { id: 'AUS', name: 'Australia', tier: 3 }, { id: 'JPN', name: 'Japan', tier: 3 },
+  { id: 'KOR', name: 'South Korea', tier: 3 }, { id: 'MAR', name: 'Morocco', tier: 2 },
+  { id: 'SEN', name: 'Senegal', tier: 2 }, { id: 'NGA', name: 'Nigeria', tier: 2 },
+  { id: 'GHA', name: 'Ghana', tier: 3 }, { id: 'CIV', name: "Côte d'Ivoire", tier: 2 },
+  { id: 'CAN', name: 'Canada', tier: 3 }, { id: 'POL', name: 'Poland', tier: 3 },
+  { id: 'SUI', name: 'Switzerland', tier: 3 }, { id: 'DEN', name: 'Denmark', tier: 2 },
 ];
 
 // ---------------------------------------------------------------- names (all invented)
