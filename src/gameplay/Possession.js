@@ -53,7 +53,8 @@ export class Possession {
     const st = o.drib || (o.drib = { side: 1, pref: Math.random() < 0.75 ? 1 : -1, last: 0 });
     const moving = o.moveSpeed > 0.35;
     let dx, dz;
-    if (moving) { dx = o.moveDir.x; dz = o.moveDir.z; } else { dx = Math.sin(o.heading); dz = Math.cos(o.heading); }
+    if (moving && o.wantDir) { dx = o.wantDir.x; dz = o.wantDir.z; }
+    else if (moving) { dx = o.moveDir.x; dz = o.moveDir.z; } else { dx = Math.sin(o.heading); dz = Math.cos(o.heading); }
     const hx = Math.sin(o.heading), hz = Math.cos(o.heading);
     const rx = -hz, rz = hx; // the player's right
     // the ball runs a little further ahead when sprinting
@@ -127,7 +128,8 @@ export class Possession {
         let push = r < 0.35 ? 0.25 : r < 0.85 ? 0.55 : 0.85;  // soft / normal / slightly longer
         if (space < 2.2) push = Math.min(push, 0.3);           // tight in traffic
         // sprinting: you can't have pace AND close control — every touch is heavier
-        if (o.sprinting) push = space < 1.6 ? 0.8 : 1.0 + g.rng.next() * 0.9 + (space > 7 && g.rng.chance(0.35) ? 0.9 : 0);
+        // sprinting: normal / semi-heavy / heavier touches — further ahead, but still yours
+        if (o.sprinting) { const s = g.rng.next(); push = space < 1.6 ? 0.55 : s < 0.4 ? 0.8 : s < 0.8 ? 1.05 : 1.3; }
         if (o.burstTouch) { push = 1.3; o.burstTouch = false; }
         v = o.speed + push; cd = Math.max(0.2, 0.9 / (o.speed + 1.5));
         const r2 = g.rng.next();
@@ -157,7 +159,7 @@ export class Possession {
     // No magic: a ball that's been knocked away keeps rolling where the touch
     // sent it. He has to get to it and take touches to bring it round. If he
     // leaves it too far, it's just a loose ball (he can still run onto it).
-    if (bd > D.looseDistance) {
+    if (bd > D.looseDistance + (o.sprinting ? 0.8 : 0)) {
       ball.owner = null;
       g.events.emit('loose', { player: o });
     }

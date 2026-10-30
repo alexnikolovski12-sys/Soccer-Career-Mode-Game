@@ -352,6 +352,8 @@ export class Hub {
     const panel = h('div', 'custom');
     this.el.appendChild(panel);
     const draw = () => {
+      // keep the options list where you'd scrolled it to (rebuilding the panel would jump to the top)
+      const keep = ['.cu-opts', '.cu-body'].map((q) => panel.querySelector(q)?.scrollTop || 0).concat(panel.scrollTop);
       const look = { ...L, hairColour: L.hairColour || L.hair };
       const unlocked = C.bootsUnlocked();
       const chip = (key, val, label) => `<button class="chip ${look[key] === val ? 'on' : ''}" data-k="${key}" data-v="${val}">${esc(label)}</button>`;
@@ -368,6 +370,7 @@ export class Hub {
           <h4>Shirt number <small>your teammates take the other numbers</small></h4>
           <div class="num"><button class="hub-btn small" data-n="-1">−</button><b>${look.number ?? 9}</b><button class="hub-btn small" data-n="1">+</button></div>
         </div></div>`;
+      panel.querySelector('.cu-opts').scrollTop = keep[0]; panel.querySelector('.cu-body').scrollTop = keep[1]; panel.scrollTop = keep[2];
       // live 3D preview
       this.avatar = this.avatar || new AvatarView();
       this.avatar.setPlayer({ kit: c.kit, skin: look.skin, hair: look.hairColour, look });

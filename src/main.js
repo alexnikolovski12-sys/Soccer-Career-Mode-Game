@@ -937,6 +937,18 @@ class Game {
         wx = ball.pos.x - u.pos.x; wz = ball.pos.z - u.pos.z; speed = u.runSpeed;
       }
     }
+    // dribbling: the stick says where you WANT to take it; if the ball's run away
+    // from your feet he bends his run to get back on it (and the next touch then
+    // takes it your way) — the ball never comes back on its own
+    u.wantDir = null;
+    if (ball.owner === u && mag > 0.05 && speed > 0 && !this.shooting.strike) {
+      const wl = Math.hypot(wx, wz) || 1;
+      u.wantDir = { x: wx / wl, z: wz / wl };
+      const lead = 0.25, px = ball.pos.x + ball.vel.x * lead - u.pos.x, pz = ball.pos.z + ball.vel.z * lead - u.pos.z;
+      const pd = Math.hypot(px, pz), bd = dist2D(u.pos, ball.pos);
+      const w = Math.max(0, Math.min(0.9, (bd - 0.85) / 1.1));
+      if (w > 0 && pd > 0.01) { wx = (wx / wl) * (1 - w) + (px / pd) * w; wz = (wz / wl) * (1 - w) + (pz / pd) * w; }
+    }
     const strike = this.shooting.strike;
     if (strike && strike.shooter === u) {
       // mid-strike: plant and hit it (a set piece run-up is driven by Shooting)

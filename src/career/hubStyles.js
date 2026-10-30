@@ -198,6 +198,7 @@ h3 small { font-weight:500; opacity:.6; font-size:13px; margin-left:6px; }
   .avatar-card { display:flex; align-items:center; gap:10px; text-align:left; }
   .av3d { width:110px; height:150px; flex-shrink:0; }
   .cu-body { flex-direction:column; }
+  .cu-opts { min-height:0; }
   .cu-view { width:100%; height:200px; flex-shrink:0; }
   .msg-list { width:100%; max-height:40%; }
   .hub-club { display:none; }
