@@ -838,6 +838,7 @@ class Game {
     this.post.setLook({ exposure: this.look.exposure, bloom: night ? 0.55 : 0.32, thresh: night ? 1.15 : 1.4, sat: time === 'day' ? 1.05 : 1.1, contrast: 0.12 });
     this.matchTime = time; this.matchWeather = weather;
     HUMAN_FX.wet.value = weather === 'rain' ? 1 : 0;
+    if (this.ball && this.ball.outline) this.ball.outline.visible = weather === 'snow';
   }
 
   /** Draw the frame: through the post chain on the higher quality levels. */
@@ -1794,8 +1795,13 @@ class Game {
     // the pitch wears where they run (and badly where they slide)
     if (!paused && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT)) {
       for (const p of this.players) {
-        const sp = Math.hypot(p.vel.x, p.vel.z);
-        if (sp > 1.5) this.pitch.wear.add(p.pos.x, p.pos.z, sp * realDt * 0.0011, 0.35);
+        // a faint pressed-down print every time a boot lands (you'd only notice if you looked)
+        const A = p.animator;
+        for (let i = 0; i < 2; i++) {
+          const c = A.contact[i] > 0.6, f = A.lastFoot[i];
+          if (c && !(p._planted || (p._planted = [true, true]))[i] && f && p.speed > 0.8) this.pitch.wear.add(f.x, f.z, p.speed > 5 ? 0.07 : 0.045, 0.16);
+          p._planted[i] = c;
+        }
         const act = p.anim.action;
         if ((act === 'tackle' && p.anim.variant === 'slide') || act === 'dive' || act === 'fall') {
           this.pitch.wear.add(p.pos.x, p.pos.z, realDt * 1.4, 0.45, Math.sin(p.heading), Math.cos(p.heading), 0.4);

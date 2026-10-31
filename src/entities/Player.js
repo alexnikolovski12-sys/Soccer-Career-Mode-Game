@@ -473,6 +473,9 @@ export class Player {
     }
     if (hasBall) desiredSpeed *= A.dribbleSpeed;
     desiredSpeed *= this.staminaFactor();
+    // holds only last while someone keeps setting them (a skill script / braking on the ball)
+    if (this.skillHold != null && !this._holdTick) this.skillHold = null;
+    this._holdTick = false;
     if (this.skillHold != null) desiredSpeed = Math.min(desiredSpeed, this.skillHold);
     // a burst after a sharp cut / skill on the ball
     if (this.dribBoost > 0) { this.dribBoost -= dt; if (hasBall || this.isUser) desiredSpeed *= 1.12; }

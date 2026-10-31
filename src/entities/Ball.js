@@ -66,6 +66,14 @@ export class Ball {
     );
     this.mesh.castShadow = true;
     scene.add(this.mesh);
+    // outline (snow games): a back-faced shell pushed out a constant few pixels on screen
+    this.outline = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      vertexShader: 'void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); float d = -mv.z; vec3 n = normalize(normalMatrix * normal); mv.xyz += n * (0.006 + d * 0.0011); gl_Position = projectionMatrix * mv; }',
+      fragmentShader: 'void main() { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }',
+    }));
+    this.outline.visible = false;
+    this.mesh.add(this.outline);
 
     // Blob shadow (always on; helps read ball height when shadows are off)
     const sc = document.createElement('canvas');

@@ -213,7 +213,7 @@ export class Skills {
       const [px, pz] = W(pf, pr);
       o.pos.x += (px - o.pos.x) * Math.min(1, dt * 14);
       o.pos.z += (pz - o.pos.z) * Math.min(1, dt * 14);
-      o.skillHold = sc.holdSpeed;
+      o.skillHold = sc.holdSpeed; o._holdTick = true;
     } else {
       o.skillHold = null;
       // rainbow: he chases it down and takes it back by himself

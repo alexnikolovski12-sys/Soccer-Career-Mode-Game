@@ -45,7 +45,7 @@ export const GRASS = {
 };
 
 // ---- pitch wear: where players run, turn and slide, the turf gets scuffed and flattened
-const WW = 256, WH = 168, WSX = 112, WSZ = 74;   // map covers the pitch + a little run-off
+const WW = 768, WH = 508, WSX = 112, WSZ = 74;   // map covers the pitch + a little run-off
 export class PitchWear {
   constructor() {
     this.data = new Uint8Array(WW * WH);
@@ -140,16 +140,18 @@ vec3 turf() {
   c = mix(c, vec3(0.16, 0.13, 0.075) * (0.8 + 0.4 * n1), wear * 0.55);
   // live wear from this match: scuffed, flattened, then bare
   float lw = wearAt(p);
-  c = mix(c, c * vec3(1.18, 1.1, 0.8), smoothstep(0.0, 0.35, lw) * 0.6);
-  c = mix(c, vec3(0.15, 0.12, 0.07) * (0.8 + 0.5 * n1), smoothstep(0.3, 1.0, lw) * 0.8);
+  // light traffic: pressed-down, slightly darker grass (footprints); heavy: scuffed, then bare earth
+  c *= 1.0 - 0.28 * smoothstep(0.0, 0.25, lw) * (1.0 - smoothstep(0.35, 0.6, lw));
+  c = mix(c, c * vec3(1.12, 1.06, 0.82), smoothstep(0.35, 0.6, lw) * 0.5);
+  c = mix(c, vec3(0.15, 0.12, 0.07) * (0.8 + 0.5 * n1), smoothstep(0.55, 1.0, lw) * 0.8);
   gWear = lw;
   // the unmown surround: a little darker and duller
   c *= mix(0.86, 1.0, inside);
   // snow lying in patches: white drifts, half-covered turf between, green where it's been played on
   if (uSnow > 0.0) {
-    float sn = gn(p * 0.07 + 3.0) * 0.55 + gn(p * 0.33 + 11.0) * 0.3 + gn(p * 1.9) * 0.15;
+    float sn = gn(p * 0.07 + 3.0) * 0.6 + gn(p * 0.33 + 11.0) * 0.32 + gn(p * 1.9) * 0.08;
     sn -= lw * 0.6 + wear * 0.3;
-    float cover = smoothstep(0.38, 0.66, sn);
+    float cover = smoothstep(0.34, 0.7, sn);
     c = mix(c, vec3(0.78, 0.81, 0.86) * (0.92 + 0.12 * n1), cover * uSnow);
     gRoughW = 0.85;
   }
