@@ -17,6 +17,7 @@ import { CameraRig } from './world/Camera.js';
 import { Effects } from './world/Effects.js';
 import { Player } from './entities/Player.js';
 import { HUMAN_FX } from './entities/HumanBody.js';
+import { ANIM_WORLD } from './anim/Animator.js';
 import { Ball } from './entities/Ball.js';
 import { Keeper } from './entities/Keeper.js';
 import { TeamAI, FORMATIONS } from './ai/TeamAI.js';
@@ -39,7 +40,7 @@ class Events {
 }
 
 const easeInOut = (t) => t * t * (3 - 2 * t);
-const CELEBRATIONS = ['kneeslide', 'kneeslide', 'bellyslide', 'airplane', 'jumpfist', 'spinjump', 'pointsky', 'cuptheear',
+const CELEBRATIONS = ['kneeslide', 'kneeslide', 'bellyslide', 'airplane', 'jumpfist', 'spinjump', 'spinjump', 'spinjump', 'armscrossed', 'pointsky', 'cuptheear',
   'shush', 'armscrossed', 'salute', 'calmdown', 'heart', 'badgepoint', 'robot', 'backflip'];
 
 class Game {
@@ -828,14 +829,25 @@ class Game {
     const ball = this.ball, c = ball.owner && ball.owner.team === 'away' ? ball.owner : null;
     this.homeAI.pressHeld = !!this.input.held.through;
     if (pg) this._switchBest();
+    // SLIDE button: a slide tackle at the man on the ball (or wherever you're facing)
     if (sg && this.user === u && u.tackleCooldown <= 0 && !u.ai.tackling) {
       const target = c || (ball.pass && ball.pass.to) || null;
-      if (target && dist2D(u.pos, target.pos) < 3.2) {
-        this.homeAI.startTackle(u, target, dist2D(u.pos, target.pos) > 1.8 || u.speed > 5);
+      if (target && dist2D(u.pos, target.pos) < 5.5) {
+        u.faceTowards(target.pos.x, target.pos.z);
+        this.homeAI.startTackle(u, target, true);
       } else {
-        // lunge at the ball wherever it is
-        u.playAction('tackle', 0.5, { variant: 'stand' });
-        u.tackleCooldown = 0.6;
+        u.playAction('tackle', 0.85, { variant: 'slide' });
+        u.tackleCooldown = 1.0;
+      }
+    }
+    // get close and he goes in for the ball by himself (standing tackle), FC-style
+    this._autoTk = (this._autoTk || 0) - dt;
+    if (c && this.user === u && !u.ai.tackling && u.tackleCooldown <= 0 && this._autoTk <= 0 && u.stumble <= 0) {
+      const dx = c.pos.x - u.pos.x, dz = c.pos.z - u.pos.z, d = Math.hypot(dx, dz);
+      const facing = (Math.sin(u.heading) * dx + Math.cos(u.heading) * dz) / (d || 1);
+      if (d < 1.55 && facing > 0.2) {
+        this.homeAI.startTackle(u, c, false);
+        this._autoTk = 1.1;
       }
     }
     if (u.ai.tackling) {
@@ -1207,12 +1219,22 @@ class Game {
         } else if (cel.type === 'backflip') u.playAction('backflip', 1.15, {});
         else if (['cuptheear', 'shush', 'armscrossed', 'salute', 'calmdown', 'heart', 'badgepoint', 'robot'].includes(cel.type)) u.playAction(cel.type, 9, { loop: true });
         else if (cel.type === 'jumpfist') u.playAction('jumpfist', 9, { loop: true });
-        else if (cel.type === 'spinjump') u.playAction('spinjump', 1.4, { hold: true, side: this.rng.sign() });
+        else if (cel.type === 'spinjump') { u.playAction('spinjump', 1.4, { hold: true, side: this.rng.sign() }); cel.siu = 0.78; }
         else if (cel.type === 'pointsky') u.playAction('pointsky', 9, { loop: true });
         else u.playAction('celebrate', 2.4, { loop: true });
         u.faceTowards(0, u.pos.z * 0.3); // turn to the fans / your teammates
       }
       return;
+    }
+    // the jump-turn-land: "SIUUU!"
+    if (cel.siu != null) {
+      cel.siu -= dt;
+      if (cel.siu <= 0) {
+        cel.siu = null;
+        if (u.team === 'home') { this.hud.showBig('SIUUU!', 'good', 1.5); this.audio.roar(); }
+        this.camRig.addShake(0.18);
+        this.effects.turf(u.pos.x, u.pos.z, 0, 0, 0.8, this.matchWeather === 'rain');
+      }
     }
     if (cel.slide) {
       // knee slide: glide along the grass, slowing down
@@ -1628,6 +1650,8 @@ class Game {
     const paused = this.sm.is(STATES.PAUSED);
     const menu = this.sm.is(STATES.MENU, STATES.LOADING);
     if (!replaying && !menu) {
+      ANIM_WORLD.ball.copy(this.ball.pos);
+      for (const p of this.players) p.ownsBall = this.ball.owner === p;
       if (!paused) for (const p of this.players) p.updateAnimation(scaledDt, this.ball.owner === p);
       for (const p of this.players) p.render(alpha, this.realTime);
       for (const p of this.extras) { if (!paused) p.updateAnimation(scaledDt, false); p.render(alpha, this.realTime); }

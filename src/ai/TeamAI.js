@@ -416,8 +416,9 @@ export class TeamAI {
   /** Lunging tackle (AI or the user's TACKLE button). */
   startTackle(d, c, slide = null) {
     const g = this.game;
-    d.ai.tackling = { t: 0, target: c, resolved: false };
-    d.playAction('tackle', 0.55, { variant: slide == null ? (g.rng.chance(0.5) ? 'stand' : 'slide') : (slide ? 'slide' : 'stand') });
+    const sl = slide == null ? g.rng.chance(0.5) : !!slide;
+    d.ai.tackling = { t: 0, target: c, resolved: false, slide: sl };
+    d.playAction('tackle', sl ? 0.95 : 0.55, { variant: sl ? 'slide' : 'stand' });
     d.tackleCooldown = CONFIG.defender.tackleCooldown * (d.isUser ? 0.55 : 1);
   }
 
@@ -429,12 +430,12 @@ export class TeamAI {
     tk.t += dt;
     d.aiLabel = 'tackle';
     if (!d.isUser) d.moveTo(ball.pos.x, ball.pos.z, d.attrs.sprintSpeed * 1.05, 0.1);
-    if (!tk.resolved && tk.t >= D.tackleWindup) {
+    if (!tk.resolved && tk.t >= D.tackleWindup + (tk.slide ? 0.12 : 0)) {
       tk.resolved = true;
       const c = tk.target;
       const dBall = dist2D(d.pos, ball.pos);
       const bodyFirst = dist2D(d.pos, c.pos) < dBall - D.foulBodyMargin;
-      const reach = D.tackleRange + 0.3 + (d.isUser ? 0.8 : 0);
+      const reach = D.tackleRange + 0.3 + (d.isUser ? 0.8 : 0) + (tk.slide ? 1.3 : 0);
       if (ball.owner !== c || dBall > reach || ball.pos.y > 0.5) {
         this._fail(d, c, false);
       } else if (g.rng.next() < (bodyFirst ? D.foulFromBehind : D.foulMistimed) * (d.isUser ? 0.8 : 1)) {
@@ -454,7 +455,7 @@ export class TeamAI {
         if (g.rng.next() < p) this._win(d, c); else this._fail(d, c, true);
       }
     }
-    if (tk.t >= 0.55) { d.ai.tackling = null; return true; }
+    if (tk.t >= (tk.slide ? 0.9 : 0.55)) { d.ai.tackling = null; return true; }
     return false;
   }
 

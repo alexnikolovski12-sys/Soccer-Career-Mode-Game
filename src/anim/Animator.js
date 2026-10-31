@@ -9,6 +9,7 @@ import { RIG } from '../entities/HumanBody.js';
 import { clamp } from '../config.js';
 import { clips, newPose, Accum, blendInto, Q, H, OFF } from './Clips.js';
 import { handPose, HAND_KEYS } from './HandPoses.js';
+import { gaitPose } from './Gait.js';
 
 const G = 9.81;
 const TAU = Math.PI * 2;
@@ -88,6 +89,11 @@ const SETS = {
 };
 
 let uid = 0;
+
+/** What everyone watches: set by the game each frame (the ball). */
+export const ANIM_WORLD = { ball: new THREE.Vector3(), on: true };
+const NO_LOOK = new Set(['fall', 'dive', 'sitdown', 'crouchsad', 'dejected', 'hipshands', 'gkup', 'smother', 'stumble', 'tackle', 'celebrate', 'kneeslide', 'siu', 'crossarms', 'teamjump', 'gkthrow']);
+const _hp = new THREE.Vector3(), _qt = new THREE.Quaternion(), _qi = new THREE.Quaternion(), _fd = new THREE.Vector3(), _dl = new THREE.Vector3(), _qd = new THREE.Quaternion();
 
 /** Steps per second at a running speed (m/s), from sprint studies of footballers / sprinters. */
 const CAD = [[0, 1.4], [1.4, 1.85], [2.5, 2.45], [3.5, 2.75], [5, 3.0], [6.5, 3.3], [8, 3.8], [9.3, 4.3], [10.5, 4.55]];
@@ -266,6 +272,7 @@ export class Animator {
     this.spinYaw = 0;
     const out = this.pose;
     if (dt <= 0) return out;
+    if (this.debugGait != null) { gaitPose(this.debugGait, this.debugGaitV || 9, out); this.contact[0] = this.contact[1] = 0; return out; }
     if (this.debugClip) {
       // viewer / tests: show one clip as-is
       this._dbgT = (this._dbgT || 0) + dt;
@@ -380,6 +387,16 @@ export class Animator {
     }
     acc.out(out);
 
+    // at real running speeds, hand over to the biomechanical sprint gait (long strides, real cadence)
+    const wP = wF * clamp((s - 4.6) / 1.8, 0, 1) * 0.9;
+    this.gaitW = wP;
+    if (wP > 0.01) {
+      const D = gaitPose(this.phase, s, this._tmp3, this.style);
+      blendInto(out, this._tmp3, wP);
+      const ph = this.phase, cLg = ph < D ? 1 : 0, cRg = ((ph + 0.5) % 1) < D ? 1 : 0;
+      cL = cL * (1 - wP) * (cW ? 1 / cW : 0) * cW + cLg * wP * cW; cR = cR * (1 - wP) + cRg * wP * cW;
+    }
+
     // stride: phase speed so planted feet don't slide (ground speed / stride length)
     let stride = strideW > 0 ? strideSum / strideW : L[set.walk].speed * L[set.walk].dur;
     let amp = strideK;
@@ -392,9 +409,11 @@ export class Animator {
     // legs up instead (bigger hip / knee swing) — no more legs spinning at 7–8 steps a second.
     if (wF > 0.5 && s > 3.4) {
       const want = cadenceAt(s) * 0.5 * this.style.cadence;          // cycles per second
-      const extra = clamp(rate / want, 1, 2.3) * clamp((s - 3.4) / 1.2, 0, 1) + 1 * (1 - clamp((s - 3.4) / 1.2, 0, 1));
-      amp *= extra;
-      rate /= extra;
+      const ramp = clamp((s - 3.4) / 1.2, 0, 1);
+      const extra = Math.min(clamp(rate / want, 1, 1.5), 1 + 0.5 * (1 - this.gaitW)) * ramp + (1 - ramp);
+      // the gait layer sets its own stride: cadence straight from the curve
+      rate = this.gaitW > 0.01 ? want : rate / extra;
+      amp *= extra * (1 - this.gaitW) + this.gaitW;
       this.strideExtra = extra;
     } else this.strideExtra = 1;
     this.phaseRate = rate;
@@ -775,10 +794,11 @@ export class Animator {
         // lock where the foot actually is now (after last frame's IK), so it never jumps
         if (!this.lock[i]) { const f = this.lastFoot[i]; this.lock[i] = f && Math.hypot(f.x - ank.x, f.z - ank.z) < 0.3 ? new THREE.Vector3(f.x, ground, f.z) : new THREE.Vector3(ank.x, ground, ank.z); }
         const L = this.lock[i];
-        if (Math.hypot(L.x - ank.x, L.z - ank.z) > 0.5 * sc) { L.set(ank.x, ground, ank.z); }
+        if (Math.hypot(L.x - ank.x, L.z - ank.z) > (this.sp > 5 ? 0.35 : 0.5) * sc) { L.set(ank.x, ground, ank.z); }
         this.lockW[i] = Math.min(1, this.lockW[i] + dt * 30);
       } else {
-        this.lockW[i] = Math.max(0, this.lockW[i] - dt * 10);
+        // let go fast at speed: a sprinting foot is only down ~0.1 s
+        this.lockW[i] = Math.max(0, this.lockW[i] - dt * (10 + this.sp * 6));
         if (this.lockW[i] <= 0) this.lock[i] = null;
       }
       if (this.lock[i] && this.lockW[i] > 0) {
@@ -801,6 +821,52 @@ export class Animator {
       (this.lastFoot[i] || (this.lastFoot[i] = new THREE.Vector3())).setFromMatrixPosition(leg.ankle.matrixWorld);
     }
     if (this.reach) { this.reach.age += dt; if (this.reach.age > this.reach.hold) this.reach = null; }
+    this._look(parts, dt);
+  }
+
+  /**
+   * Watch the ball: the head (and a little of the trunk) turns to follow it, with
+   * glances away to scan the pitch — players check their shoulders constantly;
+   * the man on the ball looks down at it and lifts his head every second or so.
+   */
+  _look(parts, dt) {
+    if (!ANIM_WORLD.on || dt <= 0) return;
+    const p = this.p, an = p.anim;
+    const busy = this.rag || (an.action && NO_LOOK.has(an.action)) || this.debugGait != null || this.debugClip;
+    const hasBall = p.ownsBall;
+    // scanning schedule
+    this.scanT = (this.scanT ?? Math.random() * 2) - dt;
+    if (this.scanT <= 0) {
+      if (this.scan) { this.scan = null; this.scanT = hasBall ? 0.9 + Math.random() * 1.1 : 1.8 + Math.random() * 3; }
+      else { this.scan = { yaw: (Math.random() < 0.5 ? -1 : 1) * (0.7 + Math.random() * 0.7), pitch: hasBall ? -0.25 : 0 }; this.scanT = hasBall ? 0.3 : 0.4 + Math.random() * 0.3; }
+    }
+    const wT = busy ? 0 : p.isKeeper ? 1 : an.action ? 0.5 : 0.9;
+    this.lookW = (this.lookW || 0) + (wT - (this.lookW || 0)) * Math.min(1, dt * 6);
+    if (this.lookW < 0.02) return;
+    const head = parts.head, torso = parts.torso;
+    head.getWorldPosition(_hp);
+    torso.getWorldQuaternion(_qt);
+    _qi.copy(_qt).invert();
+    const b = ANIM_WORLD.ball;
+    _dl.set(b.x - _hp.x, (hasBall ? b.y : b.y + 0.4) - _hp.y, b.z - _hp.z).applyQuaternion(_qi);
+    let yaw = Math.atan2(_dl.x, _dl.z), pitch = Math.atan2(-_dl.y, Math.hypot(_dl.x, _dl.z));
+    if (this.scan) { yaw = this.scan.yaw; pitch = this.scan.pitch; }
+    yaw = clamp(yaw, -1.3, 1.3); pitch = clamp(pitch, -0.45, 0.7);
+    const k = Math.min(1, dt * 9);
+    this.lkY = (this.lkY || 0) + (yaw - (this.lkY || 0)) * k;
+    this.lkP = (this.lkP || 0) + (pitch - (this.lkP || 0)) * k;
+    const w = this.lookW;
+    // a little of the turn in the trunk when not sprinting
+    const tw = this.lkY * 0.22 * w * clamp(1 - this.sp / 7, 0, 1);
+    if (Math.abs(tw) > 1e-3) { _qd.setFromAxisAngle(_fd.set(0, 1, 0), tw); torso.quaternion.premultiply(_qd); torso.updateMatrixWorld(true); torso.getWorldQuaternion(_qt); _qi.copy(_qt).invert(); }
+    // current head forward in trunk space → wanted direction
+    head.getWorldQuaternion(_qd);
+    _fd.set(0, 0, 1).applyQuaternion(_qd).applyQuaternion(_qi);
+    const yy = this.lkY - tw;
+    _dl.set(Math.sin(yy) * Math.cos(this.lkP), -Math.sin(this.lkP), Math.cos(yy) * Math.cos(this.lkP));
+    _qd.setFromUnitVectors(_fd.normalize(), _dl);
+    _qd.slerp(_qi.identity(), 1 - w);
+    head.quaternion.premultiply(_qd);
   }
 
   _ik2(leg, body, tx, ty, tz, sc) {

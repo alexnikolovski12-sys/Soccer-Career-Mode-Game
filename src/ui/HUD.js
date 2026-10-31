@@ -198,11 +198,11 @@ export class HUD {
     this.root.classList.toggle('in-menu', !on);
   }
 
-  /** Defending: the buttons become SWITCH / TACKLE / PRESS. */
+  /** Defending: the buttons become SWITCH / SLIDE / PRESS (standing tackles are automatic). */
   setDefending(def) {
     if (this.last.def === def) return;
     this.last.def = def;
-    this.btnShoot.querySelector('span').textContent = def ? 'TACKLE' : 'SHOOT';
+    this.btnShoot.querySelector('span').textContent = def ? 'SLIDE' : 'SHOOT';
     this.btnThrough.querySelector('span').textContent = def ? 'PRESS' : 'THROUGH';
     this.pad.classList.toggle('defending', def);
   }

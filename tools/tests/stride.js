@@ -18,7 +18,7 @@ for (const v of [3.5, 6.5, 9.3]) {
     p.render(1, g.realTime);
     cam.position.set(p.pos.x + 4.2, 1.1, p.pos.z); cam.lookAt(p.pos.x, 0.95, p.pos.z); cam.fov = 40; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     const nr = g.renderer.render; g.renderer.render = realRender; g.renderFrame(cam); g.renderer.render = nr;
-    __shots.push([`v${v}-${k}`, g.renderer.domElement.toDataURL('image/jpeg', 0.8)]);
+    __shots.push([`v${v}-${k}`, g.renderer.domElement.toDataURL("image/jpeg", 0.8)]); out.push({ v, k, ph: +A.phase.toFixed(2), lean: [+A.lean.x.toFixed(2), +A.lean.y.toFixed(2)], sec: +A.sec.x.toFixed(2), c: A.contact.map((x) => +x.toFixed(2)), lock: A.lockW.map((x) => +x.toFixed(1)), gw: +(A.gaitW || 0).toFixed(2), ov: A.overlay ? A.overlay.kind : null, act: p.anim.action });
   }
   out.push({ v, sps: +(A.phaseRate * 2).toFixed(2), extra: +(A.strideExtra || 1).toFixed(2) });
 }
