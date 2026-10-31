@@ -102,10 +102,10 @@ export class Possession {
       o.skillHold = Math.max(1.2, o.speed - 9 * dt); o._holdTick = true;
       o.moveTo(ball.pos.x, ball.pos.z, o.speed, 0.1);
       o.faceTowards(ball.pos.x, ball.pos.z);
-      const kk = Math.exp(-2.5 * dt); ball.vel.x *= kk; ball.vel.z *= kk;   // and the ball's running out of steam
+      const kk = Math.exp(-(2.5 + 7 * Math.max(0, bd - carry - 0.45)) * dt); ball.vel.x *= kk; ball.vel.z *= kk;   // and the ball's running out of steam (dies faster the further out it is)
       const fd = Math.hypot(ball.pos.x - (o.pos.x + hx * 0.35), ball.pos.z - (o.pos.z + hz * 0.35));
       if (fd < 0.45 || st.brake.t > 1.3 || turnAng < 1.2) { st.brake = null; o.skillHold = null; }
-      else { this._leash(o, carry + 2.2); return; }
+      else { this._leash(o, carry + 1.3); return; }
     }
     if (!st.stop && o.speed > 2.0 && turnAng > 1.75 && o.touchCooldown <= 0.2 && bd < carry + 0.9) {
       const side = crossT >= 0 ? 1 : -1;
@@ -173,7 +173,7 @@ export class Possession {
         if (space < 2.2) { k = 1.08; push = 0.35; }            // tight in traffic: little touches
         // steering (even gently): keep it closer — the more he's turning, the shorter the touch
         k = k + (1.02 - k) * steerF; push *= 1 - 0.8 * steerF;
-        if (o.burstTouch) { k = 1.5; o.burstTouch = false; }
+        if (o.burstTouch) { k = 1.32; o.burstTouch = false; }
         v = o.speed * k + push; cd = Math.max(0.22, 0.9 / (o.speed + 1.5));
         const r2 = g.rng.next();
         anim = ['touch', 0.24, { kickLeg: st.side, variant: r2 < 0.6 ? 'inside' : r2 < 0.85 ? 'outside' : 'laces' }];

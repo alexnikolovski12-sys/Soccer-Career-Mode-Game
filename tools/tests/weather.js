@@ -42,7 +42,7 @@ a.pos.set(-20, 0, 5); g.ball.pos.set(-19.4, 0.11, 5); g.ball.owner = a;
 g.user.pos.set(-19, 0, 5.5);
 g.onFoul({ by: g.user, victim: a });
 runUntil(() => !g.foulRp && g.match.restart && g.match.restart.taker, 14);   // (after the foul replay)
-run(1.2);
+run(0.3);
 out.fkCam = g.camRig.mode;
 snap('their-freekick-cam');
 runUntil(() => !g.match.restart, 10);

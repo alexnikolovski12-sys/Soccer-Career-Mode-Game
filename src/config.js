@@ -48,7 +48,7 @@ export const CONFIG = {
     floor: 30, // stats at or below this map to the worst value
   },
   statMap: {
-    sprintSpeed: (pace) => sMap(pace, 7.6, 10.0),          // m/s top speed (×1.08 when you sprint: ~37 km/h for the quickest)
+    sprintSpeed: (pace) => sMap(pace, 7.25, 9.5),          // m/s top speed (×1.08 when you sprint: ~37 km/h for the quickest)
     runFactor: 0.72,                                      // full tilt (no sprint) = sprint * runFactor
     jogFactor: 0.45,
     accel: (acc) => sMap(acc, 5.5, 11.5),                 // m/s² towards target speed
