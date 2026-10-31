@@ -134,7 +134,7 @@ export class Possession {
     st.steerS = (st.steerS || 0) + (steerF - (st.steerS || 0)) * Math.min(1, dt * 3);
     const reach = D.touchReach + (turnAng > 0.8 ? 0.25 : 0);
     // the next touch comes when he's caught it up — right at his feet, not with it still out in front
-    const caughtUp = ahead < 0.5 + o.speed * 0.025 || along < o.speed * 0.8;
+    const caughtUp = ahead < 0.46 + o.speed * 0.02 || along < o.speed * 0.8;
     const wrongWay = offAng > D.redirectAngle;
     // stride touches wait for the foot to come through (turns/cuts go at once; never wait too long)
     // (and never let him run over it: if it's getting under his feet, play it now)
@@ -168,7 +168,7 @@ export class Possession {
         const r = g.rng.next();
         // close control: soft / normal / slightly longer — even at a sprint it stays at his feet
         // a real touch: knocked out ahead faster than he's running, it rolls and slows, he catches it
-        let k = o.sprinting ? 1.2 + g.rng.next() * 0.1 : 1.12 + g.rng.next() * 0.08;
+        let k = o.sprinting ? 1.16 + g.rng.next() * 0.08 : 1.1 + g.rng.next() * 0.06;
         let push = 0.35 + (r < 0.4 ? 0 : r < 0.85 ? 0.15 : 0.3);
         if (space < 2.2) { k = 1.08; push = 0.35; }            // tight in traffic: little touches
         // steering (even gently): keep it closer — the more he's turning, the shorter the touch

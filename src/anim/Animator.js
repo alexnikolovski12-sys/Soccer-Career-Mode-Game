@@ -57,7 +57,7 @@ const ACTIONS = {
   stepover: { hand: 'legs' }, feint: { hand: 'legs' }, croqueta: { hand: 'legs' }, spin: { hand: 'legs' },
   dragback: { hand: 'legs' }, elastico: { hand: 'legs' }, flick: { hand: 'legs' },
   rainbowS: { hand: 'full', fadeIn: 0.1, fadeOut: 0.2 }, rouletteS: { hand: 'full', fadeIn: 0.08, fadeOut: 0.2 },
-  elasticoS: { hand: 'legs', fadeIn: 0.06, fadeOut: 0.18 }, stepoversS: { hand: 'legs', fadeIn: 0.06, fadeOut: 0.18 },
+  elasticoS: { hand: 'legs', fadeIn: 0.06, fadeOut: 0.18 }, stepoversS: { hand: 'full', fadeIn: 0.08, fadeOut: 0.2 },
   header: { hand: 'full', fadeIn: 0.15, fadeOut: 0.35 }, dragturnS: { hand: 'full', fadeIn: 0.08, fadeOut: 0.2 },
   point: { hand: 'armR', fadeIn: 0.1, fadeOut: 0.25 },
   // first-time finishes off a cross + the referee showing a card
@@ -580,7 +580,7 @@ export class Animator {
     if (set('lean') || set('twist') || set('roll')) put(Q.torso, val('lean', 0.05), val('twist', 0), val('roll', 0), mask[1]);
     if (set('headPitch')) put(Q.head, T.headPitch, 0, 0, mask[2]);
     for (const [s, qi, kn, mi] of [['L', Q.hipL, H.kneeL, 3], ['R', Q.hipR, H.kneeR, 4]]) {
-      if (set('hip' + s)) put(qi, -T['hip' + s], 0, 0, mask[mi]);
+      if (set('hip' + s) || set('hip' + s + 'z')) put(qi, -val('hip' + s, 0), val('hip' + s + 'y', 0), val('hip' + s + 'z', 0), mask[mi]);
       if (set('knee' + s)) hinge(kn, T['knee' + s], mask[mi]);
     }
     for (const [s, qi, el, mi, sg] of [['L', Q.shL, H.elL, 5, 1], ['R', Q.shR, H.elR, 6, -1]]) {

@@ -7,7 +7,7 @@
 // T starts out filled with NaN: only the keys a move sets are applied.
 export const HAND_KEYS = [
   'hipL', 'hipR', 'kneeL', 'kneeR', 'shL', 'shR', 'shLz', 'shRz', 'elL', 'elR',
-  'lean', 'roll', 'twist', 'bodyY', 'bodyPitch', 'bodyRoll', 'headPitch',
+  'lean', 'roll', 'twist', 'bodyY', 'bodyPitch', 'bodyRoll', 'headPitch', 'hipLz', 'hipRz', 'hipLy', 'hipRy',
 ];
 
 /** Fill T for action `name` at normalised time k. anim = player.anim, out.spinYaw may be set. */
@@ -524,12 +524,35 @@ export function handPose(name, k, T, anim, out) {
       break;
     }
     case 'stepoversS': {
-      // two stepovers on each foot: the leg circles round the front of the ball, hips swaying
-      const j = Math.min(3, Math.floor(k * 4.4)), f = k * 4.4 - j, leg = j % 2 ? 'L' : 'R', sd = j % 2 ? -1 : 1;
-      const v = k < 0.91 ? Math.sin(f * Math.PI) : 0;
-      T['hip' + leg] = 0.55 * v; T['knee' + leg] = 0.75 * v;
-      T.bodyRoll = sd * 0.22 * v; T.twist = sd * 0.3 * v; T.lean = 0.12; T.bodyY = -0.05;
-      T.shLz = 0.55; T.shRz = -0.55;
+      // Four stepovers (R, L, R, L): each leg lifts, crosses in front of the ball and sweeps
+      // round over it from the inside to the outside, landing wide; the hips drop and the
+      // shoulders dip to sell it, arms out for balance, eyes on the ball. Then the push away.
+      const N = 4, span = 0.86;
+      const sm = (a, b, t) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * (3 - 2 * x); };
+      if (k < span) {
+        const q = (k / span) * N, j = Math.min(N - 1, Math.floor(q)), f = q - j;
+        const leg = j % 2 ? 'L' : 'R', other = j % 2 ? 'R' : 'L', out = j % 2 ? 1 : -1;   // hip z: + = left leg out, − = right leg out
+        const lift = sm(0, 0.3, f) * (1 - sm(0.7, 1, f));
+        const sweep = sm(0.15, 0.7, f);                       // inside → round the front → outside
+        T['hip' + leg] = 0.28 + 0.68 * lift;
+        T['knee' + leg] = 0.3 + 1.2 * lift;
+        T['hip' + leg + 'z'] = out * (-0.32 + 0.82 * sweep);  // crosses in front, then swings out wide
+        T['hip' + leg + 'y'] = out * (-0.35 + 0.7 * sweep);   // knee turns out as it goes round the ball
+        T['hip' + other] = 0.12; T['knee' + other] = 0.45;    // standing leg bent, weight low
+        T['hip' + other + 'z'] = -out * 0.08;
+        const sway = Math.sin(sweep * Math.PI) * 0.6 + sm(0.6, 1, f) * 0.4;
+        T.bodyRoll = out * 0.24 * sway;                         // hips drop toward the fake
+        T.roll = -out * 0.2 * sway;                             // shoulder dips
+        T.twist = out * 0.32 * sway;
+        T.lean = 0.2; T.bodyY = -0.08 - 0.04 * sm(0.6, 0.9, f);
+        T.shLz = 0.75 + (out > 0 ? 0.25 : 0) * sway; T.shRz = -0.75 - (out < 0 ? 0.25 : 0) * sway; T.elL = T.elR = 0.6;
+        T.headPitch = 0.35;
+      } else {
+        // the burst: outside of the foot the other way and drive off
+        const f = (k - span) / (1 - span);
+        T.hipR = 0.4 * Math.sin(f * Math.PI); T.kneeR = 0.4; T.lean = 0.3; T.bodyY = -0.06;
+        T.shLz = 0.5; T.shRz = -0.5; T.headPitch = 0.2;
+      }
       break;
     }
     case 'volley': {

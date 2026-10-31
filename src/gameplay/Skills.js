@@ -42,9 +42,10 @@ const SCRIPTED = {
     ball: [[0, 0.32, 0, R], [0.14, 0.2, 0.02, R], [0.5, -0.02, 0.48, R], [0.86, 0.22, 0.96, R], [1, 0.4, 1.02, R]],
     player: [[0, 0, 0], [0.14, 0.04, 0], [0.9, 0.12, 0.92], [1, 0.16, 0.95]], turn: [Math.PI * 2, 0.13, 0.88] },
   // two stepovers on each foot, ball rolling on with him, then he bursts away
-  stepovers: { dur: 1.0, anim: 'stepoversS', beat: 0.8, hold: 0.92, holdSpeed: 2.2,
-    ball: [[0, 0.36, 0, R], [0.92, 1.45, 0, R], [1, 1.62, 0, R]],
-    player: [[0, 0, 0], [0.92, 1.1, 0], [1, 1.25, 0]] },
+  stepovers: { dur: 1.25, anim: 'stepoversS', beat: 0.85, hold: 0.9, holdSpeed: 1.6,
+    // the ball rolls on slowly between his feet; he sways side to side over it, then knocks it away
+    ball: [[0, 0.34, 0, R], [0.86, 0.95, 0, R], [1, 1.5, -0.35, R]],
+    player: [[0, 0, 0], [0.11, 0.08, -0.12], [0.32, 0.25, 0.12], [0.54, 0.42, -0.12], [0.75, 0.58, 0.12], [0.86, 0.66, 0], [1, 0.95, -0.25]] },
   // outside of the foot one way, snap it back inside the other, and go
   elastico: { dur: 0.62, anim: 'elasticoS', beat: 0.7, hold: 0.55, holdSpeed: 2.2,
     ball: [[0, 0.33, 0, R], [0.3, 0.38, 0.3, R], [0.56, 0.45, -0.32, R], [1, 1.25, -0.62, R]],

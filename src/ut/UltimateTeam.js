@@ -302,7 +302,7 @@ export class UltimateTeam {
     const nav = h('div', 'ut-nav');
     const items = [['obj', ICON.quest(26), 'QUESTS', pend], ['market', ICON.signing(26), 'MARKET', 0], ['store', ICON.cart(26), 'STORE', free || (s.daily !== today ? 1 : 0)]];
     nav.innerHTML = items.map(([k, ic, l, n]) => `<button class="${this.tab === k ? 'on' : ''} ${k === 'store' ? 'store' : ''}" data-go="${k}">${ic}<span>${l}</span>${n ? '<i class="ndot"></i>' : ''}</button>`).join('');
-    el.appendChild(nav);
+    if (this.tab === 'home') el.appendChild(nav);
     nav.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => this.go(b.dataset.go); });
   }
 

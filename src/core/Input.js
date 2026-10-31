@@ -32,7 +32,7 @@ export class Input {
     // iOS: block page scroll, pinch and double-tap zoom everywhere.
     const block = (e) => {
       // the debug panel needs native scrolling and slider drags
-      if (e.target && e.target.closest && e.target.closest('.debug-panel, .r-items, .hub-scroll, .hub-tabs')) return;
+      if (e.target && e.target.closest && e.target.closest('.debug-panel, .r-items, .hub-scroll, .hub-tabs, .ut-body:not(.t-squad), .ut-scroll, .ut-mbox, .plist, .mk-chips')) return;
       if (e.cancelable) e.preventDefault();
     };
     document.addEventListener('touchmove', block, { passive: false });
