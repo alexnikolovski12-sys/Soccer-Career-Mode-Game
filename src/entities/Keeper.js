@@ -41,7 +41,8 @@ export class Keeper {
     this.state = 'fooled';
     this.t = 0;
     this.foolSide = side;
-    this.p.playAction('dive', 1.0, { side, roll: 1.2, lift: 0.18 });
+    this.p.playAction('dive', 1.0, { side, roll: 1.2, lift: 0.18, hold: true });
+    this.downSide = side;
   }
 
   update(dt) {
@@ -58,7 +59,10 @@ export class Keeper {
 
     if (this.state === 'holding') {
       p.steer(0, 0, 0);
-      ball.pos.set(p.pos.x - this.s * 0.45, 1.05, p.pos.z);
+      // caught it diving / smothered it: gets up with it first
+      if ((p.anim.action === 'dive' && this.holdT > 0.4) || (p.anim.action === 'smother' && this.holdT > 0.35)) p.playAction('gkup', 0.85, { side: this.downSide || 1 });
+      const low = p.anim.action === 'dive' || p.anim.action === 'smother' || p.anim.action === 'gkup';
+      ball.pos.set(p.pos.x - this.s * 0.45, low ? 0.35 : 1.05, p.pos.z);
       ball.vel.set(0, 0, 0);
       this.holdT += dt;
       // in a match the keeper gets it going again (throw / kick to a teammate)
@@ -74,9 +78,10 @@ export class Keeper {
       } else {
         if (!pl.started) {
           pl.started = true;
-          p.playAction('dive', Math.max(0.55, pl.tI - pl.reaction + 0.55), {
-            side: pl.side, roll: pl.roll, lift: pl.lift,
+          p.playAction('dive', Math.max(0.75, pl.tI - pl.reaction + 0.7), {
+            side: pl.side, roll: pl.roll, lift: pl.lift, hold: true,
           });
+          this.downSide = pl.side;
         }
         // move the root laterally toward the dive spot
         const remaining = Math.max(0.05, pl.tI - tt);
@@ -96,8 +101,11 @@ export class Keeper {
     }
 
     if (this.state === 'down') {
+      // on the floor after a dive: a moment down there, then he gets back up
       p.steer(0, 0, 0);
-      if (this.t > 0.7) this.state = 'set';
+      if (p.anim.action === 'dive' && this.t > 0.45) p.playAction('gkup', 0.9, { side: this.downSide || 1 });
+      if (p.anim.action === 'smother' && this.t > 0.2) p.playAction('gkup', 0.8, { side: 1 });
+      if (this.t > 1.2 && p.anim.action !== 'gkup') this.state = 'set';
       this._tryClaim(dt);
       return;
     }
@@ -122,6 +130,10 @@ export class Keeper {
     }
     p.moveTo(tx, tz, K.moveSpeed, 1.2);
     p.faceTowards(bx, bz);
+    // set position when the danger's close and he's not shuffling across
+    const danger = owner && owner.team !== p.team && dBall < 30;
+    if (danger && p.speed < 0.8 && !p.anim.action) p.playAction('gkset', 99, { loop: true });
+    else if (p.anim.action === 'gkset' && (!danger || p.speed > 1.4)) p.anim.action = null;
     this._tryClaim(dt);
   }
 
@@ -143,23 +155,25 @@ export class Keeper {
       const gap = Math.hypot(ball.pos.x - fp.x, ball.pos.z - fp.z);
       const rate = (gap > 0.45 ? 4.5 : 1.4) * (this.rating() / 70);
       if (d < 1.3 && Math.random() < dt * rate) {
-        this.hold();
+        this.hold('smother');
         g.events.emit('keeperSmother');
       }
     }
   }
 
-  hold() {
+  hold(how = 'catch') {
     const ball = this.game.ball;
     const fromShot = ball.lastKick && (ball.lastKick.type === 'shot' || ball.lastKick.type === 'save');
     ball.owner = null;
     ball.pass = null;
     ball.frozen = true;
     ball.vel.set(0, 0, 0);
+    const diving = this.state === 'dive' && this.p.anim.action === 'dive';
     this.state = 'holding';
     this.holdT = 0;
     ball.lastTouch = this.p;
-    this.p.playAction('catch', 0.6);
+    if (how === 'smother') this.p.playAction('smother', 0.9, { hold: true });
+    else if (!diving) this.p.playAction('catch', 0.6);   // diving: clutches it and lands with it
     this.game.events.emit('keeperHold', { fromShot });
   }
 

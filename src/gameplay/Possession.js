@@ -92,6 +92,30 @@ export class Possession {
     const offAng = bs > 0.4 ? Math.acos(Math.max(-1, Math.min(1, along / bs))) : Math.PI;
     // angle between where he's facing and where he wants to go = how big a turn this is
     const turnAng = Math.acos(Math.max(-1, Math.min(1, hx * dx + hz * dz)));
+    // turning back at pace: stop it dead under the sole first, then turn with it
+    const crossT = hx * dz - hz * dx;
+    if (!st.stop && o.speed > 3.0 && turnAng > 1.75 && o.touchCooldown <= 0.2 && bd < carry + 0.9) {
+      const side = crossT >= 0 ? 1 : -1;
+      st.stop = { t: 0, dur: 0.4 };
+      st.side = -side;
+      o.vel.multiplyScalar(0.2);
+      o.playAction('turn', 0.44, { variant: 'dragback', side, kickLeg: st.side });
+      o.touchCooldown = 0.45;
+      if (o.isUser) { g.audio.touch(); g.camRig.addShake(0.02); }
+    }
+    if (st.stop) {
+      st.stop.t += dt;
+      // ball held under his foot while he turns round onto it
+      const want = Math.atan2(dx, dz);
+      let dh = want - o.heading; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+      o.heading += dh * Math.min(1, dt * 9);
+      const kx = Math.sin(o.heading), kz = Math.cos(o.heading);
+      const k = Math.min(1, dt * 14);
+      ball.pos.x += (o.pos.x + kx * 0.38 - ball.pos.x) * k; ball.pos.z += (o.pos.z + kz * 0.38 - ball.pos.z) * k;
+      ball.vel.set(o.vel.x, 0, o.vel.z);
+      if (st.stop.t >= st.stop.dur) { st.stop = null; ball.vel.set(dx * (o.speed + 0.6), 0, dz * (o.speed + 0.6)); }
+      return;
+    }
     const reach = D.touchReach + (turnAng > 0.8 ? 0.25 : 0);
     const caughtUp = ahead < D.touchAhead + o.speed * 0.06 + (o.sprinting ? D.sprintCarryExtra : 0) || along < o.speed * 0.92;
     const wrongWay = offAng > D.redirectAngle;
@@ -125,12 +149,11 @@ export class Possession {
         // stride touch: off the foot that's coming through
         st.side = strideFoot;
         const r = g.rng.next();
-        let push = r < 0.35 ? 0.25 : r < 0.85 ? 0.55 : 0.85;  // soft / normal / slightly longer
-        if (space < 2.2) push = Math.min(push, 0.3);           // tight in traffic
-        // sprinting: you can't have pace AND close control — every touch is heavier
-        // sprinting: normal / semi-heavy / heavier touches — further ahead, but still yours
-        if (o.sprinting) { const s = g.rng.next(); push = space < 1.6 ? 0.55 : s < 0.4 ? 0.8 : s < 0.8 ? 1.05 : 1.3; }
-        if (o.burstTouch) { push = 1.3; o.burstTouch = false; }
+        // close control: soft / normal / slightly longer — even at a sprint it stays at his feet
+        let push = r < 0.4 ? 0.18 : r < 0.85 ? 0.35 : 0.5;
+        if (space < 2.2) push = Math.min(push, 0.22);           // tight in traffic
+        if (o.sprinting) push = space < 1.6 ? 0.3 : 0.4 + g.rng.next() * 0.25;
+        if (o.burstTouch) { push = 0.75; o.burstTouch = false; }
         v = o.speed + push; cd = Math.max(0.2, 0.9 / (o.speed + 1.5));
         const r2 = g.rng.next();
         anim = ['touch', 0.24, { kickLeg: st.side, variant: r2 < 0.6 ? 'inside' : r2 < 0.85 ? 'outside' : 'laces' }];
@@ -156,13 +179,16 @@ export class Possession {
       const lag = o.speed - (ball.vel.x * dx + ball.vel.z * dz);
       if (lag > 0) { ball.vel.x += dx * lag * k; ball.vel.z += dz * lag * k; }
     }
-    // No magic: a ball that's been knocked away keeps rolling where the touch
-    // sent it. He has to get to it and take touches to bring it round. If he
-    // leaves it too far, it's just a loose ball (he can still run onto it).
-    if (bd > D.looseDistance + (o.sprinting ? 0.8 : 0)) {
-      ball.owner = null;
-      g.events.emit('loose', { player: o });
+    // the ball never leaves his circle: one that's run on is drawn back in front
+    // of him (rolling at his pace) and it can't get further than an arm's length
+    const maxD = carry + 0.45;
+    if (bd > maxD && ball.pos.y < 0.4) {
+      const k = Math.min(1, dt * 6);
+      const tx = o.pos.x + dx * carry, tz = o.pos.z + dz * carry;
+      ball.pos.x += (tx - ball.pos.x) * k; ball.pos.z += (tz - ball.pos.z) * k;
+      ball.vel.x += (dx * o.speed - ball.vel.x) * k; ball.vel.z += (dz * o.speed - ball.vel.z) * k;
     }
+    this._leash(o, carry + 0.75);
   }
 
   /** Hard limit: the ball can never be further than `max` from the carrier. */

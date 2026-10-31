@@ -419,7 +419,7 @@ export class TeamAI {
       const c = tk.target;
       const dBall = dist2D(d.pos, ball.pos);
       const bodyFirst = dist2D(d.pos, c.pos) < dBall - D.foulBodyMargin;
-      const reach = D.tackleRange + 0.3 + (d.isUser ? 0.35 : 0);
+      const reach = D.tackleRange + 0.3 + (d.isUser ? 0.8 : 0);
       if (ball.owner !== c || dBall > reach || ball.pos.y > 0.5) {
         this._fail(d, c, false);
       } else if (g.rng.next() < (bodyFirst ? D.foulFromBehind : D.foulMistimed) * (d.isUser ? 0.8 : 1)) {
@@ -434,8 +434,8 @@ export class TeamAI {
         let p = CONFIG.teamMap.tackleSkill(d.rating) - c.attrs.tackleResist;
         p += clamp(gap - 0.45, 0, 1) * 0.5;
         if (c.sprinting) p += 0.08;
-        if (d.isUser) p += 0.22;                 // your timing is the skill
-        p = clamp(p * D.tackleSuccessMult, 0.05, d.isUser ? 0.8 : 0.6);
+        if (d.isUser) p += 0.35;                 // your timing is the skill
+        p = clamp(p * (d.isUser ? 0.85 : D.tackleSuccessMult), 0.05, d.isUser ? 0.8 : 0.6);
         if (g.rng.next() < p) this._win(d, c); else this._fail(d, c, true);
       }
     }

@@ -45,6 +45,14 @@ const ACTIONS = {
   fall: { fadeIn: 0.05, fadeOut: 0.3, ragdoll: true },
   dive: { hand: 'dive', fadeIn: 0.05, fadeOut: 0.3, clip: (an) => (an.side > 0 ? 'jumpSide' : 'jumpSideM'), clipWeight: 0.6 },
   catch: { hand: 'upper', fadeIn: 0.06, fadeOut: 0.25 },
+  gkset: { hand: 'full', fadeIn: 0.25, fadeOut: 0.25, clip: (an, A) => A.set.idle },
+  gkup: { hand: 'full', fadeIn: 0.05, fadeOut: 0.3 },
+  smother: { hand: 'full', fadeIn: 0.06, fadeOut: 0.3 },
+  gkthrow: { hand: 'upper', fadeIn: 0.1, fadeOut: 0.3, clip: (an, A) => A.set.idle },
+  dejected: { hand: 'upper', fadeIn: 0.35, fadeOut: 0.4, clip: (an, A) => A.set.idle },
+  hipshands: { hand: 'upper', fadeIn: 0.35, fadeOut: 0.4, clip: (an, A) => A.set.idle },
+  sitdown: { hand: 'full', fadeIn: 0.5, fadeOut: 0.5 },
+  crouchsad: { hand: 'full', fadeIn: 0.4, fadeOut: 0.4 },
   stepover: { hand: 'legs' }, feint: { hand: 'legs' }, croqueta: { hand: 'legs' }, spin: { hand: 'legs' },
   dragback: { hand: 'legs' }, elastico: { hand: 'legs' }, flick: { hand: 'legs' },
   point: { hand: 'armR', fadeIn: 0.1, fadeOut: 0.25 },
@@ -723,8 +731,8 @@ export class Animator {
     P.armR.el.quaternion.setFromAxisAngle(X_AXIS, pose[H.elR]);
     // the mocap was retargeted to a 0.92 m pelvis; the human body stands a little taller
     // (blend the extra height out as he goes to ground so lying poses stay on the grass)
-    const y = pose[OFF + 1], lift = (RIG.bodyY - 0.92) * Math.max(0, Math.min(1, (y - 0.25) / 0.6));
-    P.body.position.set(pose[OFF] * sc, (y + lift) * sc, pose[OFF + 2] * sc);
+    // legs are longer than the rig the mocap was retargeted to: scale the pelvis height with them
+    P.body.position.set(pose[OFF] * sc, pose[OFF + 1] * (RIG.bodyY / 0.92) * sc, pose[OFF + 2] * sc);
   }
 
   /**
@@ -738,7 +746,11 @@ export class Animator {
     for (let i = 0; i < 2; i++) {
       const leg = i ? parts.legR : parts.legL;
       const ank = _v.setFromMatrixPosition(leg.ankle.matrixWorld);
-      const want = this.contact[i] > 0.6 && !this.rag && this.sp < 9.5;
+      // full-body moves (slides, dives, sitting, celebrations) place their own feet: planting
+      // them would drag and snap the legs as the body moves
+      const act = ACTIONS[this.p.anim.action];
+      const free = act && (act.hand === 'full' || act.hand === 'dive');
+      const want = this.contact[i] > 0.6 && !this.rag && this.sp < 9.5 && !free;
       let tx = ank.x, ty = Math.max(ank.y, ground), tz = ank.z, w = 0;
       // planted foot: lock where it landed
       if (want) {

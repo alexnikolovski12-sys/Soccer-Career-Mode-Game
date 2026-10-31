@@ -244,8 +244,7 @@ export class Passing {
     const t = ps.to;
     const hs = Math.hypot(ball.vel.x, ball.vel.z);
     if (hs < 1) return;
-    if (ps.kind === 'lofted') {
-      if (ball.pos.y < 0.4) return;
+    if (ps.kind === 'lofted' && ball.pos.y >= 0.4) {
       const g = CONFIG.ball.gravity, r = CONFIG.ball.radius;
       const tRem = (ball.vel.y + Math.sqrt(Math.max(0, ball.vel.y * ball.vel.y + 2 * g * (ball.pos.y - r)))) / g;
       if (tRem < 0.1) return;
@@ -255,8 +254,9 @@ export class Passing {
       ball.vel.z += ((tz - ball.pos.z) / tRem * 1.08 - ball.vel.z) * k;
       return;
     }
-    if (ps.kind === 'through') return; // played into space; the runner goes onto it
+    // ground passes (and lofted / through balls once they're rolling) keep finding their man
     const d = Math.hypot(t.pos.x - ball.pos.x, t.pos.z - ball.pos.z);
+    if (ps.kind === 'through' && d > 9) return;  // into space: the runner goes onto it first
     const eta = d / hs;
     const tx = t.pos.x + t.vel.x * eta * 0.7, tz = t.pos.z + t.vel.z * eta * 0.7;
     const want = Math.atan2(tz - ball.pos.z, tx - ball.pos.x);
@@ -267,7 +267,7 @@ export class Passing {
     diff = Math.max(-max, Math.min(max, diff));
     const a = cur + diff;
     // don't let it die before it gets there
-    const sp = Math.max(hs, Math.min(9, d * 1.2));
+    const sp = Math.max(hs, Math.min(13, d * 1.5 + 3));
     ball.vel.x = Math.cos(a) * sp; ball.vel.z = Math.sin(a) * sp;
   }
 
@@ -333,7 +333,7 @@ export class Passing {
     const dist = Math.hypot(dx, dz) || 0.1;
     // pace scales with distance: arrives at a firm, controllable speed every time
     // a through ball is weighted to die into the runner's path
-    const arrive = kind === 'through' ? P.arriveSpeed * 0.45 : P.arriveSpeed;
+    const arrive = kind === 'through' ? P.arriveSpeed * 0.7 : P.arriveSpeed;
     let v0 = this.solveGroundSpeed(dist, arrive) * M.passSpeedFactor(passer.stats.passing);
     v0 = clamp(v0, P.minSpeed, P.maxSpeed);
     const pressure = this.pressureOn(passer);

@@ -279,14 +279,80 @@ export function handPose(name, k, T, anim, out) {
       break;
     }
     case 'dive': {
-      // keeper dive: whole-body roll is set by Keeper via anim.side / anim.height
-      const v = k < 0.35 ? k / 0.35 : 1;
+      // keeper dive: take-off, full stretch through the air, land on his side and stay down
       const side = anim.side || 1;
-      T.bodyRoll = -side * (anim.roll ?? 1.25) * v;
-      T.bodyY = (anim.lift ?? 0.3) * Math.sin(Math.min(1, k * 1.4) * Math.PI * 0.85) - (k > 0.7 ? (k - 0.7) * 1.2 : 0);
-      T.shL = T.shR = 2.9 * v; T.shLz = 0.25; T.shRz = -0.25; T.elL = T.elR = 0.1;
-      T.hipL = T.hipR = 0.15; T.kneeL = T.kneeR = 0.25;
-      T.lean = 0.05; T.headPitch = 0;
+      const roll = Math.max(1.35, anim.roll ?? 1.25);
+      const up = Math.min(1, k / 0.18);
+      const air = k < 0.55 ? Math.sin(Math.min(1, k / 0.55) * Math.PI) : 0;
+      const land = k < 0.5 ? 0 : Math.min(1, (k - 0.5) / 0.2);
+      T.bodyRoll = -side * (roll * up + (1.52 - roll) * land);
+      T.bodyY = (anim.lift ?? 0.3) * air - 0.72 * land;
+      T.shL = T.shR = 2.9 * up; T.shLz = 0.25; T.shRz = -0.25; T.elL = T.elR = 0.1 + 0.4 * land;
+      T.hipL = T.hipR = 0.15 + 0.35 * land; T.kneeL = T.kneeR = 0.25 + 0.55 * land;
+      T.lean = 0.05; T.headPitch = -0.15 * land;
+      break;
+    }
+    case 'gkup': {
+      // from lying on his side (after a dive) back to his feet: roll, knee, stand
+      const side = anim.side || 1;
+      const e = k * k * (3 - 2 * k);
+      T.bodyRoll = -side * 1.52 * (1 - Math.min(1, e * 1.4));
+      T.bodyY = -0.72 * (1 - e) - 0.25 * Math.sin(e * Math.PI);
+      T.kneeL = T.kneeR = 0.8 + 1.0 * Math.sin(e * Math.PI) - 0.8 * e;
+      T.hipL = T.hipR = 0.5 + 0.8 * Math.sin(e * Math.PI) - 0.5 * e;
+      T.shL = T.shR = 0.4 * (1 - e); T.shLz = 0.3; T.shRz = -0.3; T.elL = T.elR = 0.6;
+      T.lean = 0.45 * Math.sin(e * Math.PI);
+      break;
+    }
+    case 'gkset': {
+      // set position: knees bent, weight forward, hands low and out
+      const t = anim.t;
+      T.kneeL = T.kneeR = 0.55; T.hipL = T.hipR = 0.45; T.bodyY = -0.1;
+      T.lean = 0.28; T.shL = T.shR = 0.55; T.shLz = 0.55; T.shRz = -0.55; T.elL = T.elR = 0.5;
+      T.headPitch = -0.2; T.bodyRoll = Math.sin(t * 3) * 0.03;
+      break;
+    }
+    case 'smother': {
+      // dive forward at the striker's feet, onto the ball
+      const v = Math.min(1, k / 0.3);
+      T.bodyPitch = 1.35 * v; T.bodyY = -0.7 * v;
+      T.shL = T.shR = 2.7 * v; T.shLz = 0.3; T.shRz = -0.3; T.elL = T.elR = 0.5;
+      T.hipL = T.hipR = 0.3 * v; T.kneeL = T.kneeR = 0.9 * v; T.headPitch = -0.6 * v;
+      break;
+    }
+    case 'gkthrow': {
+      // overarm throw out
+      const wind = Math.min(1, k / 0.4), rel = k < 0.4 ? 0 : Math.min(1, (k - 0.4) / 0.25);
+      T.shR = 2.6 * wind - 1.0 * rel; T.shRz = -0.3; T.elR = 1.4 * wind - 1.3 * rel;
+      T.shL = 0.9; T.shLz = 0.5; T.elL = 0.4;
+      T.lean = -0.15 * wind + 0.35 * rel; T.twist = 0.35 * wind - 0.5 * rel;
+      break;
+    }
+    case 'dejected': {
+      // hands on head, staring at the grass
+      const v = Math.min(1, k * 6);
+      T.shL = T.shR = 2.55 * v; T.shLz = 0.95 * v; T.shRz = -0.95 * v; T.elL = T.elR = 2.3 * v;
+      T.headPitch = 0.45 * v; T.lean = 0.12 * v;
+      break;
+    }
+    case 'hipshands': {
+      const v = Math.min(1, k * 6);
+      T.shL = T.shR = 0.35 * v; T.shLz = 0.75 * v; T.shRz = -0.75 * v; T.elL = T.elR = 1.9 * v;
+      T.headPitch = 0.55 * v; T.lean = 0.1 * v;
+      break;
+    }
+    case 'sitdown': {
+      // sits on the grass, knees up, arms resting on them, head down
+      const v = Math.min(1, k * 2.2), e = v * v * (3 - 2 * v);
+      T.bodyY = -0.74 * e; T.hipL = T.hipR = 1.45 * e; T.kneeL = T.kneeR = 1.9 * e;
+      T.lean = 0.35 * e; T.shL = T.shR = 0.9 * e; T.shLz = 0.15; T.shRz = -0.15; T.elL = T.elR = 0.8 * e;
+      T.headPitch = 0.5 * e;
+      break;
+    }
+    case 'crouchsad': {
+      const v = Math.min(1, k * 2.5), e = v * v * (3 - 2 * v);
+      T.bodyY = -0.42 * e; T.hipL = T.hipR = 1.1 * e; T.kneeL = T.kneeR = 1.9 * e;
+      T.lean = 0.5 * e; T.shL = T.shR = 0.6 * e; T.elL = T.elR = 1.2 * e; T.headPitch = 0.6 * e;
       break;
     }
     case 'catch': {

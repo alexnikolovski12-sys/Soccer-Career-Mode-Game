@@ -10,6 +10,20 @@ import { makeRng } from '../core/MathUtil.js';
 import { UT_CSS } from './utStyles.js';
 
 const SAVE = 'breakaway_ut_v1';
+
+/** A big shiny football (our own art) — gold for the hero, white for PLAY. */
+function goldBallSVG(kind = 'gold') {
+  const id = 'gb' + Math.random().toString(36).slice(2, 7);
+  const [a, b, c, line] = kind === 'white' ? ['#ffffff', '#d9dde3', '#8d949e', '#1b2230'] : ['#fff2b8', '#d9a53a', '#5a3a0a', '#3a2504'];
+  // a truncated-icosahedron-ish panel pattern
+  const pents = [[100, 100, 26], [100, 38, 18], [158, 82, 18], [136, 152, 18], [64, 152, 18], [42, 82, 18]];
+  const pent = (x, y, r, rot = -90) => Array.from({ length: 5 }, (_, i) => { const t = (rot + i * 72) * Math.PI / 180; return `${(x + Math.cos(t) * r).toFixed(1)},${(y + Math.sin(t) * r).toFixed(1)}`; }).join(' ');
+  return `<svg viewBox="0 0 200 200" class="gball ${kind}"><defs><radialGradient id="${id}" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="${a}"/><stop offset=".55" stop-color="${b}"/><stop offset="1" stop-color="${c}"/></radialGradient></defs>
+    <circle cx="100" cy="100" r="96" fill="url(#${id})"/>
+    ${pents.map(([x, y, r], i) => `<polygon points="${pent(x, y, r, i ? -90 + i * 36 : -90)}" fill="${line}" opacity="${kind === 'white' ? 0.9 : 0.55}"/>`).join('')}
+    <g stroke="${line}" stroke-width="2" opacity=".45" fill="none"><path d="M100 74 L100 56M125 92 L141 86M115 121 L126 138M85 121 L74 138M75 92 L59 86"/></g>
+    <circle cx="100" cy="100" r="96" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2"/></svg>`;
+}
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (n) => n.toLocaleString('en-AU');
@@ -229,22 +243,79 @@ export class UltimateTeam {
   }
 
   // ------------------------------------------------------------ main render
+  /** The hub: club + currencies on top, quick buttons down the left, a hero banner, featured / CLUB / PLAY tiles, bottom nav. */
   render() {
     if (this.packing) return;
     const s = this.s, el = this.el;
+    clearInterval(this._heroT);
     el.innerHTML = '';
+    el.classList.toggle('hub', this.tab === 'home');
+    const pend = this._claimable(), free = (s.freePacks || []).length;
+    const rk = this._rank();
     const top = h('div', 'ut-top');
-    const tabs = [['home', 'Home'], ['play', 'Play'], ['squad', 'Squad'], ['store', 'Store'], ['club', 'Club'], ['market', 'Transfers'], ['obj', 'Objectives']];
-    const pend = this._claimable();
-    top.innerHTML = `<div class="ut-club">${crestSVG({ short: s.short, kit: s.kit }, 30)}<span>${esc(s.clubName)}</span></div>
-      <div class="ut-tabs">${tabs.map(([k, l]) => `<button class="tab ${this.tab === k ? 'on' : ''}" data-t="${k}">${l}${k === 'obj' && pend ? `<i class="dot">${pend}</i>` : ''}${k === 'store' && (s.freePacks || []).length ? '<i class="dot">!</i>' : ''}</button>`).join('')}</div>
-      <div class="ut-coins">${coinIcon}${fmt(s.coins)}</div>`;
+    top.innerHTML = `
+      <button class="tb-club">${crestSVG({ short: s.short, kit: s.kit }, 38)}<div><b>${esc(s.clubName)}</b><span class="lvl"><i>${rk.level}</i>${fmt(rk.into)}/${fmt(rk.need)} PTS</span></div></button>
+      ${this.tab !== 'home' ? `<button class="tb-back">&lsaquo; HOME</button><div class="tb-title">${{ play: 'Leagues', squad: 'Squad', store: 'Store', club: 'Exchange', market: 'Signings', obj: 'Quests' }[this.tab] || ''}</div>` : `<button class="tb-news">${ICON.news(26)}<span>NEWS</span></button>`}
+      <div class="tb-right">
+        <button class="cur" data-go="store">${coinIcon}<b>${fmt(s.coins)}</b><i class="plus">+</i></button>
+        <button class="cur" data-go="play"><i class="gem"></i><b>${fmt(s.sb.points)}</b><i class="plus">+</i></button>
+        <button class="tbi" data-go="squad">${ICON.people(28)}</button>
+        <button class="tbi" data-go="obj">${ICON.mail(28)}${pend ? `<i class="badge">${pend}</i>` : ''}</button>
+        <button class="tbi set">${ICON.gear(28)}</button>
+      </div>`;
     el.appendChild(top);
-    top.querySelectorAll('.tab').forEach((b) => { b.onclick = () => { this.tab = b.dataset.t; this.render(); }; });
+    top.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => this.go(b.dataset.go); });
+    top.querySelector('.set').onclick = () => this._settings();
+    const back = top.querySelector('.tb-back'); if (back) back.onclick = () => this.go('home');
+    const news = top.querySelector('.tb-news'); if (news) news.onclick = () => this._news();
+    top.querySelector('.tb-club').onclick = () => this.go('squad');
+
     const body = h('div', `ut-body t-${this.tab}`);
     el.appendChild(body);
     this[`_tab_${this.tab}`](body);
     this._faces(body);
+
+    const today = new Date().toDateString();
+    const nav = h('div', 'ut-nav');
+    const items = [['obj', ICON.quest(26), 'QUESTS', pend], ['play', ICON.shieldStar(26), 'LEAGUES', 0], ['market', ICON.signing(26), 'SIGNINGS', 0],
+      ['club', ICON.exchange(26), 'EXCHANGE', 0], ['store', ICON.cart(26), 'STORE', free || (s.daily !== today ? 1 : 0)]];
+    nav.innerHTML = items.map(([k, ic, l, n]) => `<button class="${this.tab === k ? 'on' : ''} ${k === 'store' ? 'store' : ''}" data-go="${k}">${ic}<span>${l}</span>${n ? '<i class="ndot"></i>' : ''}</button>`).join('');
+    el.appendChild(nav);
+    nav.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => this.go(b.dataset.go); });
+  }
+
+  go(tab) { this.tab = tab; this.render(); }
+
+  /** Squad Battles rank as a level + progress (top bar). */
+  _rank() {
+    const p = this.s.sb.points;
+    let i = 0;
+    while (i + 1 < RANKS.length && p >= RANKS[i + 1][0]) i++;
+    const lo = RANKS[i][0], hi = RANKS[i + 1] ? RANKS[i + 1][0] : lo + 1500;
+    return { level: i + 1, name: RANKS[i][1], into: p - lo, need: hi - lo };
+  }
+
+  _news() {
+    const m = this._modal(`<div class="news"><h3>News</h3>
+      <p><b>Squad Battles is live.</b> Climb from Bronze to Elite — tougher difficulties pay more coins and points.</p>
+      <p><b>Walkouts.</b> Pull an 84+ and he walks out: nation, position, club, then the card.</p>
+      <p><b>Chemistry.</b> Players from the same club, league or nation link up — 33 is perfect.</p>
+      <p><b>Skills.</b> Hold SPRINT &amp; SKILL and swipe: up rainbow flick, down drag back, left roulette, right elastico.</p>
+      <button class="ut-btn primary ok">Got it</button></div>`);
+    m.querySelector('.ok').onclick = () => m.remove();
+  }
+
+  _settings() {
+    const s = this.s;
+    const m = this._modal(`<div class="news"><h3>Settings</h3>
+      <label class="ut-field">Club name<input class="nm" maxlength="20" value="${esc(s.clubName)}"></label>
+      <div class="cd-btns"><button class="ut-btn primary sv">Save</button><button class="ut-btn rs">Start a new club</button></div></div>`);
+    m.querySelector('.sv').onclick = () => { s.clubName = m.querySelector('.nm').value.trim() || s.clubName; this.save(); m.remove(); this.render(); };
+    m.querySelector('.rs').onclick = () => {
+      const c = this._modal(`<div class="confirm">Start again? Your club, cards and coins will be gone.<div class="cd-btns"><button class="ut-btn no">Cancel</button><button class="ut-btn primary yes">Start again</button></div></div>`);
+      c.querySelector('.no').onclick = () => c.remove();
+      c.querySelector('.yes').onclick = () => { try { localStorage.removeItem(SAVE); } catch (_) { /* ignore */ } this.s = null; c.remove(); m.remove(); this._setup(); };
+    };
   }
 
   _toast(t) {
@@ -262,26 +333,69 @@ export class UltimateTeam {
 
   // ------------------------------------------------------------ home
   _tab_home(body) {
-    const s = this.s, ch = this.chem(), r = this.rating();
-    const xi = this.xiCards();
-    const best = xi.filter(Boolean).sort((a, b) => b.ovr - a.ovr).slice(0, 3);
-    const today = new Date().toDateString();
+    const s = this.s, today = new Date().toDateString();
+    const xi = this.xiCards().filter(Boolean).sort((a, b) => b.ovr - a.ovr);
+    const star = xi[0];
+    const free = (s.freePacks || []).length;
+    const rk = this._rank();
+    const heroes = [
+      { kick: 'SQUAD BATTLES', title: 'WEEKEND LEAGUE', sub: `${rk.name} · ${fmt(s.sb.points)} pts — climb to Elite`, go: 'play' },
+      { kick: 'STORE', title: 'ULTIMATE PACK', sub: '30 rare gold players and a guaranteed 85+', go: 'store' },
+      { kick: 'SIGNINGS', title: 'TRANSFER MARKET', sub: 'Sign the stars your squad is missing', go: 'market' },
+    ];
+    const promos = [
+      { title: 'PACK OF THE DAY', pack: 'premium', go: 'store' },
+      { title: 'RARE PLAYERS', pack: 'rare', go: 'store' },
+      { title: 'JUMBO PREMIUM', pack: 'jumbo', go: 'store' },
+    ];
+    this.hi = this.hi || 0;
     body.innerHTML = `
-      <div class="home-grid">
-        <button class="tile big play"><div class="t-kick">SQUAD BATTLES</div><div class="t-title">Play a match</div><div class="t-sub">${rankOf(s.sb.points)} · ${fmt(s.sb.points)} pts · W${s.sb.wins} D${s.sb.draws} L${s.sb.losses}</div><div class="t-cta">${ICON.play(18)} Play</div></button>
-        <button class="tile squad"><div class="t-kick">YOUR SQUAD</div><div class="t-rate"><b>${r}</b><span>RATING</span></div><div class="t-rate"><b>${ch.total}</b><span>CHEM</span></div><div class="t-cards">${best.map((c) => this.cardHTML(c, { size: 'xs' })).join('')}</div></button>
-        <button class="tile store"><div class="t-kick">STORE</div><div class="t-title">Packs</div><div class="t-sub">${(s.freePacks || []).length ? `${s.freePacks.length} free pack${s.freePacks.length > 1 ? 's' : ''} to open` : 'Bronze to Ultimate'}</div></button>
-        <button class="tile daily ${s.daily === today ? 'done' : ''}"><div class="t-kick">DAILY GIFT</div><div class="t-title">${s.daily === today ? 'Come back tomorrow' : 'Claim a free pack'}</div></button>
-        <button class="tile market"><div class="t-kick">TRANSFER MARKET</div><div class="t-title">Buy players</div></button>
-        <button class="tile obj"><div class="t-kick">OBJECTIVES</div><div class="t-title">${this._claimable()} to claim</div></button>
+      <div class="hub-left">
+        <button class="sq" data-a="daily">${ICON.gift(34)}<span>DAILY GIFT</span>${s.daily !== today ? '<i class="gbadge">!</i>' : ''}</button>
+        <button class="sq" data-a="free">${ICON.star(34)}<span>FREE PACKS</span>${free ? `<i class="gbadge">${free}</i>` : ''}</button>
+        <button class="sq" data-a="quests">${ICON.quest(34)}<span>OBJECTIVES</span>${this._claimable() ? '<i class="rdot"></i>' : ''}</button>
+        <button class="sq" data-a="squad">${ICON.people(34)}<span>SQUAD</span></button>
+      </div>
+      <div class="hub-hero">
+        <div class="gold-ball">${goldBallSVG()}</div>
+        <div class="hero-star">${star ? `<img class="c-face" data-pid="${star.id}" alt="">` : ''}</div>
+        <div class="hero-txt"><div class="h-kick"></div><div class="h-title"></div><div class="h-sub"></div></div>
+        <button class="go-now">GO NOW</button>
+        <div class="dots">${heroes.map((_, i) => `<i data-i="${i}"></i>`).join('')}</div>
+      </div>
+      <div class="hub-right">
+        <button class="promo"><div class="p-title"></div><div class="p-art"><div class="pk-art big"><span></span></div>${goldBallSVG('mini')}</div><div class="dots">${promos.map(() => '<i></i>').join('')}</div></button>
+        <div class="duo">
+          <button class="club-tile"><b>CLUB</b><div class="ovr-shield"><small>OVR</small><em>${this.rating()}</em></div><div class="ct-crest">${crestSVG({ short: s.short, kit: s.kit }, 46)}</div><span class="ct-chem">${this.chem().total} CHEM</span></button>
+          <button class="play-tile"><b>PLAY</b><div class="pt-ball">${goldBallSVG('white')}</div></button>
+        </div>
       </div>`;
-    body.querySelector('.play').onclick = () => { this.tab = 'play'; this.render(); };
-    body.querySelector('.squad').onclick = () => { this.tab = 'squad'; this.render(); };
-    body.querySelector('.store').onclick = () => { this.tab = 'store'; this.render(); };
-    body.querySelector('.market').onclick = () => { this.tab = 'market'; this.render(); };
-    body.querySelector('.obj').onclick = () => { this.tab = 'obj'; this.render(); };
-    body.querySelector('.daily').onclick = () => {
-      if (s.daily === today) return;
+    const heroEl = body.querySelector('.hub-hero'), promoEl = body.querySelector('.promo');
+    const show = () => {
+      const H = heroes[this.hi % heroes.length], P = promos[this.hi % promos.length];
+      heroEl.querySelector('.h-kick').textContent = H.kick;
+      heroEl.querySelector('.h-title').textContent = H.title;
+      heroEl.querySelector('.h-sub').textContent = H.sub;
+      heroEl.querySelectorAll('.dots i').forEach((d, i) => d.classList.toggle('on', i === this.hi % heroes.length));
+      heroEl.querySelector('.go-now').onclick = () => this.go(H.go);
+      const pk = PACKS.find((x) => x.id === P.pack);
+      promoEl.querySelector('.p-title').textContent = P.title;
+      promoEl.querySelector('.pk-art').className = `pk-art big ${pk.id}`;
+      promoEl.querySelector('.pk-art span').innerHTML = `${pk.name.toUpperCase()}<br>${coinIcon}${fmt(pk.price)}`;
+      promoEl.querySelectorAll('.dots i').forEach((d, i) => d.classList.toggle('on', i === this.hi % promos.length));
+      promoEl.onclick = () => this.go(P.go);
+      heroEl.classList.remove('swap'); void heroEl.offsetWidth; heroEl.classList.add('swap');
+    };
+    show();
+    this._heroT = setInterval(() => { if (!this.el.isConnected || this.tab !== 'home') { clearInterval(this._heroT); return; } this.hi++; show(); }, 5000);
+    heroEl.querySelectorAll('.dots i').forEach((d) => { d.onclick = (e) => { e.stopPropagation(); this.hi = +d.dataset.i; show(); }; });
+    body.querySelector('.club-tile').onclick = () => this.go('squad');
+    body.querySelector('.play-tile').onclick = () => this.go('play');
+    body.querySelector('[data-a="squad"]').onclick = () => this.go('squad');
+    body.querySelector('[data-a="quests"]').onclick = () => this.go('obj');
+    body.querySelector('[data-a="free"]').onclick = () => this.go('store');
+    body.querySelector('[data-a="daily"]').onclick = () => {
+      if (s.daily === today) { this._toast('Come back tomorrow for another gift'); return; }
       s.daily = today;
       const p = rnd() < 0.25 ? PACKS[3] : rnd() < 0.6 ? PACKS[2] : PACKS[1];
       this._openPack(p, this._rollPack(p), () => this.render());

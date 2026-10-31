@@ -22,6 +22,7 @@ export class CameraRig {
     this.zoom = 1;
     this.snapNext = false;
     this._yaw = 0;
+    this.chargeZoom = 0;       // 0..1 while a shot is being charged: lean in a little
   }
 
   resize(w, h) {
@@ -53,12 +54,15 @@ export class CameraRig {
       const b = game.ball.pos, u = game.user;
       const fcs = this._bf || (this._bf = new THREE.Vector3());
       fcs.set(b.x * 0.78 + u.pos.x * 0.22, 0, b.z * 0.8 + u.pos.z * 0.2);
+      const cz = this.chargeZoom || 0;
+      if (cz > 0) fcs.lerp(u.pos, 0.35 * cz);
       const gx2 = CONFIG.pitch.length / 2 - 8;
       fcs.x = clamp(fcs.x, -gx2, gx2);
       const z0 = clamp(fcs.z, -CONFIG.pitch.width / 2 + 6, CONFIG.pitch.width / 2 - 6);
       const att = game.ball.owner ? (game.ball.owner.team === 'home' ? 1 : -1) : 0;
       this._lead = (this._lead || 0) + (att * B.lead - (this._lead || 0)) * dampT(1.2, dt);
-      this.desiredPos.set(fcs.x + this._lead, B.height * this.zoom, z0 * B.lookZ - B.back * this.zoom);
+      const zz = this.zoom * (1 - 0.16 * cz);
+      this.desiredPos.set(fcs.x + this._lead, B.height * zz, z0 * B.lookZ - B.back * zz);
       this.desiredLook.set(fcs.x + this._lead, 0, z0 * 0.9 + 1.5);
       posK = 3; lookK = 4.5; fov = B.fov;
     } else if (this.mode === 'follow' || this.mode === 'intro') {

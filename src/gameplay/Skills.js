@@ -1,7 +1,6 @@
-// Automatic skill moves: when an opponent closes in on your team's ball
-// carrier, the carrier sometimes pulls off a skill (stepovers most often,
-// rainbow flicks very rarely). A successful skill sends the defender the
-// wrong way so they stumble and you get past.
+// Skill moves on the SPRINT & SKILL button: swipe up = rainbow flick, down =
+// drag back, left = roulette, right = elastico. A skill done near a defender
+// can send him the wrong way so he stumbles and you get past.
 import { CONFIG } from '../config.js';
 import { dist2D } from '../core/MathUtil.js';
 
@@ -37,29 +36,26 @@ export class Skills {
   reset() { this.active = null; this.cooldown = 0.8; }
 
   update(dt) {
-    const g = this.game, ball = g.ball, S = CONFIG.skills;
     this.cooldown = Math.max(0, this.cooldown - dt);
-    if (this.active) { this._run(dt); return; }
-    const o = ball.owner;
-    if (!o || o.team !== 'home' || o.isKeeper || this.cooldown > 0) return;
-    if (ball.pos.y > 0.3 || o.speed < S.minSpeed || o.stumble > 0) return;
-    if (!g.sm.is('PLAYING')) return;
+    if (this.active) this._run(dt);
+  }
 
-    // a defender closing in, roughly in front of us
+  /** You swiped the SPRINT & SKILL button. */
+  perform(o, dir) {
+    const g = this.game, ball = g.ball;
+    if (this.active || this.cooldown > 0 || ball.owner !== o || ball.pos.y > 0.4 || o.stumble > 0) return false;
+    const key = { up: 'rainbow', down: 'dragback', left: 'roulette', right: 'elastico' }[dir];
+    if (!key) return false;
+    // the defender it's aimed at: nearest opponent in front
     const fx = Math.sin(o.heading), fz = Math.cos(o.heading);
-    let target = null, best = S.triggerRange;
-    for (const d of g.defenders) {
-      if (d.stumble > 0) continue;
-      const dx = d.pos.x - o.pos.x, dz = d.pos.z - o.pos.z;
-      const dl = Math.hypot(dx, dz);
-      if (dl > best || dl < 0.3) continue;
-      if ((dx * fx + dz * fz) / dl < S.frontDot) continue;
-      best = dl; target = d;
+    let target = null, best = 5;
+    for (const d of g.opponentsOf(o)) {
+      if (d.isKeeper || d.stumble > 0) continue;
+      const dx = d.pos.x - o.pos.x, dz = d.pos.z - o.pos.z, dl = Math.hypot(dx, dz);
+      if (dl < best && (dx * fx + dz * fz) / (dl || 1) > -0.2) { best = dl; target = d; }
     }
-    if (!target) return;
-    const flair = 0.6 + o.stats.dribbling / 200; // 0.85..1.1
-    if (g.rng.next() > S.chancePerSecond * flair * dt) return;
-    this._start(o, target);
+    this._start(o, target, key);
+    return true;
   }
 
   _pick(distToDefender) {
@@ -72,14 +68,14 @@ export class Skills {
     return 'stepover';
   }
 
-  _start(o, d) {
+  _start(o, d, key) {
     const g = this.game, ball = g.ball;
-    const key = this._pick(Math.hypot(d.pos.x - o.pos.x, d.pos.z - o.pos.z));
+    key = key || this._pick(d ? Math.hypot(d.pos.x - o.pos.x, d.pos.z - o.pos.z) : 9);
     const sk = SKILLS[key];
     // go away from the side the defender is leaning to
     const fx = Math.sin(o.heading), fz = Math.cos(o.heading);
     const px = fz, pz = -fx; // perpendicular (right)
-    const side = ((d.pos.x - o.pos.x) * px + (d.pos.z - o.pos.z) * pz) > 0 ? -1 : 1;
+    const side = d ? (((d.pos.x - o.pos.x) * px + (d.pos.z - o.pos.z) * pz) > 0 ? -1 : 1) : (g.rng.chance(0.5) ? 1 : -1);
     this.active = { key, sk, o, d, t: 0, side, px, pz, fx, fz, resolved: false };
     o.playAction(sk.anim, sk.dur, { side, kickLeg: side, spinAmt: (sk.spin || 0) * side });
     if (sk.kick) {
@@ -87,9 +83,10 @@ export class Skills {
       ball.kick(o.vel.x + fx * sk.kick.fwd, sk.kick.up, o.vel.z + fz * sk.kick.fwd,
         { type: 'touch', by: o, ignoreTime: 0, time: g.simTime });
       ball.owner = o;
-      ball.ignore.set(d, 1.0);
+      if (d) ball.ignore.set(d, 1.0);
     }
-    if (o.isUser) { g.hud.flash(sk.label, 'good'); g.audio.touch(); g.audio.anticipate(); }
+    if (key === 'dragback') { o.vel.multiplyScalar(0.3); ball.vel.set(-fx * 1.2, 0, -fz * 1.2); }
+    if (o.isUser) { g.audio.touch(); if (sk.kick) g.audio.anticipate(); }
   }
 
   _run(dt) {
@@ -106,7 +103,7 @@ export class Skills {
       o.pos.z += a.pz * a.side * v;
     }
     // halfway through: did the defender buy it?
-    if (!a.resolved && k >= 0.5) {
+    if (!a.resolved && k >= 0.5 && d) {
       a.resolved = true;
       const S = CONFIG.skills;
       const skill = (o.stats.dribbling + o.stats.ballControl) / 2;

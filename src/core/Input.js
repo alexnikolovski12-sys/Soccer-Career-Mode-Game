@@ -108,6 +108,33 @@ export class Input {
     el.addEventListener('lostpointercapture', up);
   }
 
+  /** SPRINT & SKILL: hold to sprint; swipe while holding = a skill move (once per press). */
+  bindSprintSkill(el) {
+    let id = null, sx = 0, sy = 0, done = false;
+    const down = (e) => {
+      this._gesture();
+      e.preventDefault(); e.stopPropagation();
+      if (!this.enabled || id !== null) return;
+      id = e.pointerId; sx = e.clientX; sy = e.clientY; done = false;
+      try { el.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+      this.held.sprint = true; this.pressed.sprint = true;
+      el.classList.add('down');
+    };
+    const move = (e) => {
+      if (e.pointerId !== id || done) return;
+      const dir = this._dir(e.clientX - sx, e.clientY - sy, el);
+      if (dir !== 'tap') { done = true; this.gestures.skill = { dir, held: 0 }; el.style.setProperty('--sw', dir); }
+    };
+    const up = (e) => {
+      if (e.pointerId !== id) return;
+      id = null; this.held.sprint = false; el.classList.remove('down');
+    };
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  }
+
   /**
    * A button that reports a gesture on release: how long it was held and
    * which way the finger swiped off it ('tap' | 'up' | 'down' | 'left' | 'right').
@@ -181,6 +208,7 @@ export class Input {
     // desktop testing for the gesture buttons: key → [button, swipe]
     const gmap = {
       ' ': ['pass', 'tap'], c: ['pass', 'up'], t: ['through', 'tap'],
+      i: ['skill', 'up'], m: ['skill', 'down'], u: ['skill', 'left'], o: ['skill', 'right'],
       f: ['shoot', 'tap'], g: ['shoot', 'down'], h: ['shoot', 'up'], j: ['shoot', 'right'], k: ['shoot', 'left'],
     };
     if (isDown) this._gesture();

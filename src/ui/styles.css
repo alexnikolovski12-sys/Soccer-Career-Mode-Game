@@ -510,3 +510,11 @@ html.portrait .flash { top: calc(var(--sat) + 100px); }
 .pad.defending .act.shoot .tip, .pad.defending .act.shoot .chev { display: none; }
 .pad.defending .act.through { background: radial-gradient(circle at 50% 35%, rgba(255,170,60,0.5), rgba(110,60,10,0.45)); }
 .o-btn.quit { background: rgba(255,255,255,0.1) !important; color: #fff !important; margin-top: 10px; }
+/* power bar under your player */
+.powerbar { position: absolute; left: 0; top: 0; width: 76px; margin-left: -38px; height: 9px; border-radius: 5px; pointer-events: none; z-index: 6;
+  background: rgba(0,0,0,0.55); box-shadow: 0 0 0 1.5px rgba(255,255,255,0.7); opacity: 0; transition: opacity 0.12s; }
+.powerbar.show { opacity: 1; }
+.powerbar i { position: absolute; left: 0; top: 0; bottom: 0; width: var(--v, 0%); border-radius: 5px;
+  background: linear-gradient(90deg, #38e86a, #ffe14d 60%, #ff4b5c); }
+.powerbar span { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-weight: 800; font-size: 11px; letter-spacing: 0.06em; text-shadow: 0 1px 2px #000; opacity: 0.9; }
+.act.sprint span small { display: block; font-size: 0.55em; letter-spacing: 0.08em; opacity: 0.85; margin-top: -2px; }

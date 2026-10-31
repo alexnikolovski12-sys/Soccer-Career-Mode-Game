@@ -517,10 +517,22 @@ class Game {
     r.integrate(dt, false);
   }
 
+  /** Play's stopped: everyone not involved eases to a standstill (no running on the spot). */
+  _settle(dt, skip = null) {
+    const sp = this.setPiece;
+    for (const p of this.players) {
+      if (p === skip || (sp && p === sp.offender && sp.card && sp.card !== 'Y' && sp.phase === 'card')) continue;
+      if (sp && p === sp.offender && sp.phase === 'ref') { p.integrate(dt, false); continue; }
+      p.steer(0, 0, 0);
+      p.integrate(dt, false);
+    }
+  }
+
   _setPieceUpdate(dt) {
     const sp = this.setPiece;
     for (const p of this.players) p.savePrev();
     this.ball.savePrev();
+    this._settle(dt);
     sp.t -= dt;
     if (sp.phase === 'ref') { this._refToFoul(dt); return; }
     if (sp.phase === 'card') { this._cardPhase(dt); if (sp.t > 0) return; }
@@ -575,6 +587,7 @@ class Game {
       const sg = inp.consumeGesture('shoot');
       for (const p of this.players) p.savePrev();
       this.ball.savePrev();
+      this._settle(1 / CONFIG.sim.hz, this.user);
       if (!sg) return false;
       const sp = this.setPiece;
       this.setPiece = null;
@@ -591,6 +604,7 @@ class Game {
     sp.fkAction = null;
     for (const p of this.players) p.savePrev();
     this.ball.savePrev();
+    this._settle(1 / CONFIG.sim.hz, this.user);
     if (!a) return false;
     const u = this.user, F = CONFIG.freeKick, P = CONFIG.pitch;
     if (sp.fk === 'choose' && a === 'pass') {
@@ -692,7 +706,7 @@ class Game {
         beat++;
       } else d.ai.jukeCd = this.simTime + 1.0;
     }
-    if (beat) this.hud.flash(beat > 1 ? 'SKINNED THEM!' : 'FAKED HIM!', 'good');
+
     st.cuts.length = 0;
   }
 
@@ -723,7 +737,7 @@ class Game {
         const p = 0.45 + (u.stats.acceleration - d.rating) / 120;
         if (this.rng.next() < p) { d.stumble = 0.38; d.ai.tackling = null; d.tackleCooldown = Math.max(d.tackleCooldown, 0.8); caught++; }
       }
-      if (caught) { this.hud.flash('BURST!', 'good'); this.audio.skillCheer(); }
+      if (caught) this.audio.skillCheer();
     }
   }
 
@@ -839,7 +853,11 @@ class Game {
     // open players first
     list.sort((a, b) => this._openness(b) - this._openness(a));
     const t = list[Math.min(list.length - 1, Math.floor(this.rng.next() * 2))];
-    this.passing.requestAIPass(p, t, long ? 'lofted' : 'ground');
+    if (long) { this.passing.requestAIPass(p, t, 'lofted'); return; }
+    // short: overarm throw out to a defender
+    ball.pos.set(p.pos.x + s * 0.3, 2.0, p.pos.z);
+    this.match._throw(p, t);
+    p.playAction('gkthrow', 0.7);
   }
 
   _openness(p) {
@@ -870,10 +888,7 @@ class Game {
     });
     ev.on('keeperHold', () => { if (this.sm.is(STATES.SHOT_FLIGHT)) this.backToPlay(); });
     ev.on('foul', (e) => this.onFoul(e));
-    ev.on('beatDefender', ({ by, skill }) => {
-      if (by === this.user && !skill) this.hud.flash('SKILLED!', 'good');
-      if (by && by.team === 'home') this.audio.skillCheer();
-    });
+    ev.on('beatDefender', ({ by }) => { if (by && by.team === 'home') this.audio.skillCheer(); });
   }
 
   backToPlay() { if (this.sm.is(STATES.SHOT_FLIGHT)) this.sm.change(STATES.PLAYING); }
@@ -1022,6 +1037,8 @@ class Game {
     this.homeAI.pressHeld = false;
     let dx = wx, dz = wz;
     if (mag < 0.2) { dx = Math.sin(u.heading); dz = Math.cos(u.heading); }
+    const kg = inp.consumeGesture('skill');
+    if (kg && ball.owner === u && !this.passing.pending && !this.shooting.strike) this.skills.perform(u, kg.dir);
     if (ball.owner === u && !this.passing.pending && !this.shooting.strike) {
       if (sg) {
         // SHOOT: hold for power; swipe down = driven, up = chip, right = finesse, left = fake
@@ -1031,9 +1048,10 @@ class Game {
       } else if (tg) {
         this.passing.requestUserPass(u, dx, dz, 'through');
       } else if (pg) {
-        // touch = instant ground pass; flick up/down as you press = lofted ball (longer flick = higher, further)
-        const lofted = pg.dir === 'up' || pg.dir === 'down';
-        const power = Math.min(1, Math.abs(pg.dy || 0) / 70 + (pg.dy === 0 && lofted ? 0.6 : 0));
+        // hold PASS and let go: a pass to feet (however long you held it). Swipe UP as you
+        // let go: a high, long ball — the longer the hold, the further it goes — onto a teammate
+        const lofted = pg.dir === 'up';
+        const power = Math.min(1, 0.3 + (pg.held || 0) * 0.7);
         this.passing.requestUserPass(u, dx, dz, lofted ? 'lofted' : 'ground', power);
       }
     } else if (pg && ball.owner !== u) {
@@ -1050,6 +1068,16 @@ class Game {
     const t = this.sm.time, cel = this.celebration, sc = this.scorer;
     const team = this.goalTeam;
     for (const p of this.players) {
+      // the side that conceded: heads down, hands on heads and hips, a couple sit down on the grass
+      if (p.team !== team) {
+        p.steer(0, 0, 0);
+        if (t > 0.5 + (p.sadDelay ?? (p.sadDelay = Math.random() * 1.2)) && !p.sad) {
+          const r = Math.random();
+          p.sad = p.isKeeper ? (r < 0.5 ? 'sitdown' : 'crouchsad') : r < 0.3 ? 'dejected' : r < 0.62 ? 'hipshands' : r < 0.82 ? 'crouchsad' : 'sitdown';
+          p.playAction(p.sad, 30, { hold: true });
+        }
+        continue;
+      }
       if (p.isKeeper) { p.steer(0, 0, 0); continue; }
       if (cel && p === sc) {
         if (team === 'home') this._celebrate(p, cel, t, dt);
@@ -1260,7 +1288,7 @@ class Game {
     this.finishing = null;
     this.ball.frozen = false;
     this.cardMesh.visible = false;
-    for (const p of this.players) { p.stayDown = false; p.anim.action = null; p.ai.tackling = null; }
+    for (const p of this.players) { p.stayDown = false; p.anim.action = null; p.ai.tackling = null; p.sad = null; p.sadDelay = null; }
     for (const p of this.extras) p.setVisible(false);
     this.extras = [];
     this.setPiece = null;
@@ -1364,6 +1392,19 @@ class Game {
         g._penaltyMeterFrame(realDt || 1 / 60);
         g._freeKickFrame(realDt || 1 / 60);
         g.hud.setPassCharge(0);
+        // power bar under your player while PASS / SHOOT is held; the camera leans in on a shot
+        {
+          const u = g.user, sh = g.input.chargeTime('shoot'), ps = g.input.chargeTime('pass');
+          const on = g.ball.owner === u && (sh > 0.06 || ps > 0.06) && !(g.setPiece && g.setPiece.phase !== 'ready');
+          if (on) {
+            const v = new THREE.Vector3(u.parts.root.position.x, -0.15, u.parts.root.position.z).project(g.camRig.camera);
+            const w = g.host.clientWidth, hh = g.host.clientHeight;
+            const val = sh > 0.06 ? g.shooting.chargeFrom(sh) : Math.min(1, 0.3 + ps * 0.7);
+            g.hud.setPowerBar(true, (v.x * 0.5 + 0.5) * w, (-v.y * 0.5 + 0.5) * hh + 6, val, sh > 0.06 ? 'SHOT' : 'PASS · swipe up to lob');
+          } else g.hud.setPowerBar(false);
+          const target = g.ball.owner === u && sh > 0.06 ? g.shooting.chargeFrom(sh) : 0;
+          g.camRig.chargeZoom += (target - g.camRig.chargeZoom) * Math.min(1, (realDt || 0.016) * 6);
+        }
         if (g.setPiece && g.setPiece.phase !== 'ready') {
           g.input.consumeGesture('pass'); g.input.consumeGesture('through'); g.input.consumeGesture('shoot');
           g.hud.setShootAvailable(false); return;
@@ -1384,6 +1425,8 @@ class Game {
         g.hud.setShotCharge(0);
       },
       update(dt) {
+        g.hud.setPowerBar(false);
+        g.camRig.chargeZoom = 0;
         g.simulate(dt);
         const k = g.ball.lastKick;
         if (sm.is(S.SHOT_FLIGHT) && k && (k.type === 'save' || k.type === 'block') && sm.time > 0.6) g.backToPlay();

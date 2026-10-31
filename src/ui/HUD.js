@@ -67,15 +67,16 @@ export class HUD {
     this.btnThrough = btn('through', 'THROUGH', ['up', 'down']);
     this.btnShoot = btn('shoot', 'SHOOT', ['up', 'down', 'left', 'right'],
       { up: 'CHIP', down: 'DRIVEN', left: 'FAKE', right: 'FINESSE' });
-    this.btnPass = btn('pass', 'PASS', ['up', 'down', 'left', 'right']);
-    this.btnSprint = btn('sprint', 'SPRINT', ['up', 'down', 'left', 'right']);
+    this.btnPass = btn('pass', 'PASS', ['up'], { up: 'LOB' });
+    this.btnSprint = btn('sprint', 'SPRINT<small>&amp; SKILL</small>', ['up', 'down', 'left', 'right'],
+      { up: 'RAINBOW', down: 'DRAG BACK', left: 'ROULETTE', right: 'ELASTICO' });
     pad.append(this.btnThrough, this.btnShoot, this.btnPass, this.btnSprint);
     r.appendChild(pad);
     this.pad = pad;
     this.input.bindGesture(this.btnShoot, 'shoot');
-    this.input.bindGesture(this.btnPass, 'pass', { quick: 0.09 });
+    this.input.bindGesture(this.btnPass, 'pass');
     this.input.bindGesture(this.btnThrough, 'through', { quick: 0.06 });
-    this.input.bindButton(this.btnSprint, 'sprint');
+    this.input.bindSprintSkill(this.btnSprint);
 
     // ---- free kick: choose PASS / SHOOT, then tap to lock the aim line, then the power
     this.fk = el('div', 'fk', `
@@ -90,6 +91,10 @@ export class HUD {
     fkTap('.fk-pass', () => this.h.fkAction && this.h.fkAction('pass'));
     fkTap('.fk-shoot', () => this.h.fkAction && this.h.fkAction('shoot'));
     fkTap('.fk-tap', () => this.h.fkAction && this.h.fkAction('tap'));
+
+    // ---- power bar under your player (pass / shot charge)
+    this.power = el('div', 'powerbar', '<i></i><span></span>');
+    r.appendChild(this.power);
 
     // ---- penalty timing circle
     this.pen = el('div', 'pen-meter', '<div class="pm-ring"></div><div class="pm-dot"></div><div class="pm-hint">TAP SHOOT WHEN IT\'S SMALL &amp; GREEN</div>');
@@ -245,6 +250,16 @@ export class HUD {
     ring.style.cssText = `left:${x}px;top:${y}px;width:${d}px;height:${d}px;`;
     dot.style.cssText = `left:${x}px;top:${y}px;`;
     hint.style.cssText = `left:${x}px;top:${y + 100 * u}px;`;
+  }
+
+  /** Charge bar under the player (screen x, y): v 0..1, label. */
+  setPowerBar(on, x = 0, y = 0, v = 0, label = '') {
+    if (!on) { if (this.last.pow) { this.power.classList.remove('show'); this.last.pow = false; } return; }
+    this.last.pow = true;
+    this.power.classList.add('show');
+    this.power.style.transform = `translate(${x}px, ${y}px)`;
+    this.power.style.setProperty('--v', `${(v * 100).toFixed(1)}%`);
+    if (this.last.powLabel !== label) { this.last.powLabel = label; this.power.lastChild.textContent = label; }
   }
 
   /** Lofted-pass power ring on PASS while held (0..1, after the tap threshold). */

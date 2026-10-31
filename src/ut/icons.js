@@ -22,6 +22,17 @@ export const ICON = {
   bolt: (s) => svg('<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>', s),
   fist: (s) => svg('<path d="M7 11V7.5a1.5 1.5 0 0 1 3 0V11M10 10V6.5a1.5 1.5 0 0 1 3 0V10M13 10V7a1.5 1.5 0 0 1 3 0v4M16 11V9a1.5 1.5 0 0 1 3 0v4.5C19 18 16 21 12 21s-6-2.5-6-6v-2a2 2 0 0 1 4 0"/>', s),
   mute: (s) => svg('<circle cx="12" cy="12" r="9"/><path d="M6 18L18 6"/>', s),
+  gear: (s) => svg('<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/><circle cx="12" cy="12" r="6.5"/>', s),
+  news: (s) => svg('<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M7 8h10M7 12h4M7 16h4M14 12h3v4h-3z"/>', s),
+  gift: (s) => svg('<rect x="3" y="9" width="18" height="12" rx="1.5"/><path d="M3 13h18M12 9v12M12 9c-1.5-4-6-4-5.5-1.5S12 9 12 9zM12 9c1.5-4 6-4 5.5-1.5S12 9 12 9z"/>', s),
+  star: (s) => svg('<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>', s),
+  quest: (s) => svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l7-7M16 4h3v3"/>', s),
+  shieldStar: (s) => svg('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M12 8l1.2 2.5 2.7.4-2 1.9.5 2.7L12 14.2l-2.4 1.3.5-2.7-2-1.9 2.7-.4z" fill="currentColor"/>', s),
+  signing: (s) => svg('<circle cx="10" cy="8" r="3.5"/><path d="M3 20c.8-3.8 3.6-5.6 7-5.6 1.6 0 3 .4 4.1 1.2"/><path d="M17 13v7M13.5 16.5h7"/>', s),
+  exchange: (s) => svg('<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>', s),
+  cart: (s) => svg('<path d="M3 4h2.5l2.2 11h10.6l2-8H7"/><circle cx="9.5" cy="19" r="1.6" fill="currentColor"/><circle cx="17" cy="19" r="1.6" fill="currentColor"/>', s),
+  people: (s) => svg('<circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.6"/><path d="M2.5 20c.8-4 3.4-6 6.5-6s5.7 2 6.5 6M15 14.4c2.8-.4 5.4 1.2 6.3 4.6"/>', s),
+  ball: (s) => svg('<circle cx="12" cy="12" r="9"/><path d="M12 7.5l3.2 2.3-1.2 3.8h-4l-1.2-3.8z" fill="currentColor"/><path d="M12 3v4.5M15.2 9.8l4.4-1.6M14 13.6l2.6 3.8M10 13.6l-2.6 3.8M8.8 9.8L4.4 8.2"/>', s),
   user: (s) => svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.4 4.2-6.5 8-6.5s7 2.1 8 6.5"/>', s),
 };
 

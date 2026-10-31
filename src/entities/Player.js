@@ -142,7 +142,8 @@ export class Player {
     this.stats = { ...stats };
     const M = CONFIG.statMap;
     const s = this.stats;
-    const teamMul = this.isUser ? 1 : CONFIG.teamMap.speedMult(this.rating);
+    // same rating → pace mapping for everyone (who you happen to control doesn't make him faster)
+    const teamMul = CONFIG.teamMap.speedMult(this.rating);
     this.attrs = {
       sprintSpeed: M.sprintSpeed(s.pace) * teamMul,
       accel: M.accel(s.acceleration) * teamMul,
@@ -279,7 +280,7 @@ export class Player {
     this.ring.renderOrder = 2;
     root.add(this.ring);
     // upside-down red triangle over whoever you control
-    this.label = Player._sprite(markerTex('triangle'), 0.06, 0.054);
+    this.label = Player._sprite(markerTex('triangle'), 0.034, 0.03);
     this.label.position.y = CONFIG.player.labelHeight;
     root.add(this.label);
     // your own career player also gets the yellow star badge above it
@@ -449,6 +450,7 @@ export class Player {
     this.cutCd = Math.max(0, (this.cutCd || 0) - dt);
 
     let desiredSpeed = this.moveSpeed;
+    if (hasBall && this.drib && this.drib.stop) desiredSpeed = Math.min(desiredSpeed, 1.2);
     if (this.stumble > 0) {
       this.stumble -= dt;
       desiredSpeed *= 0.2;
@@ -470,7 +472,7 @@ export class Player {
       let diff = angleDiff(curDir, want);
       // QUICK CUT: a sharp flick of the stick on the ball = plant the foot and
       // snap most of the way to the new direction, then burst away
-      if (this.isUser && hasBall && this.cutCd <= 0 && curSpeed > 1.5 && Math.abs(diff) > P.cutAngle && this.stumble <= 0) {
+      if (this.isUser && hasBall && this.cutCd <= 0 && curSpeed > 1.5 && Math.abs(diff) > P.cutAngle && !(Math.abs(diff) > 1.75 && curSpeed > 3) && this.stumble <= 0) {
         const snap = diff * P.cutSnap;
         curDir = wrapAngle(curDir + snap);
         diff -= snap;
