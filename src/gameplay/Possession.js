@@ -129,8 +129,12 @@ export class Possession {
       if (st.stop.t >= st.stop.dur) { st.stop = null; ball.vel.set(dx * (o.speed + 0.6), 0, dz * (o.speed + 0.6)); }
       return;
     }
+    // how much he's steering right now (stick vs body, and how fast he's turning)
+    const steerF = Math.min(1, Math.max(turnAng / 0.45, Math.abs(o.animator ? o.animator.yawRate : 0) / 1.2));
+    st.steerS = (st.steerS || 0) + (steerF - (st.steerS || 0)) * Math.min(1, dt * 3);
     const reach = D.touchReach + (turnAng > 0.8 ? 0.25 : 0);
-    const caughtUp = ahead < D.touchAhead + o.speed * 0.06 + (o.sprinting ? D.sprintCarryExtra : 0) || along < o.speed * 0.92;
+    // the next touch comes when he's caught it up — right at his feet, not with it still out in front
+    const caughtUp = ahead < 0.5 + o.speed * 0.025 || along < o.speed * 0.8;
     const wrongWay = offAng > D.redirectAngle;
     // stride touches wait for the foot to come through (turns/cuts go at once; never wait too long)
     // (and never let him run over it: if it's getting under his feet, play it now)
@@ -164,9 +168,11 @@ export class Possession {
         const r = g.rng.next();
         // close control: soft / normal / slightly longer — even at a sprint it stays at his feet
         // a real touch: knocked out ahead faster than he's running, it rolls and slows, he catches it
-        let k = o.sprinting ? 1.32 + g.rng.next() * 0.14 : 1.22 + g.rng.next() * 0.12;
-        let push = 0.55 + (r < 0.4 ? 0 : r < 0.85 ? 0.25 : 0.5);
+        let k = o.sprinting ? 1.2 + g.rng.next() * 0.1 : 1.12 + g.rng.next() * 0.08;
+        let push = 0.35 + (r < 0.4 ? 0 : r < 0.85 ? 0.15 : 0.3);
         if (space < 2.2) { k = 1.08; push = 0.35; }            // tight in traffic: little touches
+        // steering (even gently): keep it closer — the more he's turning, the shorter the touch
+        k = k + (1.02 - k) * steerF; push *= 1 - 0.8 * steerF;
         if (o.burstTouch) { k = 1.5; o.burstTouch = false; }
         v = o.speed * k + push; cd = Math.max(0.22, 0.9 / (o.speed + 1.5));
         const r2 = g.rng.next();
@@ -184,7 +190,7 @@ export class Possession {
       o.reachFor(st.side, ball.pos.x - ux * 0.12, 0.08, ball.pos.z - uz * 0.12, 0, 0.12);
       if (o.isUser) g.audio.touch();
     }
-    if (ball.pos.y < 0.2) { const kd = Math.exp(-(0.55 + 0.05 * bs) * dt); ball.vel.x *= kd; ball.vel.z *= kd; }
+    if (ball.pos.y < 0.2) { const kd = Math.exp(-(0.75 + 0.06 * bs + 0.8 * (st.steerS || 0)) * dt); ball.vel.x *= kd; ball.vel.z *= kd; }
     // never overrun it: a ball that has slipped under his feet is worked back
     // out in front (as the next stride would), so it sits ~carry ahead
     if (ahead < carry * 0.75 && bd < D.circleMax && ball.pos.y < 0.3) {
@@ -196,7 +202,7 @@ export class Possession {
     }
     // the ball never leaves his circle: one that's run on is drawn back in front
     // of him (rolling at his pace) and it can't get further than an arm's length
-    const maxD = carry + (o.sprinting ? 1.6 : 1.0);
+    const maxD = carry + (o.sprinting ? 1.6 : 1.0) * (1 - 0.55 * Math.max(st.steerS || 0, 0));
     if (bd > maxD && ball.pos.y < 0.4) {
       const k = Math.min(1, dt * 6);
       const tx = o.pos.x + dx * carry, tz = o.pos.z + dz * carry;
