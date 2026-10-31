@@ -47,10 +47,10 @@ const setQ = (out, j, x, y, z) => { _e.set(x, y, z, 'XYZ'); _q.setFromEuler(_e);
  */
 export function gaitPose(phase, v, out, style = null, ball = 0) {
   // with the ball: a lower, more compact stride (less knee drive), head over it, arms out for balance
-  const u = Math.min(1, Math.max(0, (v - 5) / 4.5)) * (1 - 0.3 * ball);
+  const u = Math.min(1.15, Math.max(0, (v - 5) / 4.0)) * (1 - 0.3 * ball);
   const D = 0.33 - 0.11 * u;                                 // ground contact fraction
-  const hTD = 28 + 10 * u, hTO = -12 - 8 * u, hPk = 52 + 26 * u;
-  const kSt = 38 + 6 * u, kTO = 24 + 4 * u, kMax = 95 + 32 * u;
+  const hTD = 28 + 12 * u, hTO = -12 - 12 * u, hPk = 52 + 32 * u;   // full extension behind, big knee drive in front
+  const kSt = 38 + 6 * u, kTO = 22 + 2 * u, kMax = 95 + 38 * u;
   const hipK = [[0, hTD], [D * 0.5, (hTD + hTO) * 0.5 - 2], [D, hTO], [D + 0.05, hTO - 3], [0.5, hPk * 0.55], [0.72, hPk], [0.9, hTD + 8]];
   const kneeK = [[0, 22], [D * 0.45, kSt], [D, kTO], [0.38, kMax * 0.8], [0.55, kMax], [0.78, 60], [0.92, 30]];
   const ankK = [[0, 6], [D * 0.45, -14], [D, 26], [D + 0.12, 16], [0.6, -6], [0.88, 0]];
@@ -58,7 +58,7 @@ export function gaitPose(phase, v, out, style = null, ball = 0) {
   const L = leg(phase, 1), R = leg(phase + 0.5, -1);
   const c = Math.cos(phase * Math.PI * 2);
   // pelvis: anterior tilt + lean, rotates with the leg that's forward, bounces in flight
-  const pelvTilt = 16 + 6 * u + 5 * ball + (style ? style.lean * 40 : 0);
+  const pelvTilt = 16 + 9 * u + 5 * ball + (style ? style.lean * 40 : 0);
   setQ(out, Q.pelvis, pelvTilt * D2R, -6 * c * D2R, 2.5 * Math.sin(phase * Math.PI * 4) * D2R);
   setQ(out, Q.torso, (-3 - 2 * u) * D2R, 11 * c * D2R, 0);
   setQ(out, Q.head, (-12 - 4 * u + 14 * ball) * D2R, -4 * c * D2R, 0);
@@ -68,7 +68,7 @@ export function gaitPose(phase, v, out, style = null, ball = 0) {
   out[H.kneeL] = L.knee * D2R; out[H.kneeR] = R.knee * D2R;
   out[H.ankL] = L.ank * D2R; out[H.ankR] = R.ank * D2R;
   // arms: opposite to the legs (left arm back when the left foot lands), slight lag
-  const aAmp = 40 + 16 * u;
+  const aAmp = 40 + 26 * u;          // arms pumping hard at top speed
   const cl = Math.cos((phase - 0.03) * Math.PI * 2), cr = -cl;
   setQ(out, Q.shL, (6 + aAmp * cl * (1 - 0.25 * ball)) * D2R, -6 * D2R, (12 + 14 * ball) * D2R);
   setQ(out, Q.shR, (6 + aAmp * cr * (1 - 0.25 * ball)) * D2R, 6 * D2R, -(12 + 14 * ball) * D2R);

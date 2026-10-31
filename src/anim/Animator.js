@@ -57,7 +57,7 @@ const ACTIONS = {
   stepover: { hand: 'legs' }, feint: { hand: 'legs' }, croqueta: { hand: 'legs' }, spin: { hand: 'legs' },
   dragback: { hand: 'legs' }, elastico: { hand: 'legs' }, flick: { hand: 'legs' },
   rainbowS: { hand: 'full', fadeIn: 0.1, fadeOut: 0.2 }, rouletteS: { hand: 'full', fadeIn: 0.08, fadeOut: 0.2 },
-  elasticoS: { hand: 'legs', fadeIn: 0.06, fadeOut: 0.18 }, stepoversS: { hand: 'full', fadeIn: 0.08, fadeOut: 0.2 },
+  elasticoS: { hand: 'legs', fadeIn: 0.06, fadeOut: 0.18 }, stepoversS: { hand: 'full', handMask: (an) => (an.fast ? 'legs' : 'full'), fadeIn: 0.08, fadeOut: 0.2 },
   header: { hand: 'full', fadeIn: 0.15, fadeOut: 0.35 }, dragturnS: { hand: 'full', fadeIn: 0.08, fadeOut: 0.2 },
   point: { hand: 'armR', fadeIn: 0.1, fadeOut: 0.25 },
   // first-time finishes off a cross + the referee showing a card
@@ -104,7 +104,7 @@ const NO_LOOK = new Set(['fall', 'dive', 'sitdown', 'crouchsad', 'dejected', 'hi
 const _hp = new THREE.Vector3(), _qt = new THREE.Quaternion(), _qi = new THREE.Quaternion(), _fd = new THREE.Vector3(), _dl = new THREE.Vector3(), _qd = new THREE.Quaternion();
 
 /** Steps per second at a running speed (m/s), from sprint studies of footballers / sprinters. */
-const CAD = [[0, 1.4], [1.4, 1.85], [2.5, 2.45], [3.5, 2.75], [5, 3.0], [6.5, 3.3], [8, 3.8], [9.3, 4.3], [10.5, 4.55]];
+const CAD = [[0, 1.4], [1.4, 1.85], [2.5, 2.45], [3.5, 2.8], [5, 3.2], [6.5, 3.7], [8, 4.25], [9.3, 4.75], [10.5, 5.0], [12, 5.2]];
 function cadenceAt(v) {
   if (v <= CAD[0][0]) return CAD[0][1];
   for (let i = 1; i < CAD.length; i++) if (v <= CAD[i][0]) { const [a, fa] = CAD[i - 1], [b, fb] = CAD[i]; return fa + ((v - a) / (b - a)) * (fb - fa); }

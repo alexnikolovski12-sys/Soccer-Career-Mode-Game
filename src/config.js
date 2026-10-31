@@ -53,7 +53,7 @@ export const CONFIG = {
     jogFactor: 0.45,
     accel: (acc) => sMap(acc, 5.5, 11.5),                 // m/s² towards target speed
     decel: (acc) => sMap(acc, 9, 15),
-    dribbleSpeedFactor: (dri) => sMap(dri, 0.84, 0.95),   // speed multiplier while carrying the ball
+    dribbleSpeedFactor: (dri) => sMap(dri, 0.95, 1.0),   // speed multiplier while carrying the ball
     touchMult: (dri) => sMap(dri, 1.45, 1.12),            // ball speed after a touch ÷ player speed
     sprintTouchExtra: (dri) => sMap(dri, 0.55, 0.3),      // extra touch push when sprinting
     touchError: (dri) => sMap(dri, 0.14, 0.03),           // radians of random touch deviation

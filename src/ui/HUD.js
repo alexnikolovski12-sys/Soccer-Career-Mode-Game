@@ -69,7 +69,7 @@ export class HUD {
       { up: 'CHIP', down: 'DRIVEN', left: 'FAKE', right: 'FINESSE' });
     this.btnPass = btn('pass', 'PASS', ['up'], { up: 'LOB' });
     this.btnSprint = btn('sprint', 'SPRINT<small>&amp; SKILL</small>', ['up', 'down', 'left', 'right'],
-      { up: 'RAINBOW', down: 'DRAG BACK', left: 'ROULETTE', right: 'ELASTICO' });
+      { up: 'RAINBOW', down: 'DRAG BACK', left: 'ROULETTE', right: 'STEPOVERS' });
     pad.append(this.btnThrough, this.btnShoot, this.btnPass, this.btnSprint);
     r.appendChild(pad);
     this.pad = pad;

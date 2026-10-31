@@ -122,10 +122,19 @@ export class Skills {
     const sc = SCRIPTED[key];
     if (sc) {
       // scripted: the ball follows the move exactly, the body does the real technique
-      const sk2 = { ...sk, dur: sc.dur, beat: sc.beat, shift: 0, kick: null };
-      this.active = { key, sk: sk2, o, d, t: 0, side, px, pz, fx, fz, resolved: false, script: sc,
+      let scr = sc;
+      if (key === 'stepovers') {
+        // done on the move: he keeps his speed, the ball rolls on with him
+        const v0 = Math.max(1.4, Math.hypot(o.vel.x, o.vel.z)), D = v0 * sc.dur;
+        scr = { ...sc, holdSpeed: Math.max(1.6, v0 * 1.05),
+          ball: [[0, 0.36, 0, R], [0.86, D * 0.86 + 0.36, 0, R], [1, D + 0.75, -0.3, R]],
+          player: [[0, 0, 0], [0.11, D * 0.11, -0.1], [0.32, D * 0.32, 0.1], [0.54, D * 0.54, -0.1], [0.75, D * 0.75, 0.1], [0.86, D * 0.86, 0], [1, D, -0.2]],
+          overs: 0 };
+      }
+      const sk2 = { ...sk, dur: scr.dur, beat: scr.beat, shift: 0, kick: null };
+      this.active = { key, sk: sk2, o, d, t: 0, side, px, pz, fx, fz, resolved: false, script: scr,
         x0: o.pos.x, z0: o.pos.z, h0: o.heading, last: ball.pos.clone() };
-      o.playAction(sc.anim, sc.dur, { side, kickLeg: 1 });
+      o.playAction(scr.anim, scr.dur, { side, kickLeg: 1, fast: Math.hypot(o.vel.x, o.vel.z) > 3.5 });
       ball.frozen = true; ball.vel.set(0, 0, 0);
       if (o.isUser) { g.audio.touch(); if (key === 'rainbow') g.audio.anticipate(); }
       return;
@@ -232,6 +241,16 @@ export class Skills {
       o.faceTowards(o.pos.x + Math.sin(h) * 5, o.pos.z + Math.cos(h) * 5);
       o.heading = h;
     } else o.faceTowards(o.pos.x + fx * 5, o.pos.z + fz * 5);
+    // stepovers: each swing takes the boot up and over the top of the ball
+    if (sc.overs != null && k < 0.86) {
+      const j = Math.floor((k / 0.86) * 4);
+      if (j >= sc.overs && j < 4) {
+        sc.overs = j + 1;
+        const foot = j % 2 ? -1 : 1;
+        const lead = 0.86 / 4 * 0.35 * sc.dur;
+        o.reachFor(foot, ball.pos.x + fx * (0.06 + o.speed * lead), 0.3, ball.pos.z + fz * (0.06 + o.speed * lead), lead, 0.12);
+      }
+    }
     void rx; void rz;
   }
 }

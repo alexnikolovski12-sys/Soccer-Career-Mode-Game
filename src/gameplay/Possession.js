@@ -191,6 +191,13 @@ export class Possession {
       if (o.isUser) g.audio.touch();
     }
     if (ball.pos.y < 0.2) { const kd = Math.exp(-(0.75 + 0.06 * bs + 0.8 * (st.steerS || 0)) * dt); ball.vel.x *= kd; ball.vel.z *= kd; }
+    // a ball that's ended up level with or behind him is brought straight back out in front
+    if (ahead < 0.15 && ball.pos.y < 0.3 && bd < carry + 1.6) {
+      const k2 = Math.min(1, dt * 12);
+      const tx = o.pos.x + dx * carry, tz = o.pos.z + dz * carry;
+      ball.pos.x += (tx - ball.pos.x) * k2; ball.pos.z += (tz - ball.pos.z) * k2;
+      ball.vel.x += (dx * o.speed - ball.vel.x) * k2; ball.vel.z += (dz * o.speed - ball.vel.z) * k2;
+    }
     // never overrun it: a ball that has slipped under his feet is worked back
     // out in front (as the next stride would), so it sits ~carry ahead
     if (ahead < carry * 0.75 && bd < D.circleMax && ball.pos.y < 0.3) {
@@ -202,14 +209,14 @@ export class Possession {
     }
     // the ball never leaves his circle: one that's run on is drawn back in front
     // of him (rolling at his pace) and it can't get further than an arm's length
-    const maxD = carry + (o.sprinting ? 1.6 : 1.0) * (1 - 0.55 * Math.max(st.steerS || 0, 0));
+    const maxD = carry + (o.sprinting ? 0.85 : 0.6) * (1 - 0.5 * Math.max(st.steerS || 0, 0));
     if (bd > maxD && ball.pos.y < 0.4) {
       const k = Math.min(1, dt * 6);
       const tx = o.pos.x + dx * carry, tz = o.pos.z + dz * carry;
       ball.pos.x += (tx - ball.pos.x) * k; ball.pos.z += (tz - ball.pos.z) * k;
       ball.vel.x += (dx * o.speed - ball.vel.x) * k; ball.vel.z += (dz * o.speed - ball.vel.z) * k;
     }
-    this._leash(o, carry + (o.sprinting ? 2.1 : 1.5));
+    this._leash(o, carry + (o.sprinting ? 1.35 : 1.0));
   }
 
   /** Hard limit: the ball can never be further than `max` from the carrier. */
