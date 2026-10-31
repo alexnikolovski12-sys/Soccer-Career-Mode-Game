@@ -2,7 +2,7 @@
   "name": "breakaway-match-engine",
   "version": "0.1.0",
   "private": true,
-  "description": "Mobile football career prototype \u2014 one attacking moment (Three.js, motion-captured players).",
+  "description": "Mobile football career prototype — one attacking moment (Three.js, motion-captured players).",
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
@@ -16,6 +16,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.25.10",
+    "meshoptimizer": "^0.22.0",
     "three": "^0.186.1"
   }
 }

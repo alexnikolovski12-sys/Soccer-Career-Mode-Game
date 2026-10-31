@@ -5,6 +5,7 @@
 // ragdoll for falls). Foot IK runs in Animator.solveIK() after the root has
 // been placed for the frame.
 import * as THREE from 'three';
+import { RIG } from '../entities/HumanBody.js';
 import { clamp } from '../config.js';
 import { clips, newPose, Accum, blendInto, Q, H, OFF } from './Clips.js';
 import { handPose, HAND_KEYS } from './HandPoses.js';
@@ -720,7 +721,10 @@ export class Animator {
     P.legR.ankle.quaternion.setFromAxisAngle(X_AXIS, pose[H.ankR]);
     P.armL.el.quaternion.setFromAxisAngle(X_AXIS, pose[H.elL]);
     P.armR.el.quaternion.setFromAxisAngle(X_AXIS, pose[H.elR]);
-    P.body.position.set(pose[OFF] * sc, pose[OFF + 1] * sc, pose[OFF + 2] * sc);
+    // the mocap was retargeted to a 0.92 m pelvis; the human body stands a little taller
+    // (blend the extra height out as he goes to ground so lying poses stay on the grass)
+    const y = pose[OFF + 1], lift = (RIG.bodyY - 0.92) * Math.max(0, Math.min(1, (y - 0.25) / 0.6));
+    P.body.position.set(pose[OFF] * sc, (y + lift) * sc, pose[OFF + 2] * sc);
   }
 
   /**
@@ -730,7 +734,7 @@ export class Animator {
   solveIK(parts, sc, dt) {
     const root = parts.root;
     root.updateMatrixWorld(true);
-    const ground = 0.0775 * sc;
+    const ground = RIG.ankleH * sc;
     for (let i = 0; i < 2; i++) {
       const leg = i ? parts.legR : parts.legL;
       const ank = _v.setFromMatrixPosition(leg.ankle.matrixWorld);
@@ -770,7 +774,7 @@ export class Animator {
   }
 
   _ik2(leg, body, tx, ty, tz, sc) {
-    const a = 0.43 * sc, b = 0.39 * sc;
+    const a = RIG.thigh * sc, b = RIG.shin * sc;
     leg.hip.updateMatrixWorld(true);
     const hipP = _v2.setFromMatrixPosition(leg.hip.matrixWorld);
     const T = _v3.set(tx, ty, tz);
