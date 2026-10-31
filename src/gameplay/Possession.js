@@ -193,7 +193,7 @@ export class Possession {
     // came through the back of you to get it → foul
     const F = CONFIG.defender;
     const bodyFirst = dist2D(winner.pos, o.pos) < dist2D(winner.pos, ball.pos) - F.foulBodyMargin;
-    if (o.team === 'home' && bodyFirst && g.rng.next() < F.foulFromBehind) {
+    if (bodyFirst && g.rng.next() < F.foulFromBehind * (o.team === 'home' ? 1 : 0.6)) {
       winner.playAction('tackle', 0.55);
       o.hit(o.pos.x - winner.pos.x, o.pos.z - winner.pos.z, 2 + winner.speed * 0.5);
       o.playAction('fall', 1.0, { side: g.rng.sign() });
@@ -222,8 +222,7 @@ export class Possession {
       if (p.anim.action === 'fall') continue;
       // a cross being met first time in the box: he volleys it rather than controlling it
       if (ball.pass && ball.pass.finish && ball.pass.to === p && ball.pos.y > 0.3) continue;
-      // passes are safe: an opponent can't cut out a pass on its way to a teammate
-      if (ball.pass && ball.pass.to && p.team !== ball.pass.to.team) continue;
+      // your passes are guided past opponents (the assist); the AI's can be cut out
       const d = dist2D(p.pos, ball.pos);
       if (loftTo && p !== loftTo && ball.pos.y > D.receiveMaxHeight) continue;
       // the intended receiver gets a big, forgiving reach so passes almost always arrive
@@ -232,11 +231,12 @@ export class Possession {
       if (d < r && d < bestD) { best = p; bestD = d; }
     }
     if (!best) return;
-    if (best.team === 'away' && ball.pass && ball.speed > 6) {
+    if (ball.pass && ball.pass.to && best.team !== ball.pass.to.team) {
       // interception attempt — a crisp pass zipped past a defender often beats him
-      const skill = CONFIG.teamMap.interceptSkill(best.rating);
+      const fromUser = ball.pass.from && ball.pass.from.team === 'home';
+      const skill = CONFIG.teamMap.interceptSkill(best.rating) * (fromUser ? 0.45 : 1) * (best.isUser ? 1.25 : 1);
       const p = Math.min(0.9, skill * (0.55 + 0.45 * Math.max(0, 1 - ball.speed / 24)));
-      if (g.rng.next() > p) { ball.ignore.set(best, 0.4); return; }
+      if (ball.speed > 4 && g.rng.next() > p) { ball.ignore.set(best, 0.4); return; }
     }
     this.gain(best);
   }

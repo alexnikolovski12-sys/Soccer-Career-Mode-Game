@@ -47,7 +47,21 @@ export class CameraRig {
     let posK = C.posDamping, lookK = C.lookDamping, fov = S.fov;
     const gx = CONFIG.pitch.length / 2;
 
-    if (this.mode === 'follow' || this.mode === 'intro') {
+    if (this.mode === 'broadcast') {
+      // TV camera on the near touchline side: tracks the ball (and you), play runs left → right
+      const B = this.portrait ? C.broadcast.portrait : C.broadcast.landscape;
+      const b = game.ball.pos, u = game.user;
+      const fcs = this._bf || (this._bf = new THREE.Vector3());
+      fcs.set(b.x * 0.78 + u.pos.x * 0.22, 0, b.z * 0.8 + u.pos.z * 0.2);
+      const gx2 = CONFIG.pitch.length / 2 - 8;
+      fcs.x = clamp(fcs.x, -gx2, gx2);
+      const z0 = clamp(fcs.z, -CONFIG.pitch.width / 2 + 6, CONFIG.pitch.width / 2 - 6);
+      const att = game.ball.owner ? (game.ball.owner.team === 'home' ? 1 : -1) : 0;
+      this._lead = (this._lead || 0) + (att * B.lead - (this._lead || 0)) * dampT(1.2, dt);
+      this.desiredPos.set(fcs.x + this._lead, B.height * this.zoom, z0 * B.lookZ - B.back * this.zoom);
+      this.desiredLook.set(fcs.x + this._lead, 0, z0 * 0.9 + 1.5);
+      posK = 3; lookK = 4.5; fov = B.fov;
+    } else if (this.mode === 'follow' || this.mode === 'intro') {
       const u = game.user;
       const focus = this._focus || (this._focus = new THREE.Vector3());
       // follow the user but keep the ball in frame when a teammate has it
@@ -128,15 +142,16 @@ export class CameraRig {
     } else if (this.mode === 'replay') {
       // broadcast-style side view tracking the ball, low and close
       const b = this.opts.ballPos || game.ball.mesh.position;
-      const side = this.opts.side || 1;
-      this.desiredPos.set(b.x - 7, 3.2, b.z + side * (this.portrait ? 16 : 12));
-      this.desiredLook.set(b.x + 1.5, 1, b.z);
+      const side = this.opts.side || 1, e = this.opts.end || 1;
+      this.desiredPos.set(b.x - e * 7, 3.2, b.z + side * (this.portrait ? 16 : 12));
+      this.desiredLook.set(b.x + e * 1.5, 1, b.z);
       posK = 3.5; lookK = 6;
       fov = this.portrait ? 55 : 40;
     } else if (this.mode === 'goalview') {
-      // looking back from behind the net
-      this.desiredPos.set(gx + 7, 3.4, (this.opts.z || 0) * 0.4 + 2);
-      this.desiredLook.set(gx - 6, 1, (this.opts.z || 0) * 0.5);
+      // looking back from behind the net (either end)
+      const e = this.opts.end || 1;
+      this.desiredPos.set(e * (gx + 7), 3.4, (this.opts.z || 0) * 0.4 + 2);
+      this.desiredLook.set(e * (gx - 6), 1, (this.opts.z || 0) * 0.5);
       posK = 3; lookK = 5;
     }
 

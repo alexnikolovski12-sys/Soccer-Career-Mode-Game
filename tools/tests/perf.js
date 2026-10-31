@@ -1,5 +1,5 @@
 // CPU cost of animation (blend tree + physics + IK) per rendered frame, all players.
-startMoment();
+g.autoplay = true; quickMatch();
 mv.x = 0.3; mv.y = 1; mv.mag = 1;
 run(1);
 const ps = g.players;

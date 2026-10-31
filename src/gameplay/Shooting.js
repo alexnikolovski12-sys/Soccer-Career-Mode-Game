@@ -59,8 +59,8 @@ export class Shooting {
   }
 
   /** Pick the side of the goal away from the keeper (far post when he's central). */
-  _side(start) {
-    const kz = this.game.keeperPlayer.pos.z;
+  _side(start, shooter = null) {
+    const kz = this.keeperFor(shooter).p.pos.z;
     if (Math.abs(kz) > 0.35) return kz > 0 ? -1 : 1;
     if (Math.abs(start.z) > 1) return start.z > 0 ? -1 : 1;
     return this.game.rng.chance(0.5) ? 1 : -1;
@@ -74,7 +74,7 @@ export class Shooting {
   /** Shot animation variant (decided at the start of the kick). */
   _variant(shooter, kind, dist, pressure) {
     const g = this.game;
-    const yaw = Math.atan2(CONFIG.pitch.length / 2 - shooter.pos.x, -shooter.pos.z);
+    const yaw = Math.atan2(this.sign(shooter) * CONFIG.pitch.length / 2 - shooter.pos.x, -shooter.pos.z);
     const turn = Math.abs(((yaw - shooter.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
     let variant = kind === 'normal' ? 'laces' : kind;
     if (kind === 'normal' && dist < 8 && g.rng.chance(0.4)) variant = 'placed';
@@ -90,7 +90,8 @@ export class Shooting {
 
   _startStrike(shooter, kind, fire, setPiece = false, kickAnim = true) {
     const g = this.game, ball = g.ball, S = CONFIG.shot;
-    const dist = Math.hypot(CONFIG.pitch.length / 2 - ball.pos.x, ball.pos.z);
+    const sg = this.sign(shooter);
+    const dist = Math.hypot(sg * CONFIG.pitch.length / 2 - ball.pos.x, ball.pos.z);
     const { variant, offBalance } = this._variant(shooter, kind, dist, setPiece ? 0 : this._pressureOn(shooter));
     const t = setPiece ? S.runUpTime * (kickAnim ? 1 : 0.8) : S.strikeWindup;
     const kickLeg = setPiece ? 1 : (g.rng.chance(0.82) ? 1 : -1);
@@ -99,7 +100,7 @@ export class Shooting {
     if (setPiece) {
       // run up from behind the ball; it can't be touched meanwhile
       ball.frozen = true;
-      const gx = CONFIG.pitch.length / 2;
+      const gx = sg * CONFIG.pitch.length / 2;
       const l = Math.hypot(gx - ball.pos.x, ball.pos.z) || 1;
       const ux = (gx - ball.pos.x) / l, uz = -ball.pos.z / l;
       const back = kickAnim ? 0.32 : 0.5;
@@ -128,7 +129,7 @@ export class Shooting {
     if (k.kickAnim) p.reachFor(k.kickLeg, ball.pos.x, ball.pos.y, ball.pos.z, 0, 0.1);
     else p.vel.set(0, 0, 0);
     const r = k.fire();
-    if (r === true && g.onShotFired) g.onShotFired();
+    if (r === true && g.onShotFired) g.onShotFired(p);
   }
 
   /** Release of the SHOOT button. kind: normal | driven | chip | finesse | fake */
@@ -144,7 +145,7 @@ export class Shooting {
     const start = ball.pos.clone();
     start.y = Math.max(start.y, CONFIG.ball.radius);
     const dist = Math.hypot(gx - start.x, start.z);
-    const side = this._side(start);
+    const side = this._side(start, shooter);
     const st = shooter.stats;
     const maxSp = CONFIG.statMap.maxShotSpeed(st.shotPower) * S.powerCap;
 
@@ -317,6 +318,60 @@ export class Shooting {
     return 'fake';
   }
 
+  // ------------------------------------------------------------ both ends
+  /** +1 if this player's team attacks the goal at +x (home), −1 for −x (away). */
+  sign(p) { return !p || p.team === 'home' ? 1 : -1; }
+
+  /** The keeper guarding the goal this player shoots at. */
+  keeperFor(p) { return this.sign(p) > 0 ? this.game.keeper : (this.game.homeKeeper || this.game.keeper); }
+
+  /**
+   * solve() for either goal: the physics is symmetric under x → −x (with the
+   * curve flipped), so a shot at the −x goal is solved mirrored and flipped back.
+   */
+  solveFor(sign, start, T, speed, curve) {
+    if (sign > 0) return this.solve(start, T, speed, curve);
+    const ms = start.clone(); ms.x = -ms.x;
+    const mT = T.clone(); mT.x = -mT.x;
+    const L = this.solve(ms, mT, speed, -curve);
+    L.vx = -L.vx; L.curve = -L.curve;
+    if (L.result.path) L.result.path = L.result.path.map((q) => ({ ...q, x: -q.x }));
+    if (L.result.end) L.result.end.x = -L.result.end.x;
+    return L;
+  }
+
+  /** In range for an AI shot at the goal its team attacks. */
+  aiCanShoot(p) {
+    const ball = this.game.ball, sg = this.sign(p);
+    const gx = sg * CONFIG.pitch.length / 2;
+    const d = Math.hypot(gx - ball.pos.x, ball.pos.z);
+    const ang = this.goalAngleDeg({ x: sg * ball.pos.x, z: ball.pos.z });
+    return this.canShoot(p) && !this.strike && d < 26 && ang > 9;
+  }
+
+  /** An AI player shoots: placed or driven at the corner away from the keeper, error from his stats. */
+  aiShoot(p) {
+    if (!this.aiCanShoot(p)) return false;
+    const g = this.game, ball = g.ball, S = CONFIG.shot, P = CONFIG.pitch, sg = this.sign(p);
+    return this._startStrike(p, 'normal', () => {
+      if (!this.canShoot(p)) return false;
+      const gx = sg * P.length / 2, hw = P.goalWidth / 2;
+      const start = ball.pos.clone(); start.y = Math.max(start.y, CONFIG.ball.radius);
+      const dist = Math.hypot(gx - start.x, start.z);
+      const st = p.stats, pressure = this._pressureOn(p);
+      const skill = 1.3 - (st.finishing * 0.6 + st.composure * 0.4) / 100;
+      const sigma = (S.errBase + Math.max(0, dist - 11) * S.errPerMetre + pressure * S.errPressure) * skill * 1.15;
+      const side = this._side(start, p), rng = g.rng;
+      const maxSp = CONFIG.statMap.maxShotSpeed(st.shotPower) * S.powerCap;
+      const low = rng.chance(0.45);
+      const T = new THREE.Vector3(gx, low ? 0.3 + rng.next() * 0.4 : 0.9 + rng.next() * 1.0, side * (hw - 0.9) + rng.gauss() * sigma);
+      T.y += Math.abs(rng.gauss()) * sigma * 0.5;
+      const speed = lerp(maxSp * 0.7, maxSp * 0.95, Math.min(1, dist / 25));
+      const launch = this.solveFor(sg, start, T, speed, side * 0.3 * (sg > 0 ? 1 : -1));
+      return this.fire(p, launch, { kind: 'normal', power: 0.7, pressure, dist });
+    });
+  }
+
   // ------------------------------------------------------------ prediction
   /** Simulate a launch with the live integrator. */
   simulate(start, vx, vy, vz, curve, record = false) {
@@ -426,7 +481,7 @@ export class Shooting {
     g.effects.puff(ball.pos.x, ball.pos.z, 1 + power);
     if (power > 0.7 || kind === 'driven') g.camRig.addShake(CONFIG.juice.shotShake * (1 + power));
     const info = { ...L.result, speed: L.speed, power, kind };
-    const kp = g.keeper.onShot(L.result.path, info, shooter);
+    const kp = this.keeperFor(shooter).onShot(L.result.path, info, shooter);
     const edgeClose = info.onTarget ? info.edgeDistance < CONFIG.shot.closeCallMargin * 0.6 : info.missDistance < CONFIG.shot.closeCallMargin;
     const keeperClose = kp && kp.prob > 0.2 && kp.prob < 0.8;
     this.flight = {
@@ -446,8 +501,8 @@ export class Shooting {
     const g = this.game, ball = g.ball;
     f.t += dt;
     const gx = CONFIG.pitch.length / 2;
-    // slow-mo for the final metres of a close call
-    if (f.closeCall && !f.slow && ball.pos.x > gx - CONFIG.shot.slowMoDistance && ball.lastKick?.type === 'shot') {
+    // slow-mo for the final metres of a close call (your shots)
+    if (f.closeCall && !f.slow && f.shooter.team === 'home' && ball.pos.x > gx - CONFIG.shot.slowMoDistance && ball.lastKick?.type === 'shot') {
       f.slow = true;
       g.setTimeScale(CONFIG.shot.slowMoSpeed, 0.12);
     }
@@ -458,8 +513,8 @@ export class Shooting {
     }
     // blocks by outfield defenders in the path
     if (ball.lastKick && ball.lastKick.type === 'shot' && ball.pos.y < 2.0) {
-      for (const d of g.defenders) {
-        if (f.blocked.has(d) || !ball.canTouch(d)) continue;
+      for (const d of g.opponentsOf(f.shooter)) {
+        if (d.isKeeper || f.blocked.has(d) || !ball.canTouch(d)) continue;
         const dx = ball.pos.x - d.pos.x, dz = ball.pos.z - d.pos.z;
         if (dx * dx + dz * dz < CONFIG.shot.blockRadius * CONFIG.shot.blockRadius) {
           f.blocked.add(d);

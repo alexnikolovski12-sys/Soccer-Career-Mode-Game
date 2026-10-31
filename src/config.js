@@ -369,6 +369,11 @@ export const CONFIG = {
     // ballNdc / goalNdc: how far below / above screen centre the ball and goal sit (0..1)
     shot: { back: 3.6, height: 1.6, side: 0.6, minFov: 22, maxFov: 62, ballNdc: 0.74, goalNdc: 0.42, damping: 9, ghost: 0.85 },
     flight: { damping: 4 },
+    // full matches: broadcast camera from the stand side, play left → right
+    broadcast: {
+      landscape: { back: 30, height: 12.5, fov: 38, lead: 4, lookZ: 0.45 },
+      portrait: { back: 40, height: 22, fov: 50, lead: 2, lookZ: 0.4 },
+    },
     shakeDecay: 3.2,
   },
 
@@ -388,9 +393,10 @@ export const CONFIG = {
     shadowMapSize: 1024,
   },
 
-  // --------------------------------------------------------------- juice
-  career: {
-    momentsPerMatch: 6,        // attacking moments you play in each career match
+  // --------------------------------------------------------------- full matches
+  match: {
+    halfSeconds: 150,          // real seconds per 45-minute half
+    autoSwitchDistance: 22,    // defending: you're switched to a better-placed player when this far from the ball
   },
 
   juice: {

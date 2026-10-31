@@ -48,11 +48,12 @@ export class Passing {
     const P = CONFIG.pass;
     let vx = t.vel.x, vz = t.vel.z;
     // runners on the last line get a through ball into space
+    const sg = passer.team === 'home' ? 1 : -1;
     if (t.ai && t.ai.role === 'runner' && !t.isUser) {
-      const line = this.game.offsideLine();
-      if (t.pos.x > line - 3) {
+      const line = this.game.offsideLine(passer.team);
+      if (sg * t.pos.x > sg * line - 3) {
         const sp = t.runSpeed;
-        const gx = CONFIG.pitch.length / 2 - 6;
+        const gx = sg * (CONFIG.pitch.length / 2 - 6);
         const dx = gx - t.pos.x, dz = -t.pos.z * 0.4;
         const l = Math.hypot(dx, dz) || 1;
         vx = (dx / l) * sp * P.throughBallLead; vz = (dz / l) * sp * P.throughBallLead;
@@ -97,7 +98,7 @@ export class Passing {
       if (d > range) score -= (d - range) / 8;
       score -= P.laneWeight * laneAware * Math.max(0, (P.laneClear - lane) / P.laneClear);
       if (lane < 1) score -= 1.2 * laneAware; // a body right in the lane = near-certain interception
-      score += ((lead.x - passer.pos.x) / 20) * 0.35;
+      score += (((lead.x - passer.pos.x) * (passer.team === 'home' ? 1 : -1)) / 20) * 0.35;
       if (t.signal) score += 0.25;
       if (t.isUser) score += 0.3;
       if (score > bestScore) { bestScore = score; best = t; }
@@ -152,8 +153,9 @@ export class Passing {
 
   /** Where a through ball goes: in front of the runner, toward the goal we attack. */
   throughPoint(passer, t, out = new THREE.Vector3()) {
-    const gx = CONFIG.pitch.length / 2;
-    const dx = gx - 5 - t.pos.x, dz = -t.pos.z * 0.45;
+    const sg = passer.team === 'home' ? 1 : -1;
+    const gx = sg * CONFIG.pitch.length / 2;
+    const dx = gx - sg * 5 - t.pos.x, dz = -t.pos.z * 0.45;
     const l = Math.hypot(dx, dz) || 1;
     // more space in front → lead it further
     let space = 99;
@@ -164,7 +166,7 @@ export class Passing {
     }
     const lead = clamp(Math.min(space * 0.8, CONFIG.pass.throughMax), CONFIG.pass.throughMin, CONFIG.pass.throughMax);
     out.set(t.pos.x + (dx / l) * lead, 0, t.pos.z + (dz / l) * lead);
-    const L = gx - 2.5, W = CONFIG.pitch.width / 2 - 1.5;
+    const L = CONFIG.pitch.length / 2 - 2.5, W = CONFIG.pitch.width / 2 - 1.5;
     out.x = clamp(out.x, -L, L); out.z = clamp(out.z, -W, W);
     return out;
   }
@@ -176,7 +178,7 @@ export class Passing {
     let sel = this.selectTarget(user, dirX, dirZ, null, kind === 'lofted' ? 12 + power * 28 : null);
     if (kind === 'through') {
       // prefer a teammate ahead of us for a through ball
-      const fwd = this.selectTarget(user, dirX * 0.4 + 1, dirZ * 0.4);
+      const fwd = this.selectTarget(user, dirX * 0.4 + (user.team === 'home' ? 1 : -1), dirZ * 0.4);
       if (fwd && fwd.target.pos.x > user.pos.x - 2) sel = fwd;
     }
     const kickLeg = (this.kickLeg = -this.kickLeg);
@@ -199,6 +201,7 @@ export class Passing {
   /** AI pass (teammate). */
   requestAIPass(passer, target, kind = 'ground') {
     if (this.pending) return;
+    if (kind === 'ground' && Math.hypot(target.pos.x - passer.pos.x, target.pos.z - passer.pos.z) > 32) kind = 'lofted';
     const kickLeg = (this.kickLeg = -this.kickLeg);
     const variant = this.pickVariant(passer, kind, target.pos.x, target.pos.z);
     passer.playAction('pass', 0.5, { kickLeg, variant, contactAt: CONFIG.pass.windup * 0.8 });

@@ -1,4 +1,5 @@
 // Bootstrap, fixed-timestep game loop and the game state machine.
+// Breakaway — full 11-a-side matches (Ultimate Team). Home attacks +x (left → right).
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { Loop } from './core/Loop.js';
@@ -13,20 +14,18 @@ import { Effects } from './world/Effects.js';
 import { Player } from './entities/Player.js';
 import { Ball } from './entities/Ball.js';
 import { Keeper } from './entities/Keeper.js';
-import { TeammateAI } from './ai/TeammateAI.js';
-import { DefenderAI } from './ai/DefenderAI.js';
+import { TeamAI, FORMATIONS } from './ai/TeamAI.js';
 import { Possession } from './gameplay/Possession.js';
 import { Passing } from './gameplay/Passing.js';
 import { Shooting } from './gameplay/Shooting.js';
 import { Skills } from './gameplay/Skills.js';
-import { MomentManager, SCENARIOS } from './gameplay/MomentManager.js';
+import { Match } from './gameplay/Match.js';
 import { Replay } from './gameplay/Replay.js';
 import { HUD } from './ui/HUD.js';
 import { ShotOverlay } from './ui/ShotOverlay.js';
 import { DebugPanel } from './debug/DebugPanel.js';
-import { Hub } from './career/Hub.js';
-import { appearanceOf } from './career/AvatarView.js';
-import { USER_PLAYER, TEAMS, randomLook, statsFromRating } from './data/playerStats.js';
+import { UltimateTeam } from './ut/UltimateTeam.js';
+import { TEAMS, randomLook, statsFromRating } from './data/playerStats.js';
 
 class Events {
   constructor() { this.map = {}; }
@@ -35,6 +34,8 @@ class Events {
 }
 
 const easeInOut = (t) => t * t * (3 - 2 * t);
+const CELEBRATIONS = ['kneeslide', 'kneeslide', 'bellyslide', 'airplane', 'jumpfist', 'spinjump', 'pointsky', 'cuptheear',
+  'shush', 'armscrossed', 'salute', 'calmdown', 'heart', 'badgepoint', 'robot', 'backflip'];
 
 class Game {
   constructor() {
@@ -43,7 +44,7 @@ class Game {
     this.layer = document.getElementById('touch-layer');
     this.config = CONFIG; // handy for console tuning: game.config.shot.wobbleScale = 0
     this.events = new Events();
-    this.rng = makeRng(1);
+    this.rng = makeRng((Math.random() * 2 ** 31) | 0);
     this.simTime = 0;
     this.realTime = 0;
     this.lastPasser = null;
@@ -73,54 +74,44 @@ class Game {
       this.scene.add(this.aimLine, this.aimRing);
     }
 
-    // ---- players (pools; each moment activates a subset)
+    // ---- two full squads (index 0 = keeper). The squads' looks/stats are set per match.
     const rng = makeRng(20240611);
-    this.user = new Player(this.scene, {
-      id: 'user', team: 'home', role: 'user', name: USER_PLAYER.shortName,
-      look: USER_PLAYER.look, stats: USER_PLAYER.stats, rating: TEAMS.home.rating,
+    const mk = (id, team, role, n, kit) => new Player(this.scene, {
+      id, team, role, rating: 70, name: '', look: { ...randomLook(rng, kit, n), height: role === 'gk' ? 1.9 : rng.range(1.74, 1.9) },
+      stats: statsFromRating(70, rng),
     });
-    this.career = this.user; // your career player — control returns to him every moment
-    this.user.isCareer = true;
-    this.user.setControlled(true); // shows the triangle + star badge
-    const mateNames = ['OKAFOR', 'LINDQVIST', 'MORAES', 'HALE'];
-    this.teammatePool = [7, 10, 11, 8].map((n, i) => new Player(this.scene, {
-      id: `mate${i}`, team: 'home', role: 'mate', rating: TEAMS.home.rating, name: mateNames[i],
-      look: randomLook(rng, TEAMS.home.kit, n), stats: statsFromRating(TEAMS.home.rating, rng),
-    }));
-    this.defenderPool = [2, 5, 4, 3, 6, 8].map((n, i) => new Player(this.scene, {
-      id: `def${i}`, team: 'away', role: 'def', rating: TEAMS.away.rating,
-      look: randomLook(rng, TEAMS.away.kit, n), stats: statsFromRating(TEAMS.away.rating, rng),
-    }));
-    this.keeperPlayer = new Player(this.scene, {
-      id: 'gk', team: 'away', role: 'gk', rating: CONFIG.keeper.rating,
-      look: { ...randomLook(rng, TEAMS.away.keeperKit, 1), height: 1.9 }, stats: statsFromRating(CONFIG.keeper.rating, rng),
-    });
-    this.keeper = new Keeper(this, this.keeperPlayer);
+    this.homeSquad = [mk('h0', 'home', 'gk', 1, TEAMS.home.kit)];
+    this.awaySquad = [mk('a0', 'away', 'gk', 1, TEAMS.away.keeperKit)];
+    for (let i = 1; i < 11; i++) {
+      this.homeSquad.push(mk(`h${i}`, 'home', 'mate', i + 1, TEAMS.home.kit));
+      this.awaySquad.push(mk(`a${i}`, 'away', 'def', i + 1, TEAMS.away.kit));
+    }
+    this.homeKeeperPlayer = this.homeSquad[0];
+    this.keeperPlayer = this.awaySquad[0];
+    this.keeper = new Keeper(this, this.keeperPlayer, 1);         // guards +x (you attack it)
+    this.homeKeeper = new Keeper(this, this.homeKeeperPlayer, -1); // your keeper, guards −x
+    this.user = this.homeSquad[10];
+    this.user.setControlled(true);
     // referee: all black, follows play; shows cards after fouls
     this.ref = new Player(this.scene, {
       id: 'ref', team: 'ref', role: 'ref', rating: 72, name: 'REF',
-      look: { kitColour: '#151515', shortsColour: '#151515', socksColour: '#151515', skinTone: '#c68a5e', hairColour: '#1a1310', bootColour: '#0e0e0e', height: 1.82, number: '' },
+      look: { kitColour: '#151515', shortsColour: '#151515', socksColour: '#151515', skinTone: '#c68a5e', hairColour: '#1a1310', bootColour: '#0e0e0e', height: 1.82, number: -1, accent: '#2a2a2a', sponsor: -1 },
       stats: statsFromRating(72, rng),
     });
     this.ref.place(0, -18, Math.PI / 2);
     this.cardMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.15), new THREE.MeshBasicMaterial({ color: 0xffd400, side: THREE.DoubleSide }));
     this.cardMesh.visible = false;
     this.scene.add(this.cardMesh);
-    // the rest of the squad + subs, only used to mob the scorer after a big late goal
-    const bib = { kitColour: '#ff7a1a', shortsColour: '#1b2a4a', socksColour: '#f2f4f8' };
-    this.extraPool = [2, 3, 4, 5, 6, 14, 15, 17, 18, 20, 21].map((n, i) => {
-      const p = new Player(this.scene, {
-        id: `x${i}`, team: 'home', role: 'mate', rating: TEAMS.home.rating,
-        look: randomLook(rng, i < 6 ? TEAMS.home.kit : bib, n), stats: statsFromRating(TEAMS.home.rating, rng),
-      });
+    // the subs bench, only used to mob the scorer after a big late goal
+    const bib = { kitColour: '#ff7a1a', shortsColour: '#1b2a4a', socksColour: '#f2f4f8', accent: '#1b2a4a' };
+    this.extraPool = [12, 14, 15, 17, 18, 20].map((n, i) => {
+      const p = new Player(this.scene, { id: `x${i}`, team: 'home', role: 'mate', rating: 70, look: randomLook(rng, bib, n), stats: statsFromRating(70, rng) });
       p.setVisible(false);
-      p.isSub = i >= 6;
+      p.isSub = true;
       return p;
     });
     this.extras = [];
-    this.teammates = [];
-    this.defenders = [];
-    this.players = [];
+    this._rebuildLists();
 
     // ---- systems
     this.audio = new Audio();
@@ -129,8 +120,9 @@ class Game {
     this.shooting = new Shooting(this);
     this.skills = new Skills(this);
     this.setPiece = null;
-    this.teammateAI = new TeammateAI(this);
-    this.defenderAI = new DefenderAI(this);
+    this.homeAI = new TeamAI(this, 'home');
+    this.awayAI = new TeamAI(this, 'away');
+    this.teammateAI = this.homeAI; // older call sites
     this.replay = new Replay(this);
     this.input = new Input(this.layer, this.uiRoot);
     this.input.anyInteraction = () => this.audio.unlock();
@@ -138,23 +130,24 @@ class Game {
     this.hud = new HUD(this.uiRoot, this.input, {
       pause: () => (this.sm.is(STATES.PAUSED) ? this.resume() : this.pause()),
       resume: () => this.resume(),
+      quit: () => this.quitMatch(),
       mute: () => { this.audio.setMuted(!this.audio.muted); this.hud.setMuted(this.audio.muted); },
       debug: () => this.debug.toggle(),
-      cancelShot: () => { if (this.sm.is(STATES.SHOT_AIM)) this.sm.change(STATES.PLAYING); },
-      next: () => this.nextMoment(),
+      cancelShot: () => {},
+      next: () => this.continueMatch(),
       fkAction: (a) => { if (this.setPiece && this.setPiece.fk) this.setPiece.fkAction = a; },
-      retry: () => this.retryMoment(),
+      retry: () => {},
     });
     this.hud.setMuted(this.audio.muted);
-    this.moments = new MomentManager(this);
+    this.match = new Match(this);
+    this.moments = this.match;       // older call sites (rating hooks)
     this.quality = new Quality((lvl) => this.applyQuality(lvl));
     this.debug = new DebugPanel(this, this.uiRoot);
-    this.hub = new Hub(document.getElementById('app'), this);
-    this.careerMatch = null;
+    this.ut = new UltimateTeam(document.getElementById('app'), this);
 
     this.ts = null;
-    // a strike that started on a button press leaves the boot on its contact frame
-    this.onShotFired = () => { if (this.sm.is(STATES.PLAYING)) this.sm.change(STATES.SHOT_FLIGHT); };
+    // your strike leaves the boot on its contact frame → shot camera
+    this.onShotFired = (p) => { if (this.sm.is(STATES.PLAYING) && (!p || p.team === 'home')) this.sm.change(STATES.SHOT_FLIGHT); };
     this._buildStates();
     this._wireEvents();
     this.loop = new Loop({
@@ -173,7 +166,7 @@ class Game {
     });
     window.addEventListener('pagehide', () => this.pause());
     this.layer.addEventListener('pointerdown', () => {
-      if (this.sm.is(STATES.RESULT) && this.resultPhase === 'replay') this._endReplay();
+      if (this.sm.is(STATES.GOAL) && this.goalPhase === 'replay') this._endReplay();
     });
 
     this.applyQuality(this.quality.current);
@@ -183,25 +176,32 @@ class Game {
   }
 
   // ------------------------------------------------------------ world helpers
-  homePlayers() { return [this.user, ...this.teammates]; }
+  _rebuildLists() {
+    const u = this.user;
+    this.teammates = this.homeSquad.slice(1).filter((p) => p !== u && p.visible && !p.sentOff);
+    this.defenders = this.awaySquad.slice(1).filter((p) => p.visible && !p.sentOff);
+    this.players = [u, ...this.teammates, this.homeKeeperPlayer, ...this.defenders, this.keeperPlayer];
+  }
+  homePlayers() { return [this.user, ...this.teammates, this.homeKeeperPlayer]; }
   awayPlayers() { return [...this.defenders, this.keeperPlayer]; }
   teammatesOf(p) { return (p.team === 'home' ? this.homePlayers() : this.awayPlayers()).filter((q) => q !== p); }
   opponentsOf(p) { return p.team === 'home' ? this.awayPlayers() : this.homePlayers(); }
+  keeperOf(team) { return team === 'home' ? this.homeKeeper : this.keeper; }
 
-  /** Rough offside line: last outfield defender, never behind the ball or halfway. */
-  offsideLine() {
+  /**
+   * Offside line for `team` attacking: the second-last opponent (the last
+   * outfield player), never behind the ball or the halfway line.
+   */
+  offsideLine(team = 'home', strict = false) {
+    const ball = this.ball.pos;
+    if (team === 'home') {
+      let x = 0;
+      for (const d of this.defenders) x = Math.max(x, d.pos.x);
+      return strict ? Math.max(x, ball.x, 0) : Math.max(x, ball.x, 0);
+    }
     let x = 0;
-    for (const d of this.defenders) x = Math.max(x, d.pos.x);
-    return Math.max(x, this.ball.pos.x, 0);
-  }
-
-  /** Control goes back to the career player at the start of every moment. */
-  resetControl() {
-    if (this.user === this.career) return;
-    this.user.setControlled(false);
-    this.career.setControlled(true);
-    this.user = this.career;
-    this.teammates = this.teammates.filter((p) => p !== this.career);
+    for (const d of [this.user, ...this.teammates]) x = Math.min(x, d.pos.x);
+    return Math.min(x, ball.x, 0);
   }
 
   /** Switch control to a home player (called when they receive the ball). */
@@ -222,7 +222,7 @@ class Game {
     p.sprinting = false;
     this.teammates[i] = old;
     this.user = p;
-    this.players = [this.user, ...this.teammates, ...this.defenders, this.keeperPlayer];
+    this.players = [this.user, ...this.teammates, this.homeKeeperPlayer, ...this.defenders, this.keeperPlayer];
     this.lastPasser = null;
     if (!quiet) this.hud.flash(p.name || 'SWITCH', 'neutral');
   }
@@ -346,42 +346,54 @@ class Game {
     p.ai.tackling = null; p.ai.onBall = 0;
   }
 
-  /** A defender went through the man: stop play, then set up a free kick (or penalty). */
+  /**
+   * A foul. On you (or a teammate): the referee's card, then your free kick /
+   * penalty (set-piece flow). By your team: the opposition's free kick or penalty.
+   */
   onFoul({ by, victim }) {
-    if (!this.sm.is(STATES.PLAYING) || this.setPiece) return;
-    const m = this.moments.current;
-    if (!m || m.ending) return;
+    if (!this.sm.is(STATES.PLAYING) || this.setPiece || this.match.restart) return;
     const L = CONFIG.pitch.length / 2, P = CONFIG.pitch;
     const x = this.ball.pos.x, z = this.ball.pos.z;
+    this.match.stats[by.team].fouls++;
+    if (victim.team === 'away') {
+      // you gave it away: their free kick (or a penalty in your box)
+      const pen = x < -L + P.penaltyDepth && Math.abs(z) < P.penaltyWidth / 2;
+      victim.stayDown = false;
+      const card = this.rng.next() < 0.18 ? 'Y' : null;
+      if (card) { this.hud.showBig('YELLOW CARD', 'neutral', 1.4); this.match.cards[by.id] = 'Y'; }
+      if (by.isUser) this.match.userRating -= pen ? 0.5 : 0.1;
+      this.audio.whistle(false);
+      if (pen) { this.hud.showBig('PENALTY', 'bad', 1.4); this.match.startRestart('penalty', 'away', -L + 11, 0, { quiet: true }); }
+      else this.match.startRestart('freekick', 'away', x, z);
+      return;
+    }
     const penalty = x > L - P.penaltyDepth && Math.abs(z) < P.penaltyWidth / 2;
     // the referee's decision: mostly yellow, sometimes straight red (more likely from behind), 2nd yellow = red
-    const match = this.moments.match;
+    const cards = this.match.cards;
     const behind = (by.pos.x - victim.pos.x) * Math.sin(victim.heading) + (by.pos.z - victim.pos.z) * Math.cos(victim.heading) < 0;
-    let card = this.rng.next() < (behind ? 0.28 : 0.1) ? 'R' : 'Y';
-    if (card === 'Y' && match.cards[by.id] === 'Y') card = 'R2';
+    let card = this.rng.next() < (behind ? 0.16 : 0.05) ? 'R' : this.rng.next() < 0.45 ? 'Y' : null;
+    if (card === 'Y' && cards[by.id] === 'Y') card = 'R2';
     victim.stayDown = true;
     this.setPiece = { phase: 'down', t: CONFIG.setPiece.downTime, penalty, victim, offender: by, card, spot: { x, z } };
     this.skills.reset();
     this.passing.reset();
     by.stumble = 0;
     this.hud.showBig(penalty ? 'PENALTY!' : 'FOUL — FREE KICK', 'good');
-    // play's stopped: no buttons or joystick while the referee deals with it
     this.hud.setButtonMode('none');
     this.input.joystick.setVisible(false);
     this.audio.whistle(false);
     this.audio.boo();
     this.camRig.addShake(0.08);
-    m.timer = Math.max(m.timer, CONFIG.setPiece.timerTopUp);
-    this.moments.addRating(penalty ? 'Won a penalty' : 'Won a free kick', penalty ? 0.3 : 0.1);
   }
 
   _setUpFreeKick() {
     const sp = this.setPiece, S = CONFIG.setPiece, L = CONFIG.pitch.length / 2, P = CONFIG.pitch, W = CONFIG.pitch.width / 2;
     const ball = this.ball;
-    // penalties: your player always takes them (if he's still on the pitch); free kicks: whoever was fouled
-    const yours = this.user === this.career || this.teammates.includes(this.career);
-    if (sp.penalty && yours) this.switchControl(this.career, true);
-    else if (sp.victim.team === 'home' && !sp.victim.isKeeper) this.switchControl(sp.victim, true);
+    // penalties: your best finisher; free kicks: whoever was fouled
+    if (sp.penalty) {
+      const best = [this.user, ...this.teammates].reduce((b, p) => (p.stats.finishing > b.stats.finishing ? p : b), this.user);
+      this.switchControl(best, true);
+    } else if (sp.victim.team === 'home' && !sp.victim.isKeeper) this.switchControl(sp.victim, true);
     const u = this.user;
     let x = sp.penalty ? L - 11 : Math.min(sp.spot.x, L - 1.5);
     let z = sp.penalty ? 0 : Math.max(-W + 1, Math.min(W - 1, sp.spot.z));
@@ -442,6 +454,7 @@ class Game {
     r.integrate(dt, false);
     // the offender stands there waiting, facing the ref
     o.steer(0, 0, 0); o.faceTowards(r.pos.x, r.pos.z);
+    if (!sp.card && (d < 0.6 || sp.t <= 0)) { sp.phase = 'card'; sp.t = 0.3; sp.cardT = 0; r.steer(0, 0, 0); return; }
     if (d < 0.6 || sp.t <= 0) {
       sp.phase = 'card'; sp.t = 2.2; sp.cardT = 0;
       r.steer(0, 0, 0);
@@ -450,12 +463,11 @@ class Game {
       this.cardMesh.material.color.set(red ? 0xe0161f : 0xffd400);
       const num = o.look.number;
       this.hud.showBig(red ? 'RED CARD' : 'YELLOW CARD', red ? 'bad' : 'neutral', 1.8);
-      this.hud.flash(`${TEAMS.away.short} #${num}${sp.card === 'R2' ? ' — SECOND YELLOW' : ''}${red ? ' — SENT OFF!' : ' — BOOKED'}`, red ? 'good' : 'neutral');
+      this.hud.flash(`${o.name || TEAMS.away.short + ' #' + num}${sp.card === 'R2' ? ' — SECOND YELLOW' : ''}${red ? ' — SENT OFF!' : ' — BOOKED'}`, red ? 'good' : 'neutral');
       this.audio.whistle(false);
       this.audio.boo();
       if (red) this.audio.cheer(0.9);
-      this.moments.match.cards[o.id] = red ? 'R' : 'Y';
-      this.moments.addRating(red ? `${TEAMS.away.short} #${num} sent off` : `${TEAMS.away.short} #${num} booked`, 0);
+      this.match.cards[o.id] = red ? 'R' : 'Y';
       this.camRig.setMode('celebrate', { target: r.pos, angle: 0.5 });
     }
   }
@@ -464,9 +476,9 @@ class Game {
     const sp = this.setPiece, r = this.ref;
     sp.cardT += dt;
     r.savePrev(); r.steer(0, 0, 0); r.faceTowards(sp.offender.pos.x, sp.offender.pos.z); r.integrate(dt, false);
-    this.cardMesh.visible = sp.cardT > 0.25 && sp.cardT < 2.0;
+    this.cardMesh.visible = !!sp.card && sp.cardT > 0.25 && sp.cardT < 2.0;
     // a red card: he trudges off toward the touchline while it's shown
-    if (sp.card !== 'Y' && sp.cardT > 0.9) {
+    if (sp.card && sp.card !== 'Y' && sp.cardT > 0.9) {
       const o = sp.offender, W = CONFIG.pitch.width / 2;
       o.savePrev();
       o.moveTo(o.pos.x, Math.sign(o.pos.z || 1) * (W + 3), o.jogSpeed * 0.7, 1);
@@ -476,11 +488,11 @@ class Game {
 
   /** Sent off: gone now and for the rest of the match. */
   _sendOff(d) {
-    this.moments.match.sentOff.add(d.id);
+    this.match.sentOff.add(d.id);
+    d.sentOff = true;
     d.setVisible(false);
     d.pos.set(0, 0, 80);
-    this.defenders = this.defenders.filter((p) => p !== d);
-    this.players = this.players.filter((p) => p !== d);
+    this._rebuildLists();
   }
 
   /** Card held up in the referee's raised right hand. */
@@ -520,8 +532,8 @@ class Game {
       sp.phase = 'getup'; sp.t = 1.5;
       sp.victim.stayDown = false;
       this.cardMesh.visible = false;
-      if (sp.card !== 'Y') this._sendOff(sp.offender);
-      this.camRig.setMode('follow');
+      if (sp.card && sp.card !== 'Y') this._sendOff(sp.offender);
+      this.camRig.setMode('broadcast');
       return;
     }
     if (sp.phase === 'getup') { this._setUpFreeKick(); return; }
@@ -715,66 +727,6 @@ class Game {
     }
   }
 
-  activate(nMates, nDefs) {
-    this.teammatePool.forEach((p, i) => p.setVisible(i < nMates));
-    // sent-off defenders are gone for the rest of the match → one fewer each time
-    const off = (this.moments && this.moments.match.sentOff) || new Set();
-    const avail = this.defenderPool.filter((p) => !off.has(p.id));
-    const n = Math.max(1, Math.min(avail.length, nDefs - off.size));
-    this.defenderPool.forEach((p) => p.setVisible(false));
-    this.teammates = this.teammatePool.slice(0, nMates);
-    for (const p of this.teammates) p.setControlled(false);
-    this.defenders = avail.slice(0, n);
-    for (const p of this.defenders) p.setVisible(true);
-    this.players = [this.user, ...this.teammates, ...this.defenders, this.keeperPlayer];
-  }
-
-  resetWorld() {
-    this.effects.clear();
-    this.hud.setPenaltyMeter(false);
-    this.hud.fkStage(null);
-    this.hud.setButtonMode('all');
-    if (this.aimLine) { this.aimLine.visible = false; this.aimRing.visible = false; }
-    this.passing.reset();
-    this.shooting.cancelStrike();
-    this.shooting.clearFlight();
-    if (this.shooting.aim) this.shooting.endAim();
-    this.overlay.clear();
-    this.ball.events.length = 0;
-    this.keeper.reset();
-    this.lastPasser = null;
-    this.ballCam = null;
-    this.finishing = null;
-    if (this.ball) this.ball.frozen = false;
-    if (this.cardMesh) this.cardMesh.visible = false;
-    for (const p of [...this.teammatePool, this.career]) p.stayDown = false;
-    if (this.ref) { const b = this.ball.pos; this.ref.place(b.x - 9, b.z > 0 ? -9 : 9, Math.PI / 2); }
-    for (const p of this.extras) p.setVisible(false);
-    this.extras = [];
-    this.setPiece = null;
-    this.skills.reset();
-    this.resetControl();
-    this.replay.stop();
-    this.hud.setReplay(false);
-    this.hud.hideBig();
-    this.ts = null;
-    this.loop.timeScale = 1;
-    this.user.stamina = Math.min(1, this.user.stamina + 0.6);
-  }
-
-  afterSpawn() {
-    this.syncControl(true);
-    this.teammateAI.reset();
-    this.defenderAI.reset();
-    this.replay.reset([...this.players, this.ref, ...this.extraPool]);
-    for (const p of this.players) { p.savePrev(); p.anim.action = null; }
-    this.ball.savePrev();
-    this.camRig.setMode('follow');
-    this.camRig.zoom = 1.7;
-    this.camRig._yaw = 0;
-    this.camRig.snap();
-  }
-
   /** Action buttons + joystick visibility (joystick stays usable during shot flight). */
   setControls(buttons, joystick = buttons) {
     this.hud.setControlsVisible(buttons);
@@ -792,7 +744,7 @@ class Game {
     const changed = r.shadowMap.enabled !== lvl.shadows;
     r.shadowMap.enabled = lvl.shadows;
     this.pitch.sun.castShadow = lvl.shadows;
-    for (const p of [this.career, ...this.teammatePool, ...this.defenderPool, this.keeperPlayer]) p.setShadows(lvl.shadows);
+    for (const p of [...this.homeSquad, ...this.awaySquad, this.ref]) p.setShadows(lvl.shadows);
     this.ball.mesh.castShadow = lvl.shadows;
     this.pitch.setCrowdQuality(lvl.crowd === 'full');
     if (changed) this.scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
@@ -813,23 +765,110 @@ class Game {
     document.documentElement.classList.toggle('portrait', h > w);
   }
 
+
+  /** The opposition has it (or it's loose after they lost it): you're defending. */
+  _defending() {
+    const ball = this.ball;
+    if (ball.owner) return ball.owner.team === 'away';
+    if (ball.pass && ball.pass.from) return ball.pass.from.team === 'away';
+    return false;
+  }
+
+  /**
+   * Defending: SWITCH (pass button) to the best-placed player, TACKLE (shoot
+   * button) when you're on him, hold PRESS (through button) to send a teammate
+   * in as well. Close to the carrier you jockey — face him, stay goal-side.
+   */
+  _defendControl(u, pg, tg, sg, wx, wz, mag, dt) {
+    const ball = this.ball, c = ball.owner && ball.owner.team === 'away' ? ball.owner : null;
+    this.homeAI.pressHeld = !!this.input.held.through;
+    if (pg) this._switchBest();
+    if (sg && this.user === u && u.tackleCooldown <= 0 && !u.ai.tackling) {
+      const target = c || (ball.pass && ball.pass.to) || null;
+      if (target && dist2D(u.pos, target.pos) < 3.2) {
+        this.homeAI.startTackle(u, target, dist2D(u.pos, target.pos) > 1.8 || u.speed > 5);
+      } else {
+        // lunge at the ball wherever it is
+        u.playAction('tackle', 0.5, { variant: 'stand' });
+        u.tackleCooldown = 0.6;
+      }
+    }
+    if (u.ai.tackling) {
+      // committed: carried along by the lunge
+      const t = u.ai.tackling.target;
+      u.steer(t.pos.x - u.pos.x, t.pos.z - u.pos.z, u.attrs.sprintSpeed * 1.05);
+      this.homeAI.tackleStep(u, dt);
+    }
+    // jockey: near the carrier and not sprinting, keep facing him
+    if (c && !u.sprinting && dist2D(u.pos, c.pos) < 5.5) { u.faceTowards(c.pos.x, c.pos.z); u.jockey = true; }
+    // auto-switch when you're out of the play and someone's much better placed
+    this._autoSwitchT = (this._autoSwitchT || 0) - dt;
+    if (this._autoSwitchT <= 0 && mag < 0.3 && dist2D(u.pos, ball.pos) > CONFIG.match.autoSwitchDistance) { this._switchBest(true); this._autoSwitchT = 1.2; }
+  }
+
+  /** Switch to the home outfielder best placed to get to the ball (goal-side preferred). */
+  _switchBest(quiet = false) {
+    const ball = this.ball, u = this.user;
+    const tgt = ball.owner || (ball.pass && ball.pass.to) || null;
+    const bx = tgt ? tgt.pos.x : ball.pos.x, bz = tgt ? tgt.pos.z : ball.pos.z;
+    let best = null, bs = Infinity;
+    for (const p of this.teammates) {
+      if (p.stumble > 0.3 || p.ai.tackling) continue;
+      let s = Math.hypot(p.pos.x - bx, p.pos.z - bz);
+      if (p.pos.x < bx) s -= 2.5;                 // goal-side (your goal is at −x)
+      if (s < bs) { bs = s; best = p; }
+    }
+    if (!best) return;
+    const cur = Math.hypot(u.pos.x - bx, u.pos.z - bz) - (u.pos.x < bx ? 2.5 : 0);
+    if (quiet && bs > cur - 6) return;
+    if (best) { this.switchControl(best, true); this.effects.showMarker(best); }
+  }
+
+  /** A keeper has held it long enough: roll / throw / kick it to a teammate. */
+  keeperDistribute(k) {
+    if (this.match.restart || this.setPiece) return;
+    const p = k.p, ball = this.ball, s = k.s > 0 ? -1 : 1; // direction his team attacks
+    const mates = this.teammatesOf(p).filter((q) => !q.isKeeper && q.visible && !q.sentOff);
+    if (!mates.length) return;
+    k.release();
+    ball.owner = p; ball.lastTouch = p;
+    ball.pos.set(p.pos.x + s * 0.6, CONFIG.ball.radius, p.pos.z);
+    const long = this.rng.chance(0.4);
+    const pool = mates.filter((q) => (long ? s * q.pos.x > -10 : s * q.pos.x < -12));
+    const list = pool.length ? pool : mates;
+    // open players first
+    list.sort((a, b) => this._openness(b) - this._openness(a));
+    const t = list[Math.min(list.length - 1, Math.floor(this.rng.next() * 2))];
+    this.passing.requestAIPass(p, t, long ? 'lofted' : 'ground');
+  }
+
+  _openness(p) {
+    let n = 99;
+    for (const o of this.opponentsOf(p)) if (!o.isKeeper) n = Math.min(n, dist2D(o.pos, p.pos));
+    return n;
+  }
+
   // ------------------------------------------------------------ events
   _wireEvents() {
     const ev = this.events;
-    ev.on('tackleWon', ({ victim }) => {
+    ev.on('tackleWon', ({ victim, by }) => {
       if (victim === this.user) this.camRig.addShake(0.12);
-      if (victim && victim.team === 'home') this.audio.groan(0.8);   // home fans: "awww"
+      if (victim && victim.team === 'home') this.audio.groan(0.8);
+      if (by && by.team === 'home') this.audio.cheer(0.5);
     });
     ev.on('save', ({ type }) => {
       this.audio.ooh();
       this.camRig.addShake(0.1);
       if (type === 'parry') this.audio.kick(0.6);
     });
-    ev.on('pass', ({ from }) => { if (from === this.user) this.effects.puff(this.ball.pos.x, this.ball.pos.z); });
+    ev.on('pass', ({ from }) => { this.lastPasser = from; if (from === this.user) this.effects.puff(this.ball.pos.x, this.ball.pos.z); });
     // FC-style switching: whichever of your teammates gets the ball, you now control them
     ev.on('gain', ({ player }) => {
+      player.ai.holdT = 0; player.ai.decideAt = null; player.ai.carry = null;
       if (player.team === 'home' && !player.isKeeper) { this._endBallCam(); this.switchControl(player, true); }
+      if (this.sm.is(STATES.SHOT_FLIGHT)) this.backToPlay();
     });
+    ev.on('keeperHold', () => { if (this.sm.is(STATES.SHOT_FLIGHT)) this.backToPlay(); });
     ev.on('foul', (e) => this.onFoul(e));
     ev.on('beatDefender', ({ by, skill }) => {
       if (by === this.user && !skill) this.hud.flash('SKILLED!', 'good');
@@ -837,10 +876,12 @@ class Game {
     });
   }
 
+  backToPlay() { if (this.sm.is(STATES.SHOT_FLIGHT)) this.sm.change(STATES.PLAYING); }
+
   // ------------------------------------------------------------ simulation
   simulate(dt, mode = 'play') {
     const ball = this.ball;
-    for (const p of this.players) p.savePrev();
+    for (const p of this.players) { p.savePrev(); p.jockey = false; }
     ball.savePrev();
     ball.events.length = 0;
 
@@ -852,16 +893,19 @@ class Game {
         const ps = this.ball.pass;
         if (this.ball.owner || !ps || ps.to !== this.ballCam.to || this.ballCam.t > 4) this._endBallCam();
       }
-      this.userControl(dt);
+      if (!this.autoplay) this.userControl(dt);
+      else if (this.match.restart && this.match.restart.taker === this.user && this.match.restart.phase === 'ready') this.user.steer(0, 0, 0);
       this.skills.update(dt);
-      this.teammateAI.update(dt);
-      this.defenderAI.update(dt);
+      this.homeAI.update(dt);
+      this.awayAI.update(dt);
       this.keeper.update(dt);
+      this.homeKeeper.update(dt);
       this.shooting.update(dt);
       this.passing.update(dt);
     } else {
-      this._resultControl(dt);
+      this._goalControl(dt);
       this.keeper.update(dt);
+      this.homeKeeper.update(dt);
     }
     for (const p of this.players) p.integrate(dt, ball.owner === p);
     this.possession.separate();
@@ -879,8 +923,8 @@ class Game {
         if (e.v > 4) this.audio.net();
       }
     }
-    if (mode === 'play' && this.sm.is(STATES.SHOT_FLIGHT)) this.shooting.flightUpdate(dt);
-    this.moments.update(dt);
+    if (mode === 'play' && this.shooting.flight) this.shooting.flightUpdate(dt);
+    if (mode === 'play') this.match.update(dt);
     this.simTime += dt;
   }
 
@@ -913,7 +957,7 @@ class Game {
     // you're on the receiver as soon as a pass is played: get to it
     if (ball.pass && ball.pass.to === u && mag < 0.6) {
       if (ball.pass.kind && ball.pass.kind !== 'ground') {
-        this.teammateAI._receive(u);
+        this.homeAI.receive(u);
         speed = u.moveSpeed; wx = u.moveDir.x; wz = u.moveDir.z;
       } else {
         const v = ball.vel, sp = Math.hypot(v.x, v.z) || 1;
@@ -962,6 +1006,20 @@ class Game {
     const inp = this.input;
     if (!this.sm.is(STATES.PLAYING)) { inp.consumeGesture('pass'); inp.consumeGesture('through'); inp.consumeGesture('shoot'); return; }
     const pg = inp.consumeGesture('pass'), tg = inp.consumeGesture('through'), sg = inp.consumeGesture('shoot');
+    // your team's restart: PASS / THROUGH takes it in the stick direction
+    const R = this.match.restart;
+    if (R && R.team === 'home' && R.phase === 'ready' && R.taker === u) {
+      u.steer(0, 0, 0);
+      if (pg || tg) {
+        const l = Math.hypot(wx, wz);
+        const dir = l > 0.2 ? { x: wx / l, z: wz / l } : null;
+        this.match.takeRestart(tg ? 'through' : (pg.dir === 'up' || pg.dir === 'down') ? 'lofted' : 'ground', dir);
+      }
+      return;
+    }
+    if (R) return;
+    if (this._defending()) { this._defendControl(u, pg, tg, sg, wx, wz, mag, dt); return; }
+    this.homeAI.pressHeld = false;
     let dx = wx, dz = wz;
     if (mag < 0.2) { dx = Math.sin(u.heading); dz = Math.cos(u.heading); }
     if (ball.owner === u && !this.passing.pending && !this.shooting.strike) {
@@ -978,35 +1036,42 @@ class Game {
         const power = Math.min(1, Math.abs(pg.dy || 0) / 70 + (pg.dy === 0 && lofted ? 0.6 : 0));
         this.passing.requestUserPass(u, dx, dz, lofted ? 'lofted' : 'ground', power);
       }
-    } else if ((pg || tg) && this.teammateAI.callForBall()) {
-      u.playAction('point', 0.6);
-      this.hud.flash('CALLING FOR IT', 'neutral');
+    } else if (pg && ball.owner !== u) {
+      // not on the ball (loose ball / teammate): switch to whoever's best placed
+      this._switchBest();
     }
     inp.consume('confirm');
   }
 
-  _resultControl(dt) {
+
+  /** After a goal: the scorer celebrates, his teammates chase him, the others trudge. */
+  _goalControl(dt) {
     this._updateExtras(dt);
-    const u = this.user, ball = this.ball;
-    const goal = this.resultOutcome === 'GOAL';
-    const t = this.sm.time;
-    const cel = this.celebration;
+    const t = this.sm.time, cel = this.celebration, sc = this.scorer;
+    const team = this.goalTeam;
     for (const p of this.players) {
-      if (p.isKeeper) continue;
-      if (goal && p === u && cel) { this._celebrate(u, cel, t, dt); continue; }
-      if (goal && p.team === 'home' && t > 0.4) {
-        // teammates chase after the scorer, then jump around him
-        const ang = (this.teammates.indexOf(p) + 1) * 1.3;
-        const tx = u.pos.x - Math.cos(ang) * 1.8 - 1.2, tz = u.pos.z + Math.sin(ang) * 1.8;
+      if (p.isKeeper) { p.steer(0, 0, 0); continue; }
+      if (cel && p === sc) {
+        if (team === 'home') this._celebrate(p, cel, t, dt);
+        else {
+          // their scorer wheels away to the corner, arms up
+          if (!cel.target) cel.target = { x: -CONFIG.pitch.length / 2 + 9, z: (p.pos.z >= 0 ? 1 : -1) * (CONFIG.pitch.width / 2 - 4) };
+          const d = p.moveTo(cel.target.x, cel.target.z, p.attrs.sprintSpeed, 1);
+          if (d < 2 && p.anim.action !== 'jumpfist') p.playAction('jumpfist', 9, { loop: true });
+          else if (d >= 2 && p.anim.action !== 'armsup') p.playAction('armsup', 9, {});
+        }
+        continue;
+      }
+      if (sc && p.team === team && t > 0.4) {
+        const ang = (this.players.indexOf(p) + 1) * 1.3;
+        const tx = sc.pos.x - Math.cos(ang) * 1.8 * (team === 'home' ? 1 : -1), tz = sc.pos.z + Math.sin(ang) * 1.8;
         const d = p.moveTo(tx, tz, p.attrs.sprintSpeed, 2);
-        p.faceTowards(u.pos.x, u.pos.z);
+        p.faceTowards(sc.pos.x, sc.pos.z);
         if (d < 2.6 && p.anim.action !== 'teamjump') p.playAction('teamjump', 0.9, { loop: true, offset: ang });
         else if (d > 4 && p.anim.action !== 'armsup' && p.anim.action !== 'teamjump') p.playAction('armsup', 9, {});
         continue;
       }
-      if (goal && p.team === 'away') { p.steer(0, 0, 0); continue; }
       p.steer(0, 0, 0);
-      if (!goal && p !== u) p.faceTowards(ball.pos.x, ball.pos.z);
     }
   }
 
@@ -1018,8 +1083,8 @@ class Game {
     this.extras.forEach((p, i) => {
       // teammates from further up the pitch; subs off the bench on the touchline
       // subs were warming up down the touchline; the rest of the XI come from behind the play
-      const x = p.isSub ? u.pos.x - 14 - (i - 6) * 2.5 : u.pos.x - 10 - Math.random() * 14;
-      const z = p.isSub ? side * (W + 2) : u.pos.z + (Math.random() - 0.5) * 24;
+      const x = u.pos.x - 14 - i * 2.5;
+      const z = side * (W + 2);
       p.place(x, z, Math.PI / 2);
       p.setVisible(true);
       p.savePrev();
@@ -1033,7 +1098,7 @@ class Game {
 
   _updateExtras(dt) {
     if (!this.extras.length) return;
-    const u = this.user, t = this.sm.time;
+    const u = this.scorer || this.user, t = this.sm.time;
     this.extras.forEach((p, i) => {
       p.savePrev();
       if (t < p.celebDelay) { p.steer(0, 0, 0); } else {
@@ -1097,137 +1162,117 @@ class Game {
     u.steer(0, 0, 0);
   }
 
-  // ------------------------------------------------------------ flow
-  nextMoment() {
-    if (this.sm.is(STATES.PAUSED)) this.sm.pop();
-    if (this.careerMatch) {
-      const cm = this.careerMatch;
-      if (cm.played >= cm.n) { this.finishCareerMatch(); return; }
-      this._simBetweenMoments();
-    }
-    this.hud.hideResult();
-    this.moments.setup();
-    this.sm.change(STATES.INTRO);
-  }
-
-  retryMoment() {
-    this.hud.hideResult();
-    this.moments.setup({ retry: true });
-    this.sm.change(STATES.INTRO);
-  }
-
-  backToPlay() {
-    if (this.sm.is(STATES.SHOT_FLIGHT)) this.sm.change(STATES.PLAYING);
-  }
-
-  onMomentEnding(outcome) {
-    if (this.careerMatch && outcome === 'GOAL') {
-      const sh = (this.shooting.flight && this.shooting.flight.shooter) || this.ball.lastTouch;
-      if (sh === this.career) this.careerMatch.goals++;
-      else this.careerMatch.assists++; // a teammate finished a move you were part of
-    }
-    this.resultOutcome = outcome;
-    this.pendingResult = null;
-    if (this.sm.is(STATES.PAUSED)) this.sm.pop();
-    if (this.sm.is(STATES.SHOT_AIM)) this.shooting.endAim();
-    this.sm.change(STATES.RESULT, { outcome });
-  }
-
-  onMomentFinished(result) {
-    this.pendingResult = result;
-    if (this.careerMatch) {
-      const cm = this.careerMatch;
-      cm.played++;
-      this.hud.setResultMode({ career: true, last: cm.played >= cm.n });
-    }
-  }
-
-  // ------------------------------------------------------------ career matches
+  // ------------------------------------------------------------ match flow
   /**
-   * Play a career fixture in the match engine: your club in its kit (always
-   * attacking left→right), the opponent in theirs, your player's stats.
-   * N attacking moments, the rest of the game simulated around them.
+   * Start a match. home / away: { name, short, rating, kit, keeperKit, formation,
+   * players: [11 × { name, pos, rating, stats, look }] } — index 0 is the keeper.
    */
-  startCareerMatch(o) {
-    const { my, opp, player } = o;
-    const kitOf = (c, away) => {
-      let k = { kitColour: c.kit.primary, shortsColour: c.kit.shorts, socksColour: c.kit.socks, accent: c.kit.secondary === '#14161c' ? c.kit.primary : c.kit.secondary };
-      if (away) {
-        // colour clash with us → change strip
-        const d = (a, b) => { const x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16); return Math.hypot(((x >> 16) & 255) - ((y >> 16) & 255), ((x >> 8) & 255) - ((y >> 8) & 255), (x & 255) - ((y & 255))); };
-        if (d(c.kit.primary, my.kit.primary) < 110) k = { kitColour: c.kit.secondary, shortsColour: c.kit.primary, socksColour: c.kit.secondary, accent: c.kit.primary };
-        if (d(k.kitColour, my.kit.primary) < 110) k = { kitColour: my.kit.primary === '#f2f4f8' ? '#14161c' : '#f2f4f8', shortsColour: c.kit.primary, socksColour: c.kit.primary, accent: c.kit.primary };
-      }
-      return k;
-    };
-    Object.assign(TEAMS.home, { name: my.name, short: my.short, rating: my.rating, kit: kitOf(my, false) });
-    Object.assign(TEAMS.away, { name: opp.name, short: opp.short, rating: opp.rating, kit: kitOf(opp, true) });
-    const gk = ['#2bd47d', '#f2c21b', '#ff7ab6', '#5fb6f2'].find((c) => c !== TEAMS.away.kit.kitColour && c !== TEAMS.home.kit.kitColour) || '#2bd47d';
-    TEAMS.away.keeperKit = { kitColour: gk, shortsColour: '#16161c', socksColour: gk };
-    const rng = makeRng(Date.now() & 0xffff);
-    for (const p of [this.career, ...this.teammatePool, ...this.extraPool.slice(0, 6)]) p.setKit(TEAMS.home.kit);
-    for (const p of this.teammatePool) { p.rating = my.rating; p.setStats(statsFromRating(my.rating, rng)); }
-    for (const p of this.defenderPool) { p.setKit(TEAMS.away.kit); p.rating = opp.rating; p.setStats(statsFromRating(opp.rating, rng)); }
-    this.keeperPlayer.setKit(TEAMS.away.keeperKit);
-    const look = appearanceOf(player.look);
-    this.career.setAppearance(look);
-    // teammates (and subs) never wear your number
-    const used = new Set([look.number]);
-    let n = 2;
-    for (const p of [...this.teammatePool, ...this.extraPool]) {
-      let num = p.look.number;
-      if (used.has(num)) { while (used.has(n) || n === 1) n++; num = n; p.setNumber(num); }
-      used.add(num);
-    }
-    this.career.setStats(player.stats);
-    this.career.name = player.name;
-    const mt = this.moments.match;
-    Object.assign(mt, { minute: 0, homeGoals: 0, awayGoals: 0, shots: 0, goals: 0, cards: {}, sentOff: new Set(), moments: [] });
-    this.moments.momentNo = 0;
+  startMatch(home, away, opts = {}) {
+    this._setupSide('home', home, this.homeSquad);
+    this._setupSide('away', away, this.awaySquad);
+    Object.assign(TEAMS.home, { name: home.name, short: home.short, rating: home.rating, kit: home.kit });
+    Object.assign(TEAMS.away, { name: away.name, short: away.short, rating: away.rating, kit: away.kit });
     this.hud.setTeams(TEAMS.home, TEAMS.away);
-    this.hud.setResultMode({ career: true, last: false });
-    this.careerMatch = { ...o, n: CONFIG.career.momentsPerMatch, played: 0, goals: 0, assists: 0 };
+    this.match.reset(opts);
+    this.matchOpts = opts;
+    this.setPiece = null;
+    for (const p of [...this.homeSquad, ...this.awaySquad]) { p.sentOff = false; p.setVisible(true); p.stayDown = false; }
+    // you start on the striker
+    if (this.user !== this.homeSquad[10]) { this.user.setControlled(false); this.user = this.homeSquad[10]; this.user.setControlled(true); }
+    for (const p of this.homeSquad) if (p !== this.user) p.setControlled(false);
+    this._rebuildLists();
+    this.homeAI.reset(); this.awayAI.reset();
+    this.replay.reset([...this.players, this.ref, ...this.extraPool]);
     this.audio.unlock();
     this.audio.setMatchAudio(true);
-    this.audio.setCrowd(0.25);
-    this.audio.whistle(false);
-    this.moments.setup();
-    this.sm.change(STATES.INTRO);
+    this.audio.setCrowd(0.3);
+    this.ut.close();
+    this.match.kickoffTeam = this.rng.chance(0.5) ? 'home' : 'away';
+    this.sm.change(STATES.KICKOFF, { banner: 'KICK OFF' });
   }
 
-  /** Between your moments the rest of the game happens: the opposition (or your teammates) can score. */
-  _simBetweenMoments() {
-    const mt = this.moments.match, H = TEAMS.home.rating, A = TEAMS.away.rating;
-    // ~1.3 goals a game for an even opponent, more if they're better than you
-    const pA = Math.max(0.08, Math.min(0.48, 0.21 + (A - H) * 0.012));
-    const pH = Math.max(0.02, Math.min(0.15, 0.05 + (H - A) * 0.004));
-    this.careerMatch.lastNews = null;
-    if (Math.random() < pA) {
-      mt.awayGoals++; this.careerMatch.lastNews = `${TEAMS.away.short} scored`;
-      if (Math.random() < pA * 0.25) mt.awayGoals++;
-    }
-    if (Math.random() < pH) { mt.homeGoals++; this.careerMatch.lastNews = this.careerMatch.lastNews ? 'Goals at both ends' : `${TEAMS.home.short} scored`; }
+  _setupSide(team, side, squad) {
+    const F = FORMATIONS[side.formation] || FORMATIONS['4-3-3'];
+    const used = new Set();
+    squad.forEach((p, i) => {
+      const d = side.players[i] || side.players[side.players.length - 1];
+      const [fx, fz, pos] = F[i];
+      p.slot = { fx, fz, pos };
+      p.name = (d.name || '').toUpperCase();
+      p.rating = d.rating || side.rating;
+      p.setStats(d.stats || statsFromRating(p.rating, this.rng));
+      const kit = i === 0 ? side.keeperKit : side.kit;
+      let num = d.number || i + 1;
+      while (used.has(num)) num++;
+      used.add(num);
+      p.setKit({ ...kit });
+      p.setAppearance({ skin: d.look?.skin, hairColour: d.look?.hairColour, boots: d.look?.boots || '#111111', number: num,
+        sleeves: d.look?.sleeves || 'short', hairStyle: d.look?.hairStyle, facial: d.look?.facial, face: d.look?.face });
+      p.setHeight && p.setHeight(d.look?.height || (i === 0 ? 1.9 : 1.82));
+      p.ai = {};
+    });
   }
 
-  finishCareerMatch() {
-    const cm = this.careerMatch, mt = this.moments.match;
-    if (!cm) return;
-    this._simBetweenMoments(); // the last few minutes after your final moment
-    const r = {
-      gf: mt.homeGoals, ga: mt.awayGoals,
-      rating: Math.max(3, Math.min(10, +this.moments.matchRating.toFixed(1))),
-      goals: cm.goals, assists: cm.assists, played: true,
-    };
-    this.careerMatch = null;
-    this.hud.setResultMode({ career: false, last: false });
+  onGoal(team, scorer) {
+    this.goalTeam = team;
+    this.scorer = scorer && !scorer.isKeeper ? scorer : (team === 'home' ? this.user : this.defenders[0]);
+    if (team === 'home' && this.scorer.team === 'home' && this.scorer !== this.user) this.switchControl(this.scorer, true);
+    if (this.sm.is(STATES.PAUSED)) this.sm.pop();
+    this.sm.change(STATES.GOAL);
+  }
+
+  onHalfTime() { this.sm.change(STATES.HALFTIME); }
+  onFullTime() { this.sm.change(STATES.FULLTIME); }
+
+  /** Result card button: carry on after half time / leave after full time. */
+  continueMatch() {
+    if (this.sm.is(STATES.HALFTIME)) { this.hud.hideResult(); this.sm.change(STATES.KICKOFF, { banner: 'SECOND HALF' }); return; }
+    if (this.sm.is(STATES.FULLTIME)) { this.hud.hideResult(); this._toMenu(); }
+  }
+
+  quitMatch() {
+    if (this.sm.is(STATES.PAUSED)) this.sm.pop();
+    if (this.sm.is(STATES.MENU)) return;
+    this.match.ended = true;
     this.hud.hideResult();
-    this.audio.whistle(true);
-    this.sm.change('HUB');
-    cm.onFinish(r);
+    this._toMenu(true);
+  }
+
+  _toMenu(abandoned = false) {
+    const res = this.match.result();
+    if (abandoned) res.abandoned = true;
+    this.sm.change(STATES.MENU);
+    this.ut.onMatchEnd(res, this.matchOpts);
+  }
+
+  _clearPlay() {
+    this.effects.clear();
+    this.hud.setPenaltyMeter(false);
+    this.hud.fkStage(null);
+    this.hud.setButtonMode('all');
+    this.aimLine.visible = false; this.aimRing.visible = false;
+    this.passing.reset();
+    this.shooting.cancelStrike();
+    this.shooting.clearFlight();
+    this.overlay.clear();
+    this.ball.events.length = 0;
+    this.ballCam = null;
+    this.finishing = null;
+    this.ball.frozen = false;
+    this.cardMesh.visible = false;
+    for (const p of this.players) { p.stayDown = false; p.anim.action = null; p.ai.tackling = null; }
+    for (const p of this.extras) p.setVisible(false);
+    this.extras = [];
+    this.setPiece = null;
+    this.skills.reset();
+    this.replay.stop();
+    this.hud.setReplay(false);
+    this.ts = null;
+    this.loop.timeScale = 1;
   }
 
   pause() {
-    if (!this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT, STATES.INTRO, STATES.SHOT_AIM)) return;
+    if (!this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT, STATES.KICKOFF, STATES.GOAL)) return;
     this.sm.push(STATES.PAUSED);
   }
 
@@ -1236,17 +1281,10 @@ class Game {
   _endReplay() {
     this.replay.stop();
     this.hud.setReplay(false);
-    this.resultPhase = 'card';
-    this.camRig.setMode('celebrate', { target: this.user.pos, angle: 0.6 });
-    this.camRig.snap();
-    this._showCard();
-  }
-
-  _showCard() {
-    if (!this.pendingResult) return;
-    this.resultPhase = 'card';
-    this.hud.hideBig();
-    this.hud.showResult(this.pendingResult, this.moments.match, this.moments.matchRating);
+    this.goalPhase = 'done';
+    for (const p of this.extras) p.setVisible(false);
+    this.extras = [];
+    this.sm.change(STATES.KICKOFF, { banner: null });
   }
 
   // ------------------------------------------------------------ states
@@ -1257,49 +1295,46 @@ class Game {
 
     sm.add(S.LOADING, {
       enter() {
-        g.moments.setup();
         g.setControls(false);
-        // career mode: boot straight into the hub
-        const ready = () => { g.hud.startEl.classList.add('hide'); g.sm.change('HUB'); };
+        const ready = () => { g.hud.startEl.classList.add('hide'); g.sm.change(S.MENU); };
         const fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
         Promise.race([fonts, new Promise((r) => setTimeout(r, 1500))]).then(ready);
       },
     });
 
-    // between matches: the career hub is on screen and the pitch is idle
-    sm.add('HUB', {
+    // Ultimate Team screens on top; the stadium sits idle behind them
+    sm.add(S.MENU, {
       enter() {
+        g._clearPlay();
         g.setControls(false);
         g.input.enabled = false;
         g.input.releaseAll();
         g.hud.hideResult();
-        g.hud.hideIntro && g.hud.hideIntro();
+        g.hud.setMatchHud(false);
         g.camRig.setMode('intro');
-        g.audio.setMatchAudio(false);   // no crowd / chants on the menus
-        g.hub.open();
+        g.audio.setMatchAudio(false);
+        g.ut.open();
       },
     });
 
-    sm.add(S.INTRO, {
-      enter() {
-        const m = g.moments.current;
-        const sc = SCENARIOS[m.scenario];
-        const match = g.moments.match;
+    sm.add(S.KICKOFF, {
+      enter(data = {}) {
+        g._clearPlay();
         g.setControls(false);
-        g.hud.hideResult();
-        g.hud.showIntro(`${m.minute}' · ${TEAMS.home.short} ${match.homeGoals}–${match.awayGoals} ${TEAMS.away.short} · Moment ${m.number}`,
-          sc.name.toUpperCase(), `${sc.tag} — Attack!`);
-        if (g.careerMatch && g.careerMatch.lastNews) { g.hud.flash(`${g.careerMatch.lastNews.toUpperCase()}!`, 'neutral'); g.careerMatch.lastNews = null; }
         g.input.enabled = false;
         g.input.releaseAll();
-        g.camRig.setMode('intro');
+        g.hud.setMatchHud(true);
+        g.match.placeKickoff();
+        g.homeAI.reset(); g.awayAI.reset();
+        g.camRig.setMode('broadcast');
+        g.camRig.snap();
+        if (data.banner) g.hud.showBig(data.banner, 'neutral', 1.2);
       },
-      frame() {
-        if (sm.time > CONFIG.moment.introTime) sm.change(S.PLAYING);
+      update(dt) {
+        for (const p of g.players) { p.savePrev(); p.steer(0, 0, 0); p.integrate(dt, false); }
+        g.ball.savePrev();
       },
-      exit() {
-        g.hud.hideIntro();
-      },
+      frame() { if (sm.time > 1.4) sm.change(S.PLAYING); },
     });
 
     sm.add(S.PLAYING, {
@@ -1307,12 +1342,17 @@ class Game {
         g.input.enabled = true;
         g.input.clearPresses();
         g.setControls(true);
-        g.camRig.setMode('follow');
-        if (prev === S.INTRO) g.audio.whistle(false);
+        g.camRig.setMode('broadcast');
+        if (prev === S.KICKOFF) g.audio.whistle(false);
       },
       update(dt) {
         if (g.setPiece) {
           if (g.setPiece.phase !== 'ready') { g._setPieceUpdate(dt); return; }
+          if (g.autoplay) {
+            // demo / test: take it straight away
+            const sp = g.setPiece;
+            if (sp.penalty) { if (sp.meterSize < 0.35) g.input.gestures.shoot = { dir: 'tap', held: 0, dy: 0 }; } else sp.fkAction = 'pass';
+          }
           if (!g._setPieceReady()) return;
         }
         g.simulate(dt);
@@ -1328,9 +1368,11 @@ class Game {
           g.input.consumeGesture('pass'); g.input.consumeGesture('through'); g.input.consumeGesture('shoot');
           g.hud.setShootAvailable(false); return;
         }
-        g.hud.setShootAvailable(g.shooting.inRange(g.user));
-        const mateHas = g.ball.owner && g.ball.owner.team === 'home' && !g.ball.owner.isUser;
-        g.hud.setPassLabel(mateHas ? 'CALL' : 'PASS');
+        const def = g._defending();
+        g.hud.setDefending(def);
+        g.hud.setShootAvailable(!def && g.shooting.inRange(g.user));
+        const R = g.match.restart;
+        g.hud.setPassLabel(def ? 'SWITCH' : R && R.team === 'home' ? (R.type === 'throw' ? 'THROW' : R.type === 'corner' ? 'CROSS' : 'PASS') : g.ball.owner === g.user ? 'PASS' : 'SWITCH');
       },
     });
 
@@ -1344,10 +1386,8 @@ class Game {
       update(dt) {
         g.simulate(dt);
         const k = g.ball.lastKick;
-        // after a parry, hand control back so the rebound can be attacked
-        if (sm.is(S.SHOT_FLIGHT) && k && k.type === 'save' && sm.time > 1.0) g.backToPlay();
-        if (sm.is(S.SHOT_FLIGHT) && k && k.type === 'block' && sm.time > 0.2) g.backToPlay();
-        if (sm.is(S.SHOT_FLIGHT) && sm.time > 5) g.backToPlay();
+        if (sm.is(S.SHOT_FLIGHT) && k && (k.type === 'save' || k.type === 'block') && sm.time > 0.6) g.backToPlay();
+        if (sm.is(S.SHOT_FLIGHT) && (sm.time > 3.5 || g.match.restart)) g.backToPlay();
       },
       exit() {
         g.shooting.clearFlight();
@@ -1355,73 +1395,64 @@ class Game {
       },
     });
 
-    sm.add(S.RESULT, {
-      enter({ outcome }) {
+    sm.add(S.GOAL, {
+      enter() {
         g.input.enabled = false;
         g.input.releaseAll();
         g.setControls(false);
         g.hud.setShootAvailable(false);
-        g.resultPhase = 'live';
+        g.goalPhase = 'live';
         g.goalSimTime = g.simTime;
         if (!g.ts || g.loop.timeScale < 0.99) g.setTimeScale(1, 0.25);
-        const info = { GOAL: 'good', SAVED: 'neutral', POST: 'neutral', BLOCKED: 'neutral' };
-        const titles = { GOAL: 'GOAL!', SAVED: 'SAVED', OFF_TARGET: 'OFF TARGET', POST: 'HIT THE POST', BLOCKED: 'BLOCKED', TACKLED: 'TACKLED', INTERCEPTED: 'INTERCEPTED', TIME_UP: 'TIME UP', OUT: 'OUT OF PLAY' };
-        g.hud.showBig(titles[outcome] || outcome, info[outcome] || 'bad');
-        g.celebration = null;
+        const home = g.goalTeam === 'home';
+        g.hud.showBig(home ? 'GOAL!' : `${TEAMS.away.short} SCORE`, home ? 'good' : 'bad', 1.6);
+        g.celebration = { type: CELEBRATIONS[Math.floor(Math.random() * CELEBRATIONS.length)], phase: 'run' };
         g._pileShake = false;
-        if (outcome === 'GOAL') {
-          const types = ['kneeslide', 'kneeslide', 'bellyslide', 'airplane', 'jumpfist', 'spinjump', 'pointsky', 'cuptheear',
-            'shush', 'armscrossed', 'salute', 'calmdown', 'heart', 'badgepoint', 'robot', 'backflip'];
-          g.celebration = { type: types[Math.floor(Math.random() * types.length)], phase: 'run' };
-          const mt = g.moments.match, mm = g.moments.current;
-          const late = mm && mm.minute >= 70 && (mt.homeGoals === mt.awayGoals || mt.homeGoals === mt.awayGoals + 1);
+        const m = g.match;
+        if (home) {
+          const late = m.minute >= 80 && (m.homeGoals === m.awayGoals || m.homeGoals === m.awayGoals + 1);
           if (late) {
             g.celebration.big = true;
             g.celebration.type = Math.random() < 0.6 ? 'kneeslide' : 'jumpfist';
             g._startBigCelebration();
-            g.hud.flash(mt.homeGoals === mt.awayGoals ? 'LATE EQUALISER!' : 'LATE WINNER!', 'good');
-          }
+            g.hud.flash(m.homeGoals === m.awayGoals ? 'LATE EQUALISER!' : 'LATE WINNER!', 'good');
+          } else g.hud.flash(`${g.scorer ? g.scorer.name : ''} ${m.minute}'`.trim(), 'good');
           g.audio.roar();
-          g.audio.net();
-          g.camRig.addShake(CONFIG.juice.goalShake);
-          g.effects.burstConfetti({ x: CONFIG.pitch.length / 2 - 4, z: g.ball.pos.z });
-          g.camRig.setMode('goalview', { z: g.ball.pos.z });
           g.audio.setCrowd(1);
+          g.effects.burstConfetti({ x: CONFIG.pitch.length / 2 - 4, z: g.ball.pos.z });
         } else {
-          if (outcome === 'SAVED' || outcome === 'POST') g.audio.ooh();
-          else if (outcome === 'OFF_TARGET' || outcome === 'BLOCKED' || outcome === 'TACKLED' || outcome === 'INTERCEPTED') g.audio.groan();
-          g.audio.whistle(outcome === 'TIME_UP' || outcome === 'TACKLED' || outcome === 'INTERCEPTED' || outcome === 'OUT');
+          g.audio.groan(1);
+          g.hud.flash(`${g.scorer ? g.scorer.name : ''} ${m.minute}'`.trim(), 'bad');
         }
+        g.audio.net();
+        g.camRig.addShake(CONFIG.juice.goalShake * (home ? 1 : 0.5));
+        g.camRig.setMode('goalview', { z: g.ball.pos.z, end: home ? 1 : -1 });
       },
       update(dt) { g.simulate(dt, 'result'); },
       frame(realDt) {
-        const goal = g.resultOutcome === 'GOAL';
-        if (g.resultPhase === 'live') {
-          if (goal && sm.time > 1.3 && g.camRig.mode === 'goalview') g.camRig.setMode('celebrate', { target: g.user.pos });
-          if (goal && sm.time > CONFIG.juice.celebrateTime * (g.celebration && g.celebration.big ? 1.6 : 1) && g.pendingResult) {
+        const home = g.goalTeam === 'home';
+        if (g.goalPhase === 'live') {
+          if (sm.time > 1.3 && g.camRig.mode === 'goalview') g.camRig.setMode('celebrate', { target: g.scorer ? g.scorer.pos : g.user.pos });
+          const hold = CONFIG.juice.celebrateTime * (g.celebration && g.celebration.big ? 1.5 : home ? 1 : 0.6);
+          if (sm.time > hold) {
             const J = CONFIG.juice;
-            // replay the build-up and goal in slow-mo, then the celebration
             if (g.replay.start(g.goalSimTime - J.replaySeconds, g.simTime, J.replaySpeed, g.goalSimTime + J.replayTail)) {
-              g.resultPhase = 'replay';
+              g.goalPhase = 'replay';
               g.hud.hideBig();
               g.hud.setReplay(true);
-              g.camRig.setMode('replay', { side: g.ball.pos.z > 0 ? -1 : 1 });
+              g.camRig.setMode('replay', { side: g.ball.pos.z > 0 ? -1 : 1, end: home ? 1 : -1 });
               g.replay.update(0);
               g.camRig.snap();
-            } else g._showCard();
-          } else if (!goal && sm.time > 1.4 && g.pendingResult) {
-            g._showCard();
+            } else g._endReplay();
           }
-        } else if (g.resultPhase === 'replay') {
+        } else if (g.goalPhase === 'replay') {
           const J2 = CONFIG.juice;
           g.camRig.opts.ballPos = g.replay.ballPos;
           if (!g.replay.update(realDt)) g._endReplay();
           else {
-            // the squad/subs only appear once the goal's gone in
             const show = g.replay.t >= g.goalSimTime;
             for (const p of g.extras) p.parts.root.visible = show;
-            // once it's into the celebration, follow the scorer
-            if (g.replay.t > g.goalSimTime + J2.replayTail && g.camRig.mode === 'replay') g.camRig.setMode('celebrate', { target: g.user.parts.root.position, angle: 0.6 });
+            if (g.replay.t > g.goalSimTime + J2.replayTail && g.camRig.mode === 'replay' && g.scorer) g.camRig.setMode('celebrate', { target: g.scorer.parts.root.position, angle: 0.6 });
           }
         }
       },
@@ -1429,8 +1460,32 @@ class Game {
         g.replay.stop();
         g.hud.setReplay(false);
         g.hud.hideBig();
-        g.audio.setCrowd(0.25);
+        g.audio.setCrowd(0.3);
       },
+    });
+
+    sm.add(S.HALFTIME, {
+      enter() {
+        g.setControls(false);
+        g.input.enabled = false;
+        g.audio.whistle(true);
+        g.camRig.setMode('intro');
+        g.hud.showMatchCard('HALF TIME', g.match, 'Second Half');
+      },
+      update(dt) { for (const p of g.players) { p.savePrev(); p.steer(0, 0, 0); p.integrate(dt, false); } },
+    });
+
+    sm.add(S.FULLTIME, {
+      enter() {
+        g.setControls(false);
+        g.input.enabled = false;
+        g.audio.whistle(true);
+        const m = g.match;
+        if (m.homeGoals > m.awayGoals) g.audio.cheer(1.2); else if (m.homeGoals < m.awayGoals) g.audio.groan(1);
+        g.camRig.setMode('intro');
+        g.hud.showMatchCard('FULL TIME', m, 'Continue');
+      },
+      update(dt) { for (const p of g.players) { p.savePrev(); p.steer(0, 0, 0); p.integrate(dt, false); } },
     });
 
     sm.add(S.PAUSED, {
@@ -1464,14 +1519,12 @@ class Game {
     }
     this.sm.frame(realDt);
     if (this.input.consume('pause')) { if (this.sm.is(STATES.PAUSED)) this.resume(); else this.pause(); }
-    if (this.sm.is(STATES.RESULT) && this.resultPhase === 'card') {
-      if (this.input.consume('confirm')) this.nextMoment();
-      else if (this.input.consume('retry')) this.retryMoment();
-    }
+    if (this.sm.is(STATES.HALFTIME, STATES.FULLTIME) && this.input.consume('confirm')) this.continueMatch();
 
     const replaying = this.replay.playing;
     const paused = this.sm.is(STATES.PAUSED);
-    if (!replaying) {
+    const menu = this.sm.is(STATES.MENU, STATES.LOADING);
+    if (!replaying && !menu) {
       if (!paused) for (const p of this.players) p.updateAnimation(scaledDt, this.ball.owner === p);
       for (const p of this.players) p.render(alpha, this.realTime);
       for (const p of this.extras) { if (!paused) p.updateAnimation(scaledDt, false); p.render(alpha, this.realTime); }
@@ -1480,6 +1533,7 @@ class Game {
       this._cardFrame();
       this.ball.render(alpha);
     }
+    if (menu) return;   // the menus cover the screen: don't spend the GPU on the stadium
     this.pitch.update(paused ? 0 : scaledDt);
     this.effects.update(paused ? 0 : realDt, this.realTime);
     this.camRig.update(realDt, this);
@@ -1489,21 +1543,16 @@ class Game {
     this.quality.tick(realDt, this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT));
 
     this.audio.tick(realDt, this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT));
-    // crowd surges when you drive into the final third / the box
-    if (this.sm.is(STATES.PLAYING) && this.ball.owner && this.ball.owner.team === 'home') {
-      const m = this.moments.current;
-      const x = this.ball.pos.x;
-      if (m && !m.surged && x > CONFIG.pitch.length / 2 - 22) { m.surged = true; this.audio.surge(); }
-    }
+    // crowd lifts as either side gets near goal
     this._crowdT = (this._crowdT || 0) - realDt;
-    if (this._crowdT <= 0 && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT, STATES.SHOT_AIM)) {
+    if (this._crowdT <= 0 && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT)) {
       this._crowdT = 0.3;
-      const x = this.ball.pos.x;
-      this.audio.setCrowd(Math.max(0, Math.min(1, (x - 5) / 40)));
+      const x = Math.abs(this.ball.pos.x);
+      this.audio.setCrowd(Math.max(0.15, Math.min(1, (x - 15) / 35)));
     }
 
     this.renderer.render(this.scene, this.camRig.camera);
-    if (!replaying && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT, STATES.SHOT_AIM, STATES.RESULT)) {
+    if (!replaying && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT, STATES.GOAL)) {
       this.replay.record(this.simTime);
     }
   }

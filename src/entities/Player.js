@@ -302,6 +302,15 @@ export class Player {
     this._applyLook(k);
   }
 
+  /** Body height in metres (scales the whole rig). */
+  setHeight(h) {
+    const sc = h / 1.8;
+    this.heightScale = sc;
+    this.parts.body.scale.setScalar(sc);
+    this.look = { ...this.look, height: h };
+    if (this.stats) this.setStats(this.stats);
+  }
+
   setSkinHair(skin, hair) { this._applyLook({ skinTone: skin, hairColour: hair }); }
 
   /** Shirt number on the back. */
@@ -497,7 +506,7 @@ export class Player {
     // body heading: follow velocity, or a face target when slow
     let wantHeading = this.heading;
     // defenders jockey: shuffle sideways / backpedal while watching the ball
-    const jockey = this.role === 'def' && this.faceTarget && !hasBall && speed < CONFIG.player.jockeyMaxSpeed;
+    const jockey = (this.role === 'def' || this.jockey) && this.faceTarget && !hasBall && speed < CONFIG.player.jockeyMaxSpeed;
     if (jockey) wantHeading = headingOf(this.faceTarget.x - this.pos.x, this.faceTarget.z - this.pos.z);
     else if (speed > 0.4) wantHeading = curDir;
     else if (this.faceTarget) wantHeading = headingOf(this.faceTarget.x - this.pos.x, this.faceTarget.z - this.pos.z);

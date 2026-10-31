@@ -2,7 +2,6 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { STAT_KEYS, STAT_LABELS, STAT_PRESETS, TEAMS, statsFromRating } from '../data/playerStats.js';
-import { SCENARIOS } from '../gameplay/MomentManager.js';
 import { makeRng } from '../core/MathUtil.js';
 
 export class DebugPanel {
@@ -90,14 +89,12 @@ export class DebugPanel {
     CONFIG.quality.levels.forEach((L, i) => button(qrow, L.name, () => g.quality.set(i, true)));
     perf.appendChild(qrow);
 
-    // scenarios
-    const sc = sec('Force scenario (next moment)');
+    // match
+    const sc = sec('Match');
     const srow = document.createElement('div');
     srow.className = 'dbg-btns';
-    button(srow, 'Random', () => { g.moments.forced = null; g.nextMoment(); });
-    for (const k of Object.keys(SCENARIOS)) {
-      button(srow, SCENARIOS[k].name, () => { g.moments.forced = k; g.nextMoment(); g.moments.forced = null; });
-    }
+    button(srow, 'Half time', () => { g.match.clock = 45 * 60; });
+    button(srow, 'Score for us', () => { g.match.homeGoals++; });
     sc.appendChild(srow);
 
     // toggles

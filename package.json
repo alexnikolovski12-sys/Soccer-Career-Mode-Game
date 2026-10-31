@@ -18,5 +18,8 @@
     "esbuild": "^0.25.10",
     "meshoptimizer": "^0.22.0",
     "three": "^0.186.1"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2"
   }
 }

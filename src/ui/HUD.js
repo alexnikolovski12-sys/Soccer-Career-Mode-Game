@@ -39,14 +39,6 @@ export class HUD {
       <div class="sb-min">0'</div>`);
     top.appendChild(this.scoreboard);
 
-    this.timer = el('div', 'timer', `
-      <svg viewBox="0 0 44 44"><circle class="t-bg" cx="22" cy="22" r="19"/><circle class="t-fg" cx="22" cy="22" r="19"/></svg>
-      <span class="t-num">20</span>`);
-    top.appendChild(this.timer);
-    this.timerRing = this.timer.querySelector('.t-fg');
-    this.timerNum = this.timer.querySelector('.t-num');
-    this.ringLen = 2 * Math.PI * 19;
-    this.timerRing.style.strokeDasharray = `${this.ringLen}`;
 
     const right = el('div', 'top-right');
     this.statsEl = el('div', 'mstats', '');
@@ -126,37 +118,36 @@ export class HUD {
     this.vignette = el('div', 'vignette', '');
     r.appendChild(this.vignette);
 
-    // ---- result card
+    // ---- half time / full time card
     this.result = el('div', 'result', `
-      <div class="r-card">
+      <div class="r-card mcard">
         <div class="r-kicker"></div>
-        <div class="r-title"></div>
-        <div class="r-rating"><span class="r-delta"></span><span class="r-label">moment rating</span></div>
-        <ul class="r-items"></ul>
-        <div class="r-match"></div>
-        <div class="r-btns"><button class="r-retry">Retry</button><button class="r-next">Next Moment</button></div>
+        <div class="mc-score"><div class="mc-team mc-h"></div><div class="mc-num"></div><div class="mc-team mc-a"></div></div>
+        <div class="mc-goals"></div>
+        <ul class="r-items mc-stats"></ul>
+        <div class="r-btns"><button class="r-next">Continue</button></div>
       </div>`);
     r.appendChild(this.result);
     this._tap(this.result.querySelector('.r-next'), () => this.h.next());
-    this._tap(this.result.querySelector('.r-retry'), () => this.h.retry());
 
     // ---- pause overlay
     this.pauseEl = el('div', 'overlay pause', `
       <div class="o-card"><div class="o-title">PAUSED</div>
-      <button class="o-btn resume">Resume</button></div>`);
+      <button class="o-btn resume">Resume</button><button class="o-btn quit">Quit Match</button></div>`);
     r.appendChild(this.pauseEl);
     this._tap(this.pauseEl.querySelector('.resume'), () => this.h.resume());
+    this._tap(this.pauseEl.querySelector('.quit'), () => this.h.quit && this.h.quit());
 
     // ---- start overlay
     this.startEl = el('div', 'overlay start', `
       <div class="o-card start-card">
         <div class="logo"><span>BREAK</span><b>AWAY</b></div>
-        <div class="o-sub">Career Prototype · Attacking Moments</div>
+        <div class="o-sub">Ultimate Team</div>
         <div class="loading">Loading pitch…</div>
         <button class="o-btn go" disabled>Tap to Kick Off</button>
         <div class="o-help">
           <div><b>Left thumb</b> move · <b>PASS</b> · hold <b>SPRINT</b></div>
-          <div><b>SHOOT</b> freezes time — pull back &amp; release</div>
+          <div><b>Defending</b>: PASS switches · SHOOT tackles · hold THROUGH to press</div>
           <div class="desk credits">Crowd audio: Gregor Quendel — Free Crowd Cheering Sounds (CC BY 4.0); stadium recordings CC0 via Freesound.</div>
           <div class="desk">Desktop: WASD move · Shift sprint · Space pass (C = lofted) · T through · hold F shoot (G driven, H chip, J finesse, K fake)</div>
         </div>
@@ -187,26 +178,45 @@ export class HUD {
 
   // ------------------------------------------------------------ per-frame
   update(game) {
-    const mm = game.moments;
-    const m = mm.current;
-    const match = mm.match;
+    const match = game.match;
     const set = (key, val, fn) => { if (this.last[key] !== val) { this.last[key] = val; fn(val); } };
     set('h', match.homeGoals, (v) => { this.scoreboard.querySelector('.sb-h').textContent = v; });
     set('a', match.awayGoals, (v) => { this.scoreboard.querySelector('.sb-a').textContent = v; });
-    set('min', match.minute, (v) => { this.scoreboard.querySelector('.sb-min').textContent = `${v}'`; });
-    if (m) {
-      const left = Math.max(0, m.timer);
-      const frac = left / CONFIG.moment.duration;
-      set('tn', Math.ceil(left), (v) => {
-        this.timerNum.textContent = v;
-        this.timer.classList.toggle('low', v <= 5);
-      });
-      set('tf', Math.round(frac * 200), () => {
-        this.timerRing.style.strokeDashoffset = `${this.ringLen * (1 - frac)}`;
-      });
-    }
-    const statsTxt = `<span><em>MOMENT</em>${mm.momentNo}</span><span><em>GOALS</em>${match.goals}/${match.shots}</span><span><em>RTG</em>${mm.matchRating.toFixed(1)}</span>`;
+    set('min', match.clockText, (v) => { this.scoreboard.querySelector('.sb-min').textContent = v; });
+    const u = game.user;
+    const statsTxt = `<span><em>${match.half === 1 ? '1ST' : '2ND'}</em>HALF</span><span><em>YOU</em>${(u && u.name) || ''}</span>`;
     set('stats', statsTxt, (v) => { this.statsEl.innerHTML = v; });
+  }
+
+  /** Match HUD (scoreboard etc.) on / off — off on the Ultimate Team screens. */
+  setMatchHud(on) {
+    this.root.classList.toggle('in-menu', !on);
+  }
+
+  /** Defending: the buttons become SWITCH / TACKLE / PRESS. */
+  setDefending(def) {
+    if (this.last.def === def) return;
+    this.last.def = def;
+    this.btnShoot.querySelector('span').textContent = def ? 'TACKLE' : 'SHOOT';
+    this.btnThrough.querySelector('span').textContent = def ? 'PRESS' : 'THROUGH';
+    this.pad.classList.toggle('defending', def);
+  }
+
+  /** Half time / full time: score, scorers, stats. */
+  showMatchCard(title, m, btn) {
+    const c = this.result, res = m.result();
+    c.querySelector('.r-kicker').textContent = title;
+    c.querySelector('.mc-h').textContent = TEAMS.home.name;
+    c.querySelector('.mc-a').textContent = TEAMS.away.name;
+    c.querySelector('.mc-num').textContent = `${res.gf} – ${res.ga}`;
+    const g = (team) => res.goals.filter((x) => x.team === team).map((x) => `${x.name}${x.own ? ' (og)' : ''} ${x.minute}'`).join(', ');
+    c.querySelector('.mc-goals').innerHTML = `<span>${g('home')}</span><span>${g('away')}</span>`;
+    const row = (label, a, b) => `<li><b>${a}</b><span>${label}</span><b>${b}</b></li>`;
+    c.querySelector('.mc-stats').innerHTML = row('Possession', `${res.possession}%`, `${100 - res.possession}%`) +
+      row('Shots', res.shots[0], res.shots[1]) + row('On target', res.onTarget[0], res.onTarget[1]) +
+      (title === 'FULL TIME' ? `<li class="mc-rate"><span>Your rating</span><b>${res.rating.toFixed(1)}</b></li>` : '');
+    c.querySelector('.r-next').textContent = btn;
+    c.classList.add('show');
   }
 
   setShootAvailable(on) {
@@ -274,11 +284,6 @@ export class HUD {
     t[1].innerHTML = `<b>${away.short}</b><i style="background:${away.kit.accent}"></i>`;
   }
 
-  /** Career matches: no retries, and the last moment's button reads "Full Time". */
-  setResultMode({ career = false, last = false } = {}) {
-    this.result.querySelector('.r-retry').style.display = career ? 'none' : '';
-    this.result.querySelector('.r-next').textContent = last ? 'Full Time' : 'Next Moment';
-  }
 
   setPassLabel(txt) {
     if (this.last.passLabel === txt) return;
@@ -335,23 +340,6 @@ export class HUD {
   setReplay(on) {
     this.replayTag.classList.toggle('show', on);
     this.letterbox.classList.toggle('show', on);
-  }
-
-  showResult(res, match, matchRating) {
-    const c = this.result;
-    c.querySelector('.r-kicker').textContent = `Moment ${res.number} · ${res.minute}'`;
-    const t = c.querySelector('.r-title');
-    t.textContent = res.title;
-    t.className = `r-title ${res.kind}`;
-    const d = c.querySelector('.r-delta');
-    d.textContent = `${res.rating >= 0 ? '+' : ''}${res.rating.toFixed(2)}`;
-    d.className = `r-delta ${res.rating > 0.001 ? 'pos' : res.rating < -0.001 ? 'neg' : ''}`;
-    const items = res.items.length ? res.items : [{ label: 'No rating events', value: 0 }];
-    c.querySelector('.r-items').innerHTML = items.map((it) =>
-      `<li><span>${it.label}</span><b class="${it.value > 0 ? 'pos' : it.value < 0 ? 'neg' : ''}">${it.value >= 0 ? '+' : ''}${it.value.toFixed(2)}</b></li>`).join('');
-    c.querySelector('.r-match').innerHTML =
-      `Match rating <b>${matchRating.toFixed(1)}</b> · Goals ${match.goals} · Shots ${match.shots}`;
-    c.classList.add('show');
   }
 
   hideResult() { this.result.classList.remove('show'); }

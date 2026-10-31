@@ -20,7 +20,17 @@ const press = (name, dir = 'tap', held = 0, dy = 0) => { g.input.gestures[name] 
 const avg = (a) => (a.length ? +(a.reduce((s, v) => s + v, 0) / a.length).toFixed(3) : null);
 const pct = (a, p) => (a.length ? +a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))].toFixed(3) : null);
 const V = (o) => { const v = new o.position.constructor(); o.getWorldPosition(v); return v; };
-const startMoment = (scenario) => { g.moments.setup(scenario ? { scenario } : undefined); g.sm.change('INTRO'); return runUntil(() => g.sm.is('PLAYING')); };
+// a full match against a Squad Battles opponent (creates a club if there isn't one)
+const quickMatch = (diff = 'semipro', len = 150) => {
+  const ut = g.ut;
+  if (!ut.s) { ut._setup(); document.querySelector('.ut-setup .nm').value = 'Test FC'; document.querySelector('.ut-setup .go').click();
+    const ov = document.querySelector('.pack-open'); if (ov) { ov.click(); const k = document.querySelector('.pack-open .keep'); if (k) k.click(); } }
+  ut.s.diff = diff; ut.s.len = len;
+  ut._kickOff(ut._opponents()[1]);
+  return runUntil(() => g.sm.is('PLAYING'), 10);
+};
+// older tests: a match in progress, play stopped where the test sets it up
+const startMoment = () => { if (!g.sm.is('PLAYING')) quickMatch(); g.match.restart = null; g.ball.frozen = false; return true; };
 // deterministic Math.random for repeatable runs (set SEED in a test to vary)
 let _seed = 12345;
 Math.random = () => { _seed = (_seed * 1664525 + 1013904223) >>> 0; return _seed / 4294967296; };

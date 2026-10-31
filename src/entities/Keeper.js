@@ -6,19 +6,22 @@ import { CONFIG, clamp } from '../config.js';
 import { smoothstep, dist2D } from '../core/MathUtil.js';
 
 export class Keeper {
-  constructor(game, player) {
+  /** side: +1 = guards the goal at +x (away keeper), −1 = the goal at −x (home keeper). */
+  constructor(game, player, side = 1) {
     this.game = game;
     this.p = player;
+    this.s = side;
     this.state = 'set';
     this.plan = null;
     this.t = 0;
   }
 
-  get goalX() { return CONFIG.pitch.length / 2; }
+  get goalX() { return this.s * CONFIG.pitch.length / 2; }
 
   reset() {
     const p = this.p;
-    p.place(this.goalX - CONFIG.keeper.lineOffset, 0, -Math.PI / 2);
+    p.place(this.goalX - this.s * CONFIG.keeper.lineOffset, 0, -this.s * Math.PI / 2);
+    this.holdT = 0;
     this.state = 'set';
     this.plan = null;
     this.t = 0;
@@ -30,7 +33,7 @@ export class Keeper {
     return { x: Math.cos(h), z: -Math.sin(h) };
   }
 
-  rating() { return CONFIG.keeper.rating; }
+  rating() { return this.p.rating || CONFIG.keeper.rating; }
 
   /** Bought a fake shot: dives the wrong way, then has to get up. */
   fool(side) {
@@ -55,8 +58,11 @@ export class Keeper {
 
     if (this.state === 'holding') {
       p.steer(0, 0, 0);
-      ball.pos.set(p.pos.x - 0.45, 1.05, p.pos.z);
+      ball.pos.set(p.pos.x - this.s * 0.45, 1.05, p.pos.z);
       ball.vel.set(0, 0, 0);
+      this.holdT += dt;
+      // in a match the keeper gets it going again (throw / kick to a teammate)
+      if (this.holdT > 1.4 && g.keeperDistribute) g.keeperDistribute(this);
       return;
     }
 
@@ -82,7 +88,7 @@ export class Keeper {
       }
       // contact
       if (pl.save && !pl.done && ball.lastKick && ball.lastKick.type === 'shot') {
-        const reached = ball.pos.x >= pl.ix - 0.25 || Math.hypot(ball.pos.x - pl.ix, ball.pos.y - pl.iy, ball.pos.z - pl.iz) < 0.45;
+        const reached = this.s * ball.pos.x >= this.s * pl.ix - 0.25 || Math.hypot(ball.pos.x - pl.ix, ball.pos.y - pl.iy, ball.pos.z - pl.iz) < 0.45;
         if (reached && tt >= pl.reaction) this._applySave(pl);
       }
       if (tt > pl.tI + 1.0) { this.state = 'down'; this.t = 0; }
@@ -106,11 +112,11 @@ export class Keeper {
     let tx = gx + (dxg / dBall) * adv;
     let tz = (dzg / dBall) * adv;
     tz = clamp(tz, -CONFIG.pitch.goalWidth / 2 + 0.3, CONFIG.pitch.goalWidth / 2 - 0.3);
-    tx = Math.min(tx, gx - 0.3);
+    tx = this.s > 0 ? Math.min(tx, gx - 0.3) : Math.max(tx, gx + 0.3);
 
     // rush a 1v1 dribbler whose touch is heavy
     const owner = ball.owner;
-    if (owner && owner.team === 'home' && dBall < 13 && Math.abs(bz) < 12) {
+    if (owner && owner.team !== p.team && dBall < 13 && Math.abs(bz) < 12) {
       const dKB = dist2D(p.pos, ball.pos);
       if (dKB < 6) { tx = ball.pos.x; tz = ball.pos.z; }
     }
@@ -124,14 +130,14 @@ export class Keeper {
     if (!ball.canTouch(p) || ball.inGoal) return;
     if (ball.pass && ball.pass.finish) return; // a cross being met first time in the box
     const d = dist2D(p.pos, ball.pos);
-    const inBox = ball.pos.x > this.goalX - CONFIG.pitch.penaltyDepth &&
+    const inBox = this.s * ball.pos.x > CONFIG.pitch.length / 2 - CONFIG.pitch.penaltyDepth &&
       Math.abs(ball.pos.z) < CONFIG.pitch.penaltyWidth / 2;
     if (!inBox || ball.pos.y > K.jumpReach) return;
     if (!ball.owner) {
       if (d < K.claimRadius && ball.speed < K.claimMaxSpeed) this.hold();
       return;
     }
-    if (ball.owner.team === 'home') {
+    if (ball.owner.team !== p.team) {
       // smother: ball loose from the dribbler's feet
       const fp = ball.owner.footPoint(this._tmp || (this._tmp = new THREE.Vector3()));
       const gap = Math.hypot(ball.pos.x - fp.x, ball.pos.z - fp.z);
@@ -151,8 +157,18 @@ export class Keeper {
     ball.frozen = true;
     ball.vel.set(0, 0, 0);
     this.state = 'holding';
+    this.holdT = 0;
+    ball.lastTouch = this.p;
     this.p.playAction('catch', 0.6);
     this.game.events.emit('keeperHold', { fromShot });
+  }
+
+  /** Let go of the ball (distribution): returns to normal positioning. */
+  release() {
+    this.state = 'set';
+    this.t = 0;
+    this.holdT = 0;
+    this.game.ball.frozen = false;
   }
 
   /**
@@ -165,7 +181,7 @@ export class Keeper {
     // intercept point: first sample at/after the keeper's plane
     let I = null;
     for (let i = 0; i < path.length; i++) {
-      if (path[i].x >= kx - 0.1) { I = path[i]; break; }
+      if (this.s * path[i].x >= this.s * kx - 0.1) { I = path[i]; break; }
     }
     if (!I) { this.plan = null; return { save: false, prob: 0 }; }
     const lx = this._localX();
@@ -244,7 +260,7 @@ export class Keeper {
       // parry out to the side — loose ball, the moment can continue
       const sideDir = Math.abs(pl.iz) > 0.4 ? Math.sign(pl.iz) : pl.side;
       const out = 4.5 + Math.random() * 4.5;
-      ball.kick(-Math.abs(vIn.x) * 0.25 - 2.5, 1.2 + Math.random() * 2.2, sideDir * out,
+      ball.kick(-this.s * (Math.abs(vIn.x) * 0.25 + 2.5), 1.2 + Math.random() * 2.2, sideDir * out,
         { type: 'save', by: this.p, ignoreTime: 0.9 });
     }
   }
