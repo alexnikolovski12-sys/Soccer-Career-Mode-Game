@@ -6,7 +6,7 @@ for (let k = 0; k < 8; k++) {
   if (g.sm.is('GOAL')) { g._endReplay(); runUntil(() => g.sm.is('PLAYING'), 4); }
   for (const d of g.defenders) d.place(-45 + d.slot.fx * 5, d.slot.fz * 30, 0);   // keep them out of the way
   const u = g.user; u.place(-10, 0, Math.PI / 2);
-  g.ball.reset(-9.4, 0); g.possession.gain(u);
+  g.passing.reset(); g.ball.reset(-9.4, 0); g.possession.gain(u);
   out.trials++;
   const f = g.camRig.forward, rt = g.camRig.right;
   const stick = (wx, wz) => { mv.y = wx * f.x + wz * f.z; mv.x = wx * rt.x + wz * rt.z; mv.mag = 1; };

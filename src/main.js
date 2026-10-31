@@ -1695,6 +1695,7 @@ class Game {
     this.camRig.update(realDt, this);
     this.weather.update(paused ? 0 : realDt, this.camRig.pos, this.realTime || 0, this.camRig.look);
     this.pitch.updateStadium(paused ? 0 : realDt, this.realTime, this.camRig.camera.position);
+    if (this.pitch.crowd) this.pitch.crowd.setBall(this.ball.pos);
     HUMAN_FX.time.value = this.realTime % 1000;
     if (this.cold && !paused && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT, STATES.GOAL, STATES.KICKOFF)) {
       for (const p of this.players) {

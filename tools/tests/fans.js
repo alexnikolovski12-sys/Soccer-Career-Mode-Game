@@ -1,0 +1,10 @@
+quickMatch('semipro', 150);
+g.setLook('night', 'clear');
+const cam = g.camRig.camera;
+const view = (label, pos, at, fov) => { cam.position.set(...pos); cam.lookAt(...at); cam.fov = fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld(); g.frame(0, 1/60, 1/60); cam.position.set(...pos); cam.lookAt(...at); cam.fov = fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld(); const nr = g.renderer.render; g.renderer.render = realRender; g.renderFrame(cam); g.renderer.render = nr; __shots.push([label, g.renderer.domElement.toDataURL('image/jpeg', 0.85)]); };
+run(1);
+view('stand-close', [30, 1.7, -28], [34, 4, -46], 50);
+g.pitch.crowd.cheer(6); run(1.2);
+view('stand-cheer', [30, 1.7, -28], [34, 4, -46], 50);
+view('corner', [44, 2.2, -22], [60, 6, -45], 55);
+return 1;

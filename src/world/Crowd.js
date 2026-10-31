@@ -163,7 +163,8 @@ export class Crowd {
   /**
    * seats: [{ x, y, z, light, end }] — end: which stand (for home / away sections)
    */
-  constructor(group, seats) {
+  constructor(group, allSeats) {
+    const seats = allSeats.filter((q) => !q.front);
     const n = seats.length;
     this.n = n;
     const quad = new THREE.PlaneGeometry(1, 1);
@@ -214,6 +215,7 @@ export class Crowd {
     this.mesh = new THREE.Mesh(g, mat);
     this.mesh.frustumCulled = false;
     group.add(this.mesh);
+    this.front = new FrontFans(group, allSeats.filter((q) => q.front), this.u);
     this.setColours([0.8, 0.8, 0.85], [0.1, 0.1, 0.4]);
     this.excite = 0; this.cheerT = 0;
   }
@@ -231,7 +233,10 @@ export class Crowd {
       this.iShirt[i * 3] = base[0] * v; this.iShirt[i * 3 + 1] = base[1] * v; this.iShirt[i * 3 + 2] = base[2] * v;
     }
     this.shirtAttr.needsUpdate = true;
+    if (this.front) this.front.setColours(h, a);
   }
+
+  setBall(v) { if (this.front) this.front.uBall.value.copy(v); }
 
   /** 0..1 how close the play is to a goal (the crowd rises). */
   setExcitement(e) { this.excite = e; }
@@ -246,5 +251,150 @@ export class Crowd {
     u.uExcite.value += (this.excite - u.uExcite.value) * Math.min(1, dt * 1.5);
     u.uCamPos.value.copy(camPos);
     if (light != null) u.uLight.value = light;
+  }
+}
+
+// ------------------------------------------------------------------ front rows: real 3D fans
+// The rows nearest the pitch (what close camera shots see) are low-poly 3D people,
+// turned toward the ball, arms going up and bodies bouncing with the game.
+function fanGeometry() {
+  const parts = [];
+  // [w, h, d, cx, cy, cz, part(0 shirt, 1 skin, 2 pants, 3 head), arm(-1/0/1)]
+  const boxes = [
+    [0.4, 0.52, 0.22, 0, 1.12, 0, 0, 0],        // torso
+    [0.36, 0.55, 0.2, 0, 0.6, 0, 2, 0],         // legs / hips (mostly hidden by the row in front)
+    [0.1, 0.1, 0.1, 0, 1.42, 0, 1, 0],          // neck
+    [0.11, 0.62, 0.11, -0.25, 1.06, 0, 0, -1],  // arms (shoulder at y 1.36)
+    [0.11, 0.62, 0.11, 0.25, 1.06, 0, 0, 1],
+  ];
+  const pos = [], nor = [], prt = [], arm = [], idx = [];
+  for (const [w, h, d, cx, cy, cz, part, a] of boxes) {
+    const g = new THREE.BoxGeometry(w, h, d);
+    const P = g.attributes.position, N = g.attributes.normal, base = pos.length / 3;
+    for (let i = 0; i < P.count; i++) {
+      const y = P.getY(i);
+      pos.push(P.getX(i) + cx, y + cy, P.getZ(i) + cz);
+      nor.push(N.getX(i), N.getY(i), N.getZ(i));
+      prt.push(a !== 0 && y < 0 ? 1 : part);            // hands / forearms: skin
+      arm.push(a);
+    }
+    for (let i = 0; i < g.index.count; i++) idx.push(g.index.getX(i) + base);
+  }
+  // head: a low-poly ball, hair on top
+  const hg = new THREE.IcosahedronGeometry(0.115, 1);
+  const H = hg.attributes.position, HN = hg.attributes.normal, b0 = pos.length / 3;
+  for (let i = 0; i < H.count; i++) {
+    pos.push(H.getX(i), H.getY(i) * 1.12 + 1.58, H.getZ(i) * 1.05);
+    nor.push(HN.getX(i), HN.getY(i), HN.getZ(i));
+    prt.push(H.getY(i) > 0.035 || H.getZ(i) < -0.06 ? 3 : 1);
+    arm.push(0);
+  }
+  for (let i = 0; i < H.count; i++) idx.push(b0 + i);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('aPart', new THREE.Float32BufferAttribute(prt, 1));
+  g.setAttribute('aArm', new THREE.Float32BufferAttribute(arm, 1));
+  g.setIndex(idx);
+  return g;
+}
+
+const FAN_VERT = /* glsl */`
+attribute float aPart, aArm;
+attribute vec3 iPos, iShirt, iSkin;
+attribute vec4 iData;   // yaw, phase, scale, light
+uniform float uTime, uExcite, uCheer;
+uniform vec3 uBall;
+varying vec3 vCol; varying float vLight; varying vec3 vN;
+#include <fog_pars_vertex>
+mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
+void main() {
+  float ph = iData.y, sc = iData.z;
+  vec3 p = position, n = normal;
+  // arms: hang, then go up (and wave) as the crowd gets going
+  if (aArm != 0.0) {
+    float up = clamp(uCheer * 1.4 * step(0.25, fract(ph * 7.31 + aArm * 0.37)) + uExcite * step(0.75, fract(ph * 5.1)), 0.0, 1.0);
+    float a = -(0.08 + up * (2.75 + 0.18 * sin(uTime * 9.0 + ph * 40.0)));
+    vec3 piv = vec3(0.21 * aArm, 1.36, 0.0);
+    vec3 q = p - piv;
+    float c = cos(a), s = sin(a);
+    q = vec3(q.x, q.y * c - q.z * s, q.y * s + q.z * c);
+    q.x += aArm * up * 0.25 * (q.y > 0.0 ? q.y : 0.0);
+    p = piv + q;
+    n = vec3(n.x, n.y * c - n.z * s, n.y * s + n.z * c);
+  }
+  // follow the ball (within reason), bounce when it's exciting
+  vec2 d = uBall.xz - iPos.xz;
+  float yb = atan(d.x, d.y);
+  float dy = yb - iData.x; dy = atan(sin(dy), cos(dy));
+  float yaw = iData.x + clamp(dy, -0.9, 0.9) * 0.85 + sin(uTime * 0.4 + ph * 9.0) * 0.08;
+  float hop = uCheer * max(0.0, sin(uTime * 8.5 + ph * 40.0)) * (0.2 + 0.18 * fract(ph * 13.7)) + uExcite * max(0.0, sin(uTime * 5.0 + ph * 31.0)) * 0.05;
+  mat3 R = rotY(yaw);
+  vec3 wp = iPos + R * (p * sc) + vec3(0.0, hop, 0.0);
+  vN = normalize(R * n);
+  vec3 hair = mix(vec3(0.03, 0.022, 0.015), vec3(0.32, 0.22, 0.1), step(0.82, fract(ph * 17.3)));
+  vCol = aPart < 0.5 ? iShirt : aPart < 1.5 ? iSkin : aPart < 2.5 ? vec3(0.03, 0.032, 0.04) : hair;
+  vLight = iData.w;
+  vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}`;
+const FAN_FRAG = /* glsl */`
+uniform float uLight;
+varying vec3 vCol; varying float vLight; varying vec3 vN;
+#include <fog_pars_fragment>
+void main() {
+  float l = 0.42 + 0.58 * max(dot(normalize(vN), normalize(vec3(0.3, 0.9, 0.35))), 0.0);
+  vec3 c = vCol * l * uLight * vLight * 1.15;
+  gl_FragColor = vec4(c, 1.0);
+  #include <fog_fragment>
+}`;
+
+export class FrontFans {
+  constructor(group, seats, shared) {
+    const n = seats.length;
+    this.n = n;
+    const base = fanGeometry();
+    const g = new THREE.InstancedBufferGeometry();
+    g.index = base.index;
+    for (const k of ['position', 'normal', 'aPart', 'aArm']) g.setAttribute(k, base.attributes[k]);
+    const iPos = new Float32Array(n * 3), iData = new Float32Array(n * 4), iSkin = new Float32Array(n * 3);
+    this.iShirt = new Float32Array(n * 3);
+    this.kind = new Uint8Array(n); this.neutral = new Float32Array(n * 3);
+    const skins = [[0.62, 0.42, 0.3], [0.45, 0.29, 0.19], [0.25, 0.15, 0.09], [0.7, 0.52, 0.4], [0.55, 0.38, 0.26]];
+    const neutrals = [[0.02, 0.02, 0.025], [0.05, 0.05, 0.06], [0.12, 0.12, 0.13], [0.4, 0.4, 0.42], [0.03, 0.05, 0.14], [0.2, 0.04, 0.03], [0.07, 0.11, 0.06]];
+    let s = 21;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    seats.forEach((q, i) => {
+      iPos.set([q.x, q.y, q.z], i * 3);
+      iData.set([q.yaw, rnd(), 0.92 + rnd() * 0.14, q.light * (0.85 + rnd() * 0.3)], i * 4);
+      iSkin.set(skins[Math.floor(rnd() * skins.length)], i * 3);
+      this.kind[i] = q.away ? (rnd() < 0.8 ? 1 : 2) : rnd() < 0.55 ? 0 : 2;
+      this.neutral.set(neutrals[Math.floor(rnd() * neutrals.length)], i * 3);
+    });
+    g.setAttribute('iPos', new THREE.InstancedBufferAttribute(iPos, 3));
+    g.setAttribute('iData', new THREE.InstancedBufferAttribute(iData, 4));
+    g.setAttribute('iSkin', new THREE.InstancedBufferAttribute(iSkin, 3));
+    this.shirtAttr = new THREE.InstancedBufferAttribute(this.iShirt, 3);
+    g.setAttribute('iShirt', this.shirtAttr);
+    g.instanceCount = n;
+    const mat = new THREE.ShaderMaterial({ vertexShader: FAN_VERT, fragmentShader: FAN_FRAG, fog: true, uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {}]) });
+    this.uBall = { value: new THREE.Vector3() };
+    Object.assign(mat.uniforms, { uTime: shared.uTime, uExcite: shared.uExcite, uCheer: shared.uCheer, uLight: shared.uLight, uBall: this.uBall });
+    this.mesh = new THREE.Mesh(g, mat);
+    this.mesh.frustumCulled = false;
+    group.add(this.mesh);
+  }
+
+  setColours(h, a) {
+    let s = 5;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    for (let i = 0; i < this.n; i++) {
+      const k = this.kind[i];
+      const b = k === 0 ? h : k === 1 ? a : [this.neutral[i * 3], this.neutral[i * 3 + 1], this.neutral[i * 3 + 2]];
+      const v = 0.55 + rnd() * 0.35;
+      this.iShirt[i * 3] = b[0] * v; this.iShirt[i * 3 + 1] = b[1] * v; this.iShirt[i * 3 + 2] = b[2] * v;
+    }
+    this.shirtAttr.needsUpdate = true;
   }
 }

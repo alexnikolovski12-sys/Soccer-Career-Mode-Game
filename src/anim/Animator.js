@@ -396,7 +396,8 @@ export class Animator {
     const wP = wF * clamp((s - 4.6) / 1.8, 0, 1) * 0.9;
     this.gaitW = wP;
     if (wP > 0.01) {
-      const D = gaitPose(this.phase, s, this._tmp3, this.style);
+      this.ballK = (this.ballK || 0) + ((hasBall ? 1 : 0) - (this.ballK || 0)) * Math.min(1, dt * 5);
+      const D = gaitPose(this.phase, s, this._tmp3, this.style, this.ballK);
       blendInto(out, this._tmp3, wP);
       const ph = this.phase, cLg = ph < D ? 1 : 0, cRg = ((ph + 0.5) % 1) < D ? 1 : 0;
       cL = cL * (1 - wP) * (cW ? 1 / cW : 0) * cW + cLg * wP * cW; cR = cR * (1 - wP) + cRg * wP * cW;

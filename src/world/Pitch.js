@@ -403,7 +403,7 @@ export class Pitch {
             const lx = -hf + (k + 0.5) * sw + (rnd() - 0.5) * 0.12;
             const w = W3(S.rot, lx, y + T.rise, d + T.depth * 0.42 + (rnd() - 0.5) * 0.08);
             const under = ti === 1 ? 0.62 + 0.25 * (1 - r / T.rows) : 1 - 0.25 * (r / T.rows);
-            seats.push({ x: w[0], y: w[1], z: w[2], light: under, away: S.away && ti === 0 && lx < 0 });
+            seats.push({ x: w[0], y: w[1], z: w[2], light: under, away: S.away && ti === 0 && lx < 0, front: ti === 0 && r < 5, yaw: S.rot });
           }
         }
         // back / side walls of the tier
