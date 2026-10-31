@@ -1,55 +1,21 @@
-// Ultimate Team player database: ~1,800 invented players, one squad per
-// top-flight club, generated from fixed seeds so every device has the same
-// cards. Each card has FC-style face stats, a position, a rarity, and a look
-// (skin, hair, face shape, height) so he's the same man on the pitch.
+// Ultimate Team player database: the real squads of the top-flight clubs
+// (realdb.js). Each card gets FC-style face stats around its rating, a rarity
+// and a generated look (skin tone from the data, hair / face / height made up,
+// seeded by the player's name) so he's the same man on the pitch every time.
 import { makeRng } from '../core/MathUtil.js';
-import { world, LEAGUE_COUNTRIES, NATIONS } from './world.js';
+import { world, LEAGUE_COUNTRIES } from './world.js';
+import { cardDB as legacyDB } from './legacy/cards.js';
 
-// ---------------------------------------------------------------- names (invented combinations)
-const FIRST = {
-  en: ['Jack', 'Harry', 'Callum', 'Owen', 'Reece', 'Toby', 'Leon', 'Kieran', 'Mason', 'Ryan', 'Ethan', 'Jamie', 'Lewis', 'Archie', 'Theo', 'Connor', 'Declan', 'Joel', 'Alfie', 'Ben'],
-  es: ['Álvaro', 'Diego', 'Iker', 'Sergio', 'Pablo', 'Hugo', 'Marcos', 'Rubén', 'Adrián', 'Javi', 'Raúl', 'Dani', 'Mateo', 'Nacho', 'Unai', 'Gonzalo'],
-  de: ['Lukas', 'Jonas', 'Felix', 'Niklas', 'Leon', 'Tim', 'Florian', 'Kai', 'Moritz', 'Jannik', 'Max', 'Erik', 'Fabian', 'Timo', 'Julian'],
-  it: ['Lorenzo', 'Matteo', 'Federico', 'Andrea', 'Davide', 'Riccardo', 'Nicolò', 'Simone', 'Marco', 'Gianluca', 'Pietro', 'Alessio', 'Tommaso'],
-  fr: ['Théo', 'Lucas', 'Hugo', 'Maxime', 'Antoine', 'Kylian', 'Benoît', 'Mathis', 'Rayan', 'Enzo', 'Clément', 'Yanis', 'Adrien', 'Jules'],
-  pt: ['João', 'Rúben', 'Diogo', 'Tiago', 'Rafael', 'Gonçalo', 'André', 'Nuno', 'Bruno', 'Vitinha', 'Pedro', 'Francisco'],
-  nl: ['Daan', 'Sem', 'Jesse', 'Thijs', 'Bram', 'Lars', 'Ruben', 'Stijn', 'Joey', 'Teun', 'Milan', 'Sven'],
-  br: ['Gabriel', 'Lucas', 'Matheus', 'Thiago', 'Vinícius', 'Rodrygo', 'Caio', 'Endrick', 'Danilo', 'Wesley', 'Igor', 'Davi'],
-  ar: ['Santiago', 'Facundo', 'Lautaro', 'Nicolás', 'Thiago', 'Valentín', 'Agustín', 'Franco', 'Joaquín', 'Enzo'],
-  af: ['Moussa', 'Ibrahima', 'Youssef', 'Kwame', 'Chidi', 'Amadou', 'Sadio', 'Kofi', 'Hakim', 'Yaya', 'Ousmane', 'Victor', 'Samuel'],
-  as: ['Takumi', 'Kaoru', 'Daichi', 'Ritsu', 'Min-jae', 'Hee-chan', 'Ji-sung', 'Kento', 'Yuto', 'Hiroki'],
-  us: ['Tyler', 'Weston', 'Christian', 'Gio', 'Brenden', 'Jordan', 'Malik', 'Josh', 'Caleb', 'Riley'],
-};
-const LAST = {
-  en: ['Marlow', 'Hendry', 'Ashcroft', 'Pryce', 'Calloway', 'Brindle', 'Haskett', 'Wainwright', 'Dorsey', 'Kettering', 'Farrow', 'Ledger', 'Holloway', 'Prentice', 'Rook', 'Sewell', 'Tolland', 'Whitlock', 'Ainsley', 'Burrows'],
-  es: ['Navarro', 'Olmedo', 'Calderón', 'Ferrán', 'Quintero', 'Robledo', 'Saavedra', 'Uriarte', 'Vidaurre', 'Zamora', 'Lozano', 'Bermejo', 'Cuesta', 'Iturbe'],
-  de: ['Brenner', 'Falkner', 'Gerlach', 'Hartwig', 'Kessler', 'Lindner', 'Mertens', 'Reuter', 'Schaller', 'Vogt', 'Wendler', 'Ziegler', 'Brandt'],
-  it: ['Bellucci', 'Castagna', 'Donati', 'Ferrero', 'Galli', 'Lombardi', 'Marchetti', 'Orsini', 'Pellegrini', 'Rinaldi', 'Sartori', 'Vitale'],
-  fr: ['Aubert', 'Bonnet', 'Chevalier', 'Delacroix', 'Fontaine', 'Garnier', 'Lefèvre', 'Marchand', 'Perrin', 'Rousseau', 'Tessier', 'Vidal'],
-  pt: ['Almeida', 'Barros', 'Carvalho', 'Duarte', 'Esteves', 'Figueira', 'Lacerda', 'Machado', 'Pinheiro', 'Quaresma', 'Rebelo', 'Tavares'],
-  nl: ['Bakker', 'de Boer', 'Dekker', 'van Dijkhuis', 'Hoekstra', 'Jansma', 'Kuipers', 'Meijer', 'Postma', 'Visscher', 'de Wit', 'Zwart'],
-  br: ['Andrade', 'Barbosa', 'Cardoso', 'Freitas', 'Guimarães', 'Moraes', 'Nogueira', 'Peixoto', 'Rocha', 'Teixeira', 'Valadares'],
-  ar: ['Acuña', 'Benítez', 'Cabral', 'Echeverri', 'Funes', 'Gaitán', 'Ledesma', 'Medina', 'Pereyra', 'Sosa', 'Villalba'],
-  af: ['Diallo', 'Mensah', 'Okafor', 'Traoré', 'Koné', 'Boateng', 'Ndiaye', 'Adeyemi', 'Camara', 'Sangaré', 'Ouattara', 'Bamba', 'Eze', 'Asante'],
-  as: ['Tanaka', 'Morimoto', 'Hayashi', 'Kim', 'Park', 'Lee', 'Nakamura', 'Sato', 'Han', 'Ito'],
-  us: ['Adler', 'Brooks', 'Carver', 'Dempsey', 'Ellison', 'Fischer', 'Hayes', 'Lowell', 'Reyna', 'Turner'],
-};
-const NAT_FLAVOUR = {
-  ENG: 'en', SCO: 'en', IRL: 'en', AUS: 'en', CAN: 'us', USA: 'us', ESP: 'es', MEX: 'es', COL: 'es', URU: 'ar', ARG: 'ar',
-  GER: 'de', SUI: 'de', POL: 'de', DEN: 'nl', NED: 'nl', BEL: 'nl', ITA: 'it', CRO: 'it', FRA: 'fr', POR: 'pt', BRA: 'br',
-  MAR: 'af', SEN: 'af', NGA: 'af', GHA: 'af', CIV: 'af', JPN: 'as', KOR: 'as',
-};
-const DARK = new Set(['SEN', 'NGA', 'GHA', 'CIV']);
+const DARK = new Set(['SEN', 'NGA', 'GHA', 'CIV', 'CMR', 'MLI', 'COD', 'GUI', 'BFA', 'GAB', 'JAM']);
 const MIXED = new Set(['BRA', 'FRA', 'ENG', 'NED', 'BEL', 'POR', 'USA', 'COL', 'MAR', 'CAN']);
 const ASIAN = new Set(['JPN', 'KOR']);
+const nameSeed = (s) => { let h = 2166136261; for (const ch of s) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0; return h; };
+const TALL = { GK: [1.86, 1.99], CB: [1.83, 1.96], ST: [1.76, 1.94], CDM: [1.76, 1.9] };
 
 const SKINS_LIGHT = ['#f6d7bd', '#f1c9a5', '#e0ac82', '#d49a6e'];
 const SKINS_MID = ['#c68a5e', '#a86b43', '#b07850'];
 const SKINS_DARK = ['#8b5634', '#6e4026', '#5a3420', '#4f2c18'];
 const HAIR_COL = ['#0e0e0e', '#1a1310', '#2a1c14', '#4a3020', '#7a5a2e', '#b07a3a', '#c9a35a', '#e4cf8f', '#9a3b1c'];
-
-// squad template per club: positions
-const SQUAD = ['GK', 'GK', 'LB', 'RB', 'CB', 'CB', 'CB', 'CDM', 'CM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST', 'ST', 'CF'];
 
 export const POS_GROUP = { GK: 'GK', LB: 'DEF', RB: 'DEF', CB: 'DEF', LWB: 'DEF', RWB: 'DEF', CDM: 'MID', CM: 'MID', CAM: 'MID', LM: 'MID', RM: 'MID', LW: 'ATT', RW: 'ATT', ST: 'ATT', CF: 'ATT' };
 
@@ -89,10 +55,10 @@ export function engineStats(c, chem = 1.5) {
 
 let DB = null;
 
-function makeLook(rng, nat) {
-  const dark = DARK.has(nat) || (MIXED.has(nat) && rng.chance(0.35));
+function makeLook(rng, nat, real = null) {
+  const dark = real ? real.dark || (DARK.has(nat) && !real.mid) : DARK.has(nat) || (MIXED.has(nat) && rng.chance(0.35));
   const asian = ASIAN.has(nat);
-  const mid = !dark && (MIXED.has(nat) && rng.chance(0.3));
+  const mid = real ? !dark && real.mid : !dark && (MIXED.has(nat) && rng.chance(0.3));
   const skin = dark ? rng.pick(SKINS_DARK) : mid ? rng.pick(SKINS_MID) : asian ? rng.pick(['#f1c9a5', '#e8bd92', '#e0ac82']) : rng.pick(SKINS_LIGHT);
   const hairColour = dark || asian ? rng.pick(['#0e0e0e', '#1a1310', '#0e0e0e']) : rng.pick(HAIR_COL);
   const styles = dark ? ['buzz', 'buzz', 'fade', 'afro', 'curly', 'crop', 'bald', 'mohawk'] : ['short', 'short', 'crop', 'fade', 'quiff', 'buzz', 'curly', 'receding', 'long', 'mohawk', 'bald'];
@@ -110,7 +76,7 @@ function makeLook(rng, nat) {
   return {
     skin, hairColour, hairStyle: rng.pick(styles), facial, face,
     eyeColour: dark || asian ? '#2a1a10' : rng.pick(['#4a2e1a', '#3a2a1a', '#3b5a7a', '#4f6a3a', '#2a1a10']),
-    height: +(rng.range(1.7, 1.93)).toFixed(2),
+    height: +(rng.range(...(real && TALL[real.pos] || [1.7, 1.88]))).toFixed(2),
     boots: rng.pick(['#111111', '#f2f2f2', '#e8402a', '#1d6ff2', '#f2c21b', '#24d07a', '#ff4fa3', '#7a3cff', '#ff8a1a']),
     sleeves: rng.chance(0.18) ? 'long' : 'short',
   };
@@ -125,40 +91,50 @@ export function cardDB() {
   let n = 0;
   for (const c of LEAGUE_COUNTRIES) {
     const L = W.leagues[`${c.id}1`];
-    L.clubs.forEach((clubId, ci) => {
+    for (const clubId of L.clubs) {
       const club = W.clubs[clubId];
-      const rng = makeRng(77001 + n * 31 + ci);
-      const base = club.rating;
-      SQUAD.forEach((pos, k) => {
-        // nationality: mostly the league's country, some foreign
-        const nat = rng.chance(0.6) ? c.id : NATIONS[rng.int(0, NATIONS.length - 1)].id;
-        const fl = NAT_FLAVOUR[nat] || 'en';
-        const first = rng.pick(FIRST[fl]), last = rng.pick(LAST[fl]);
-        // a couple of stars at the big clubs, a spread elsewhere
-        let ovr = Math.round(base + rng.range(-9, 6) - (k === 1 ? 6 : 0));
-        if (club.giant && k % 6 === 3) ovr += rng.int(3, 8);
-        if (rng.chance(0.015)) ovr += rng.int(4, 9);
-        ovr = Math.max(48, Math.min(93, ovr));
-        const id = `p${n}`;
+      for (const p of club.squad) {
+        const rng = makeRng(nameSeed(p.first + ' ' + p.last));
+        const id = `r${n}`;
+        const stats = faceStats(rng, p.pos, p.ovr);
+        // pace from what's known of the man: rapid, ordinary or not quick
+        if (stats.pac) {
+          if (p.fast) stats.pac = Math.min(97, Math.max(stats.pac, p.ovr + 6, 89 + rng.int(0, 4)));
+          else if (p.slow) stats.pac = Math.min(stats.pac, 58 + rng.int(0, 12));
+          else stats.pac = Math.min(stats.pac, 79 + rng.int(0, 9));
+        }
+        const name = p.first ? `${p.first[0]}. ${p.last}` : p.last;
         const card = {
-          id, first, last, name: `${first[0]}. ${last}`, short: last.toUpperCase(),
-          nation: nat, club: clubId, league: L.id, pos, ovr,
-          rare: rng.chance(ovr >= 75 ? 0.45 : 0.3),
-          stats: faceStats(rng, pos, ovr),
-          look: makeLook(rng, nat),
-          foot: rng.chance(0.75) ? 'R' : 'L',
+          id, first: p.first, last: p.last, name, short: p.last.toUpperCase(),
+          nation: p.nation, club: clubId, league: L.id, pos: p.pos, ovr: p.ovr,
+          rare: p.ovr >= 84 || rng.chance(p.ovr >= 75 ? 0.45 : 0.3),
+          stats, look: makeLook(rng, p.nation, p), foot: p.left ? 'L' : 'R',
         };
         cards[id] = card;
         list.push(card);
         n++;
-      });
-    });
+      }
+    }
   }
   DB = { cards, list };
   return DB;
 }
 
+/** A save made before the real squads: map an old card id to a real player in the same position with a similar rating. */
+export function migrateCard(oldId, taken) {
+  const db = cardDB();
+  if (db.cards[oldId]) return oldId;
+  const old = legacyDB().cards[oldId];
+  const pos = old ? old.pos : 'CM', ovr = old ? old.ovr : 70;
+  const near = (c) => Math.abs(c.ovr - ovr) + (c.pos === pos ? 0 : posFit(c.pos, pos) ? 3 : 12) + (taken.has(c.id) ? 6 : 0);
+  let best = db.list[0], bd = 1e9;
+  for (const c of db.list) { const d = near(c); if (d < bd) { bd = d; best = c; } }
+  taken.add(best.id);
+  return best.id;
+}
+
 export const card = (id) => cardDB().cards[id];
+export const legacyCard = (id) => legacyDB().cards[id];
 export const tierOf = (c) => (c.ovr >= 75 ? 'gold' : c.ovr >= 65 ? 'silver' : 'bronze');
 
 /** Quick-sell value. */

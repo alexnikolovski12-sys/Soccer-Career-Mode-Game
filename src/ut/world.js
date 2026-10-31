@@ -1,8 +1,9 @@
-// Ultimate Team world: countries, leagues (top flights used for cards), fictional
-// clubs with invented names and original kits. Same world on every device.
+// Ultimate Team world: countries and leagues. The top flights are real clubs
+// with their real squads (realdb.js); the lower divisions are invented.
 // Everything is generated from fixed seeds, so the same world comes back on
 // every device and every load.
 import { makeRng } from '../core/MathUtil.js';
+import { REAL_CLUBS, parseSquad } from './realdb.js';
 
 export const CLUBS_PER_LEAGUE = 16;
 /** Top-flight names (all invented). */
@@ -33,6 +34,18 @@ export const NATIONS = [
   { id: 'GHA', name: 'Ghana', tier: 3 }, { id: 'CIV', name: "Côte d'Ivoire", tier: 2 },
   { id: 'CAN', name: 'Canada', tier: 3 }, { id: 'POL', name: 'Poland', tier: 3 },
   { id: 'SUI', name: 'Switzerland', tier: 3 }, { id: 'DEN', name: 'Denmark', tier: 2 },
+  { id: 'NOR', name: 'Norway', tier: 2 }, { id: 'SWE', name: 'Sweden', tier: 2 }, { id: 'ECU', name: 'Ecuador', tier: 2 },
+  { id: 'HUN', name: 'Hungary', tier: 3 }, { id: 'GEO', name: 'Georgia', tier: 3 }, { id: 'UKR', name: 'Ukraine', tier: 2 },
+  { id: 'EGY', name: 'Egypt', tier: 2 }, { id: 'ALG', name: 'Algeria', tier: 2 }, { id: 'TUR', name: 'Türkiye', tier: 2 },
+  { id: 'CMR', name: 'Cameroon', tier: 2 }, { id: 'SVN', name: 'Slovenia', tier: 3 }, { id: 'MLI', name: 'Mali', tier: 3 },
+  { id: 'WAL', name: 'Wales', tier: 3 }, { id: 'AUT', name: 'Austria', tier: 2 }, { id: 'COD', name: 'DR Congo', tier: 3 },
+  { id: 'JAM', name: 'Jamaica', tier: 3 }, { id: 'SVK', name: 'Slovakia', tier: 3 }, { id: 'CZE', name: 'Czechia', tier: 3 },
+  { id: 'GUI', name: 'Guinea', tier: 3 }, { id: 'BFA', name: 'Burkina Faso', tier: 3 }, { id: 'TUN', name: 'Tunisia', tier: 3 },
+  { id: 'ARM', name: 'Armenia', tier: 3 }, { id: 'SRB', name: 'Serbia', tier: 2 }, { id: 'KOS', name: 'Kosovo', tier: 3 },
+  { id: 'ALB', name: 'Albania', tier: 3 }, { id: 'BIH', name: 'Bosnia and Herzegovina', tier: 3 }, { id: 'MNE', name: 'Montenegro', tier: 3 },
+  { id: 'GAB', name: 'Gabon', tier: 3 }, { id: 'FIN', name: 'Finland', tier: 3 }, { id: 'GRE', name: 'Greece', tier: 3 },
+  { id: 'ROU', name: 'Romania', tier: 3 }, { id: 'ISR', name: 'Israel', tier: 3 }, { id: 'ISL', name: 'Iceland', tier: 3 },
+  { id: 'VEN', name: 'Venezuela', tier: 3 }, { id: 'PAN', name: 'Panama', tier: 3 }, { id: 'RUS', name: 'Russia', tier: 3 },
 ];
 
 // ---------------------------------------------------------------- names (all invented)
@@ -121,6 +134,20 @@ export function world() {
     for (let lv = 1; lv <= 3; lv++) {
       const leagueId = `${c.id}${lv}`;
       leagues[leagueId] = { id: leagueId, country: c.id, level: lv, name: lv === 1 ? LEAGUE_NAMES[c.id] : `${c.name} L${lv}`, clubs: [] };
+      if (lv === 1) {
+        // the top flights are real clubs with their real squads (realdb.js)
+        REAL_CLUBS[c.id].forEach(([name, short, k, players], i) => {
+          const id = `${leagueId}_${i}`;
+          const squad = parseSquad(players);
+          const best = squad.map((p) => p.ovr).sort((a, b) => b - a).slice(0, 11);
+          const rating = Math.round(best.reduce((a, v) => a + v, 0) / Math.max(1, best.length));
+          const kit = { primary: k[0], secondary: k[1], pattern: k[2], shorts: k[3], socks: k[4] };
+          clubs[id] = { id, name, short, league: leagueId, country: c.id, level: 1, rating, giant: rating >= 84, kit, squad, real: true };
+          leagues[leagueId].clubs.push(id);
+          usedNames.add(name);
+        });
+        continue;
+      }
       for (let k = 0; k < CLUBS_PER_LEAGUE; k++) {
         let name;
         for (let tries = 0; tries < 60; tries++) {
@@ -150,6 +177,7 @@ export function world() {
   });
   // make short codes unique inside each league
   for (const L of Object.values(leagues)) {
+    if (L.level === 1) continue;     // real clubs keep their real codes
     const seen = new Set();
     for (const id of L.clubs) {
       const c = clubs[id];
@@ -180,6 +208,7 @@ export function kitSVG(kit, size = 44) {
     case 'quarters': fill = `<rect x="32" y="0" width="32" height="32" fill="${s}"/><rect x="0" y="32" width="32" height="32" fill="${s}"/>`; break;
     case 'sash': fill = `<polygon points="6,8 18,8 58,60 46,60" fill="${s}"/>`; break;
     case 'chevron': fill = `<polygon points="10,14 32,30 54,14 54,24 32,40 10,24" fill="${s}"/>`; break;
+    case 'centre': fill = `<rect x="24" y="0" width="16" height="64" fill="${s}"/>`; break;
     case 'band': fill = `<rect x="0" y="24" width="64" height="10" fill="${s}"/>`; break;
     case 'sleeves': fill = `<rect x="0" y="0" width="16" height="64" fill="${s}"/><rect x="48" y="0" width="16" height="64" fill="${s}"/>`; break;
     default: fill = '';

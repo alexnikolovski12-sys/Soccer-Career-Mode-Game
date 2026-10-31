@@ -1,6 +1,6 @@
 // Ultimate Team: your club, cards, squad + chemistry, packs, the transfer
 // market, objectives and Squad Battles. Everything is saved on the device.
-import { cardDB, card, tierOf, quickSell, marketPrice, chemistry, squadRating, posFit, engineStats, POS_GROUP } from './cards.js';
+import { cardDB, card, tierOf, quickSell, marketPrice, chemistry, squadRating, posFit, engineStats, POS_GROUP, migrateCard, legacyCard } from './cards.js';
 import { world, club, league, nation, crestSVG, kitSVG, KIT_COLOURS, LEAGUE_COUNTRIES } from './world.js';
 import { flag, ICON } from './icons.js';
 import { FORMATIONS } from '../ai/TeamAI.js';
@@ -110,12 +110,24 @@ export class UltimateTeam {
   // ------------------------------------------------------------ save
   load() {
     try { const s = JSON.parse(localStorage.getItem(SAVE)); if (s && s.v === 1) this.s = s; } catch (_) { /* fresh */ }
+    if (this.s && !this.s.real) this._toRealPlayers();
     return !!this.s;
   }
   save() { try { localStorage.setItem(SAVE, JSON.stringify(this.s)); } catch (_) { /* full / private */ } }
 
   open() { this.el.classList.add('show'); if (!this.s) this._setup(); else this.render(); }
   close() { this.el.classList.remove('show'); }
+
+  /** Saves from before the real squads: every invented card becomes a real player of the same position and a similar rating. */
+  _toRealPlayers() {
+    const s = this.s, taken = new Set();
+    const owned = s.owned.slice().sort((a, b) => (this._legacyOvr(b.cid) - this._legacyOvr(a.cid)));
+    for (const o of owned) o.cid = migrateCard(o.cid, taken);
+    s.opps = null; s.market = null;
+    s.real = 1;
+    this.save();
+  }
+  _legacyOvr(cid) { try { return legacyCard(cid)?.ovr || 0; } catch (_) { return 0; } }
 
   // ------------------------------------------------------------ owned cards
   own(uid) { return this.s.owned.find((o) => o.uid === uid); }
@@ -136,7 +148,9 @@ export class UltimateTeam {
   // ------------------------------------------------------------ pack generation
   _rollPack(p) {
     const db = cardDB().list;
-    const pool = db.filter((c) => tierOf(c) === p.tier);
+    let pool = db.filter((c) => tierOf(c) === p.tier);
+    // real squads have few bronzes: those packs draw from the lowest-rated players instead
+    if (pool.length < 40) pool = db.slice().sort((a, b) => a.ovr - b.ovr).slice(0, 80);
     const out = [];
     for (let i = 0; i < p.n; i++) {
       const wantRare = i < p.rares;
@@ -161,10 +175,16 @@ export class UltimateTeam {
   _starter() {
     const db = cardDB().list;
     const L = LEAGUE_COUNTRIES[Math.floor(rnd() * LEAGUE_COUNTRIES.length)].id + '1';
-    const need = ['GK', 'GK', 'LB', 'RB', 'CB', 'CB', 'CB', 'CDM', 'CM', 'CM', 'CAM', 'LW', 'RW', 'LM', 'RM', 'ST', 'ST', 'CF', 'CM', 'CB', 'ST', 'LB', 'RB'];
+    const need = ['GK', 'GK', 'LB', 'RB', 'CB', 'CB', 'CB', 'CDM', 'CM', 'CM', 'CAM', 'LW', 'RW', 'LW', 'RW', 'ST', 'ST', 'ST', 'CM', 'CB', 'ST', 'LB', 'RB'];
+    const got = new Set();
+    // the squad players of the real clubs: the lowest-rated third in each position (≈ 72–76)
     return need.map((pos) => {
-      const pool = db.filter((c) => c.pos === pos && c.ovr >= 58 && c.ovr <= 69 && (rnd() < 0.7 ? c.league === L : true));
-      return pick(pool.length ? pool : db.filter((c) => c.pos === pos)).id;
+      const all = db.filter((c) => c.pos === pos && !got.has(c.id)).sort((a, b) => a.ovr - b.ovr);
+      const low = all.slice(0, Math.max(4, Math.round(all.length * 0.33)));
+      const pool = low.filter((c) => c.league === L);
+      const c = pick(pool.length && rnd() < 0.6 ? pool : low);
+      got.add(c.id);
+      return c.id;
     });
   }
 
@@ -245,7 +265,7 @@ export class UltimateTeam {
       const name = w.querySelector('.nm').value.trim() || 'Breakaway FC';
       const short = name.replace(/[^A-Za-z ]/g, '').split(/\s+/).filter((x) => x.length > 2 && !/^(FC|AFC|CF|SC)$/i.test(x))[0]?.slice(0, 3).toUpperCase() || 'BRK';
       this.s = {
-        v: 1, clubName: name, short, kit, kit2: KIT_PRESETS.find((k) => clashes(k, kit)) ? KIT_PRESETS.find((k) => !clashes(k, kit)) : KIT_PRESETS[1], coins: 5000, owned: [], nextUid: 1,
+        v: 1, real: 1, clubName: name, short, kit, kit2: KIT_PRESETS.find((k) => clashes(k, kit)) ? KIT_PRESETS.find((k) => !clashes(k, kit)) : KIT_PRESETS[1], coins: 5000, owned: [], nextUid: 1,
         squad: { formation: '4-3-3', xi: new Array(11).fill(null), bench: [] },
         sb: { points: 0, played: 0, wins: 0, draws: 0, losses: 0 },
         prog: { wins: 0, goals: 0, clean: 0, proWins: 0, worldWins: 0, chem33: 0 }, claimed: {},
@@ -365,7 +385,7 @@ export class UltimateTeam {
       { kick: 'DIVISION RIVALS', title: 'CLIMB THE DIVISIONS', sub: `Division ${(s.rivals || { div: 10 }).div} — win to move up`, go: 'rivals' },
       { kick: 'SQUAD BATTLES', title: 'WEEKEND LEAGUE', sub: `${rk.name} · ${fmt(s.sb.points)} pts — climb to Elite`, go: 'play' },
       { kick: 'STORE', title: 'ULTIMATE PACK', sub: '30 rare gold players and a guaranteed 85+', go: 'store' },
-      { kick: 'MARKET', title: 'EVERY PLAYER', sub: 'Search all 1,800 players and sign the stars', go: 'market' },
+      { kick: 'MARKET', title: 'EVERY PLAYER', sub: 'Search every real player and sign the stars', go: 'market' },
     ];
     const promos = [
       { title: 'PACK OF THE DAY', pack: 'premium', go: 'store' },
@@ -908,9 +928,11 @@ export class UltimateTeam {
   _marketList(body, reset) {
     const s = this.s, f = this.mf;
     if (reset) {
-      const q = f.q.trim().toLowerCase();
+      // accent-free match, so "mbappe" finds Mbappé and "odegaard" finds Ødegaard
+      const fold = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/ß/g, 'ss').replace(/[ıİ]/g, 'i').replace(/ł/g, 'l').replace(/đ/g, 'd');
+      const q = fold(f.q.trim());
       let list = cardDB().list.filter((c) => c.ovr >= f.min && (f.g === 'ALL' || (POS_GROUP[c.pos] || c.pos) === f.g) && (f.lg === 'ALL' || c.league === f.lg)
-        && (!q || `${c.first} ${c.last} ${c.short}`.toLowerCase().includes(q) || club(c.club).name.toLowerCase().includes(q)));
+        && (!q || fold(`${c.first} ${c.last} ${club(c.club).name} ${club(c.club).short}`).includes(q)));
       list.sort(f.sort === 'lo' ? (a, b) => marketPrice(a) - marketPrice(b) : f.sort === 'hi' ? (a, b) => marketPrice(b) - marketPrice(a) : (a, b) => b.ovr - a.ovr);
       this.results = list; this.mShown = 0;
       body.querySelector('.mk-grid').innerHTML = '';

@@ -1,5 +1,5 @@
 // Club kit (menu format) → in-game kit look (shader uniforms), and change-strip logic.
-const PATTERN = { plain: 0, stripes: 1, hoops: 2, halves: 3, sash: 4, chevron: 4, pinstripes: 6, band: 2, sleeves: 5, quarters: 3 };
+const PATTERN = { plain: 0, stripes: 1, hoops: 2, halves: 3, sash: 4, chevron: 4, pinstripes: 6, band: 2, sleeves: 5, quarters: 3, centre: 7 };
 
 function hash(s) { let h = 7; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; }
 

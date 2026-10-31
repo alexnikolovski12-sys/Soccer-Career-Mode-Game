@@ -31,6 +31,8 @@ export class CameraRig {
     this.camera.updateProjectionMatrix();
   }
 
+  get _fv() { return this.__fv || (this.__fv = this.desiredLook.clone()); }
+
   setMode(mode, opts = {}) {
     if (mode !== this.mode) this._celH = null;
     this.mode = mode;
@@ -170,9 +172,12 @@ export class CameraRig {
       }
     } else if (this.mode === 'replay') {
       // broadcast-style side view tracking the ball, low and close
-      const b = this.opts.ballPos || game.ball.mesh.position;
+      let b = this.opts.ballPos || game.ball.mesh.position;
       const side = this.opts.side || 1, e = this.opts.end || 1;
-      this.desiredPos.set(b.x - e * 7, 3.2, b.z + side * (this.portrait ? 16 : 12));
+      // a foul replay follows the man who went down (the ball often runs away after the tackle)
+      if (this.opts.follow) b = this._fv.copy(this.opts.follow).lerp(b, 0.25);
+      const near = this.opts.close ? 0.7 : 1;
+      this.desiredPos.set(b.x - e * 7 * near, 3.2 * near, b.z + side * (this.portrait ? 16 : 12) * near);
       this.desiredLook.set(b.x + e * 1.5, 1, b.z);
       posK = 3.5; lookK = 6;
       fov = this.portrait ? 55 : 40;

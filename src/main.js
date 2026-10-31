@@ -167,7 +167,7 @@ class Game {
     this.loop = new Loop({
       hz: CONFIG.sim.hz,
       maxSteps: CONFIG.sim.maxStepsPerFrame,
-      update: (dt) => this.sm.update(dt),
+      update: (dt) => { if (!(this.foulRp && this.foulRp.on)) this.sm.update(dt); },   // the match waits while a foul is replayed
       render: (alpha, realDt, scaledDt) => this.frame(alpha, realDt, scaledDt),
     });
 
@@ -181,6 +181,7 @@ class Game {
     window.addEventListener('pagehide', () => this.pause());
     this.layer.addEventListener('pointerdown', () => {
       if (this.sm.is(STATES.GOAL) && this.goalPhase === 'replay') this._endReplay();
+      else if (this.foulRp && this.foulRp.on && this.foulRp.age > 0.4) this._endFoulReplay();
     });
 
     this.applyQuality(this.quality.current);
@@ -412,6 +413,8 @@ class Game {
    */
   onFoul({ by, victim }) {
     if (!this.sm.is(STATES.PLAYING) || this.setPiece || this.match.restart) return;
+    // after a beat of the live reaction, the TV replay of the challenge
+    this.foulRp = { at: this.simTime, wait: 1.15, victim, by, on: false, age: 0 };
     const L = CONFIG.pitch.length / 2, P = CONFIG.pitch;
     const x = this.ball.pos.x, z = this.ball.pos.z;
     this.match.stats[by.team].fouls++;
@@ -1387,6 +1390,8 @@ class Game {
     this._rebuildLists();
     this.homeAI.reset(); this.awayAI.reset();
     this.replay.reset([...this.players, this.ref, ...this.extraPool]);
+    if (this.foulRp && this.foulRp.on) this._endFoulReplay();
+    this.foulRp = null;
     this.audio.unlock();
     this.audio.setMatchAudio(true);
     this.audio.setCrowd(0.3);
@@ -1478,6 +1483,9 @@ class Game {
     this.extras = [];
     this.setPiece = null;
     this.skills.reset();
+    if (this.foulRp && this.foulRp.on) this._endFoulReplay();
+    this.foulRp = null;
+    document.body.classList.remove('in-replay');
     this.replay.stop();
     this.hud.setReplay(false);
     this.ts = null;
@@ -1490,6 +1498,40 @@ class Game {
   }
 
   resume() { if (this.sm.is(STATES.PAUSED)) this.sm.pop(); }
+
+  /** Foul replay: the last few seconds before the whistle, slowed down, from a low side-on camera. The match is frozen meanwhile. */
+  _foulReplayFrame(realDt) {
+    const r = this.foulRp;
+    if (!r.on) {
+      if (this.sm.is(STATES.PAUSED)) return;
+      if (this.sm.is(STATES.GOAL, STATES.HALFTIME, STATES.FULLTIME, STATES.MENU)) { this.foulRp = null; return; }
+      r.wait -= realDt;
+      if (r.wait > 0) return;
+      if (!this.replay.start(r.at - 2.5, r.at + 0.9, 0.55, r.at + 0.45)) { this.foulRp = null; return; }
+      r.on = true;
+      r.cam = { mode: this.camRig.mode, opts: this.camRig.opts };
+      const side = r.victim.pos.z > 0 ? -1 : 1, end = r.by.pos.x > r.victim.pos.x ? 1 : -1;
+      this.replay.update(0);
+      this.camRig.setMode('replay', { side, end, close: true, follow: r.victim.parts.root.position });
+      this.camRig.opts.ballPos = this.replay.ballPos;
+      this.camRig.snap();
+      this.hud.setReplay(true);
+      document.body.classList.add('in-replay');
+      return;
+    }
+    r.age += realDt;
+    this.camRig.opts.ballPos = this.replay.ballPos;
+    if (!this.replay.update(realDt)) this._endFoulReplay();
+  }
+
+  _endFoulReplay() {
+    const r = this.foulRp;
+    this.foulRp = null;
+    this.replay.stop();
+    this.hud.setReplay(false);
+    if (r && r.cam) { this.camRig.setMode(r.cam.mode, r.cam.opts); this.camRig.snap(); }
+    document.body.classList.remove('in-replay');
+  }
 
   _endReplay() {
     this.replay.stop();
@@ -1753,7 +1795,8 @@ class Game {
       this.loop.timeScale = t.from + (t.to - t.from) * easeInOut(k);
       if (k >= 1) this.ts = null;
     }
-    this.sm.frame(realDt);
+    if (this.foulRp) this._foulReplayFrame(realDt);
+    if (!(this.foulRp && this.foulRp.on)) this.sm.frame(realDt);
     if (this.input.consume('pause')) { if (this.sm.is(STATES.PAUSED)) this.resume(); else this.pause(); }
     if (this.sm.is(STATES.HALFTIME, STATES.FULLTIME) && this.input.consume('confirm')) this.continueMatch();
 

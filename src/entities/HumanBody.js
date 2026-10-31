@@ -177,6 +177,7 @@ vec3 shirtCol(vec3 p, float Lm) {
   else if (pat < 4.5 && pat > 3.5) a = step(abs(p.x * 0.9 - (p.y - 1.26)), 0.055);
   else if (pat < 5.5 && pat > 4.5) a = Lm >= 0.0 ? 1.0 : 0.0;
   else if (pat < 6.5 && pat > 5.5) a = step(0.86, fract((p.x + 0.0275) / 0.055));
+  else if (pat > 6.5) a = step(abs(p.x), 0.055);       // one broad centre stripe (Ajax / PSG)
   return mix(uKit, uKit2, a);
 }
 float digitAt(float d, vec2 uv) {
