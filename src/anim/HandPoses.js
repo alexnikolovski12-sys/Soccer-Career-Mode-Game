@@ -512,6 +512,26 @@ export function handPose(name, k, T, anim, out) {
       break;
     }
     // ---- first-time finishes from a cross (contact at k ≈ 0.4)
+    case 'header': {
+      // gather, spring up, neck back … and snap the forehead through it (contact at k ≈ 0.4)
+      const up = k < 0.15 ? -k / 0.15 * 0.12 : k < 0.6 ? Math.sin(((k - 0.15) / 0.45) * Math.PI) * 0.42 : 0;
+      T.bodyY = up;
+      T.kneeL = T.kneeR = k < 0.15 ? 0.9 * (k / 0.15) : k < 0.6 ? 0.9 - 0.5 * ((k - 0.15) / 0.45) : 0.4 * (1 - (k - 0.6) / 0.4);
+      T.hipL = T.hipR = 0.35 * (1 - Math.max(0, (k - 0.6) / 0.4));
+      T.lean = k < 0.38 ? -0.35 * (k / 0.38) : k < 0.5 ? -0.35 + 0.95 * ((k - 0.38) / 0.12) : 0.6 * (1 - (k - 0.5) / 0.5);
+      T.headPitch = k < 0.38 ? -0.4 : k < 0.5 ? -0.4 + 0.9 * ((k - 0.38) / 0.12) : 0.5 * (1 - (k - 0.5) / 0.5);
+      T.shL = T.shR = 1.1; T.shLz = 0.9; T.shRz = -0.9; T.elL = T.elR = 0.9;
+      break;
+    }
+    case 'stepoversS': {
+      // two stepovers on each foot: the leg circles round the front of the ball, hips swaying
+      const j = Math.min(3, Math.floor(k * 4.4)), f = k * 4.4 - j, leg = j % 2 ? 'L' : 'R', sd = j % 2 ? -1 : 1;
+      const v = k < 0.91 ? Math.sin(f * Math.PI) : 0;
+      T['hip' + leg] = 0.55 * v; T['knee' + leg] = 0.75 * v;
+      T.bodyRoll = sd * 0.22 * v; T.twist = sd * 0.3 * v; T.lean = 0.12; T.bodyY = -0.05;
+      T.shLz = 0.55; T.shRz = -0.55;
+      break;
+    }
     case 'volley': {
       // lean back, kicking leg swings through at hip height, arms out
       const back = k < 0.35, f = Math.min(1, (k - 0.35) / 0.25);

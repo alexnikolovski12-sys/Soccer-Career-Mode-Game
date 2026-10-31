@@ -7,6 +7,7 @@ import { dist2D } from '../core/MathUtil.js';
 // weight = how often it's picked; beat = base chance to send the defender the wrong way;
 // shift = sideways metres the carrier moves; dur = seconds
 export const SKILLS = {
+  stepovers: { label: 'STEPOVERS', weight: 0, beat: 0.8, shift: 0, dur: 1.0, anim: 'stepoversS' },
   stepover:  { label: 'STEPOVER',       weight: 20, beat: 0.5,  shift: 0.7, dur: 0.55, anim: 'stepover' },
   feint:     { label: 'BODY FEINT',     weight: 15, beat: 0.45, shift: 0.6, dur: 0.45, anim: 'feint' },
   croqueta:  { label: 'LA CROQUETA',    weight: 9,  beat: 0.55, shift: 0.9, dur: 0.5,  anim: 'croqueta' },
@@ -40,6 +41,10 @@ const SCRIPTED = {
   roulette: { dur: 0.95, anim: 'rouletteS', beat: 0.65, hold: 0.95, holdSpeed: 0.6,
     ball: [[0, 0.32, 0, R], [0.14, 0.2, 0.02, R], [0.5, -0.02, 0.48, R], [0.86, 0.22, 0.96, R], [1, 0.4, 1.02, R]],
     player: [[0, 0, 0], [0.14, 0.04, 0], [0.9, 0.12, 0.92], [1, 0.16, 0.95]], turn: [Math.PI * 2, 0.13, 0.88] },
+  // two stepovers on each foot, ball rolling on with him, then he bursts away
+  stepovers: { dur: 1.0, anim: 'stepoversS', beat: 0.8, hold: 0.92, holdSpeed: 2.2,
+    ball: [[0, 0.36, 0, R], [0.92, 1.45, 0, R], [1, 1.62, 0, R]],
+    player: [[0, 0, 0], [0.92, 1.1, 0], [1, 1.25, 0]] },
   // outside of the foot one way, snap it back inside the other, and go
   elastico: { dur: 0.62, anim: 'elasticoS', beat: 0.7, hold: 0.55, holdSpeed: 2.2,
     ball: [[0, 0.33, 0, R], [0.3, 0.38, 0.3, R], [0.56, 0.45, -0.32, R], [1, 1.25, -0.62, R]],
@@ -81,7 +86,7 @@ export class Skills {
   perform(o, dir) {
     const g = this.game, ball = g.ball;
     if (this.active || this.cooldown > 0 || ball.owner !== o || ball.pos.y > 0.4 || o.stumble > 0) return false;
-    const key = { up: 'rainbow', down: 'dragback', left: 'roulette', right: 'elastico' }[dir];
+    const key = { up: 'rainbow', down: 'dragback', left: 'roulette', right: 'stepovers' }[dir];
     if (!key) return false;
     // the defender it's aimed at: nearest opponent in front
     const fx = Math.sin(o.heading), fz = Math.cos(o.heading);
@@ -156,7 +161,9 @@ export class Skills {
       a.resolved = true;
       const S = CONFIG.skills;
       const skill = (o.stats.dribbling + o.stats.ballControl) / 2;
-      let p = sk.beat * (0.55 + skill / 180) - (d.rating - 60) / 200;
+      let p = sk.beat * (0.55 + skill / 180) - (d.rating - 60) / 200 + 0.25;
+      // everyone close by bites a little: they hesitate and mistime their tackles
+      for (const q of g.opponentsOf(o)) if (!q.isKeeper && dist2D(q.pos, o.pos) < 5) { q.lagT = 0.55; q.tackleCooldown = Math.max(q.tackleCooldown, 0.9); if (q.ai.tackling && q !== d) q.ai.tackling = null; }
       if (dist2D(d.pos, o.pos) > S.triggerRange + 1) p = 0;
       if (g.rng.next() < Math.min(0.92, Math.max(0.1, p))) {
         d.stumble = S.beatStumble;
@@ -175,6 +182,7 @@ export class Skills {
         const sp = Math.max(1.2, Math.hypot(o.vel.x, o.vel.z));
         ball.vel.set(Math.sin(o.heading) * sp, 0, Math.cos(o.heading) * sp);
         ball.owner = o;
+        o.dribBoost = 1.2;
       }
       this.active = null;
       this.cooldown = CONFIG.skills.cooldown;

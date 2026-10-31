@@ -85,8 +85,7 @@ export class Weather {
     this._clearParticles();
     if (kind === 'rain') this._rain(Math.round(1300 * density + 300));
     else if (kind === 'snow') {
-      this._snowCover();
-      this.snowCover.visible = true;
+      // (the snow on the pitch is drawn by the turf shader as patches)
       this._snow(Math.round(2200 * density + 500));
     }
   }

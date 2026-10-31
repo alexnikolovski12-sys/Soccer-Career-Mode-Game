@@ -124,6 +124,7 @@ export class Look {
     // turf
     GRASS.uGrass.value.setRGB(...L.grass);
     GRASS.uWet.value = rain ? 1 : 0;
+    GRASS.uSnow.value = snow ? 1 : 0;
     GRASS.uStripe.value = snow ? 0.05 : 0.11;
     // floodlights on / off
     this.flood = L.flood;

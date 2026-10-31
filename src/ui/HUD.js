@@ -286,6 +286,7 @@ export class HUD {
     this.last.bmode = mode;
     this.pad.classList.toggle('mode-shoot', mode === 'shoot');
     this.pad.classList.toggle('mode-none', mode === 'none');
+    this.pad.classList.toggle('mode-cross', mode === 'cross');
   }
 
   /** Free kick UI stage: null | choose | aim | power */

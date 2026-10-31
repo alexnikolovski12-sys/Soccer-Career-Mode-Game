@@ -112,6 +112,12 @@ attribute float aLimb; attribute float aHair; attribute float aEye; attribute ve
 ${COMMON}
 uniform float uHT, uMove;
 uniform vec3 uLag;
+float fabricV(float Lm, vec3 p) {
+  if (aEye > 0.5) return 0.0;
+  if (Lm < 0.0) return p.y < neckY(p) && p.y > 0.86 ? 1.0 : 0.0;
+  if (Lm >= 5.0) return Lm - 10.0 < 0.55 ? 1.0 : 0.0;
+  return Lm < uSleeve ? 1.0 : 0.0;
+}
 vec3 clothLag(float Lm, vec3 p) {
   if (aEye > 0.5) return vec3(0.0);
   float w = 0.0;
@@ -132,8 +138,8 @@ float clothOffset(float Lm, vec3 p, float h) {
   if (aEye > 0.5) return 0.0;
   // shirt / shorts flutter in the wind of running (a few mm, rippling up the body)
   float fl = sin(uHT * (9.0 + 5.0 * uMove) + p.y * 26.0 + p.x * 17.0) * 0.5 + sin(uHT * 13.0 - p.y * 41.0 + p.z * 23.0) * 0.5;
-  if (Lm < 0.0 && p.y < neckY(p) && p.y > 0.86) off += fl * (0.003 + 0.016 * uMove) * smoothstep(1.42, 0.98, p.y);
-  if (Lm >= 5.0 && Lm - 10.0 < 0.55) off += fl * (0.002 + 0.013 * uMove) * smoothstep(0.0, 0.5, Lm - 10.0);
+  if (Lm < 0.0 && p.y < neckY(p) && p.y > 0.86) off += fl * (0.002 + 0.008 * uMove) * smoothstep(1.42, 0.98, p.y);
+  if (Lm >= 5.0 && Lm - 10.0 < 0.55) off += fl * (0.0015 + 0.007 * uMove) * smoothstep(0.0, 0.5, Lm - 10.0);
   if (Lm >= 5.0) {
     float l = Lm - 10.0;
     if (l < 0.55) off = 0.016 + 0.016 * smoothstep(0.0, 0.55, l);
@@ -159,6 +165,7 @@ uniform vec2 uNum;        // tens, ones (tens < 0 = single digit; both < 0 = non
 uniform sampler2D uDigits; uniform sampler2D uSponsors; uniform float uSpon;
 float gRough;
 float gFab;
+float gGar;
 uniform float uWetK, uDirt;
 float hash3(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
 vec3 shirtCol(vec3 p, float Lm) {
@@ -178,7 +185,7 @@ float digitAt(float d, vec2 uv) {
 }
 vec3 bodyColour() {
   vec3 p = vBind; float Lm = vReg.x > 0.5 ? 10.0 + vReg.y / max(vReg.x, 0.5) : vReg.z > 0.5 ? vReg.w / max(vReg.z, 0.5) : -1.0;
-  vec3 col = uSkin; gRough = 0.55; gFab = 0.0;
+  vec3 col = uSkin; gRough = 0.55; gFab = 0.0; gGar = 0.0;
   float grain = hash3(floor(p * 900.0));
   if (vEye > 0.5) {
     vec3 c = p.x > 0.0 ? ${v3(L.eyeL)} : ${v3(L.eyeR)};
@@ -191,17 +198,17 @@ vec3 bodyColour() {
   }
   if (Lm >= 5.0) {
     float l = Lm - 10.0;
-    if (l < 0.55) { col = uShorts; gRough = 0.75; gFab = 1.0; if (l > 0.5) col = mix(col, uKit2, 0.6); if (abs(abs(p.x) - 0.17) < 0.006 && l > 0.0) col = mix(col, uKit2, 0.8); }
+    if (l < 0.55) { col = uShorts; gRough = 0.75; gFab = 1.0; gGar = 1.0; if (l > 0.5) col = mix(col, uKit2, 0.6); if (abs(abs(p.x) - 0.17) < 0.006 && l > 0.0) col = mix(col, uKit2, 0.8); }
     else if (l < 1.1) col = uSkin;
     else if (l < 1.97) { col = uSocks; gRough = 0.9; gFab = 1.0; if (l < 1.17) col = mix(uSocks, uKit2, 0.85); }
     else { col = uBoot; gRough = 0.32; if (p.y < 0.016) col = mix(uBoot, vec3(0.92), 0.6); if (abs(fract(p.z * 12.0) - 0.5) < 0.08 && p.y > 0.03 && p.y < 0.06) col = mix(col, vec3(0.95), 0.7); }
   } else if (Lm >= 0.0) {
-    if (Lm < uSleeve) { col = shirtCol(p, Lm); gRough = 0.8; gFab = 1.0; if (uSleeve - Lm < 0.045) col = mix(col, uKit2, 0.85); }
+    if (Lm < uSleeve) { col = shirtCol(p, Lm); gRough = 0.8; gFab = 1.0; gGar = 1.0; if (uSleeve - Lm < 0.045) col = mix(col, uKit2, 0.85); }
     else if (Lm > 1.92 && uGK > 0.5) { col = uGlove; gRough = 0.7; }
   } else if (p.y < neckY(p)) {
-    if (p.y < 1.0) { col = uShorts; gRough = 0.75; gFab = 1.0; }
+    if (p.y < 1.0) { col = uShorts; gRough = 0.75; gFab = 1.0; gGar = p.y > 0.86 ? 1.0 : 0.0; }
     else {
-      col = shirtCol(p, -1.0); gRough = 0.8; gFab = 1.0;
+      col = shirtCol(p, -1.0); gRough = 0.8; gFab = 1.0; gGar = 1.0;
       if (neckY(p) - p.y < 0.016) col = mix(col, uKit2, 0.9);                         // collar
       if (p.y < 1.03) col = mix(col, uKit2, 0.15);
       // number on the back
@@ -285,9 +292,9 @@ function patch(mat) {
    objectNormal = normalize(mix(objectNormal, cyl, 0.55));
  }`)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n vBind = position; vLimb = aLimb; { float isLeg = aLimb >= 5.0 ? 1.0 : 0.0, isArm = (aLimb >= 0.0 && aLimb < 5.0) ? 1.0 : 0.0; vReg = vec4(isLeg, isLeg > 0.5 ? aLimb - 10.0 : 0.0, isArm, isArm > 0.5 ? aLimb : 0.0); } vHair = aHair; vEye = aEye; vFace = aFace;')
-      .replace('#include <morphtarget_vertex>', '#include <morphtarget_vertex>\n transformed += baseN * clothOffset(aLimb, position, aHair) + clothLag(aLimb, position);');
+      .replace('#include <morphtarget_vertex>', '#include <morphtarget_vertex>\n #ifdef GARMENT\n transformed += baseN * (clothOffset(aLimb, position, aHair) + 0.008 * fabricV(aLimb, position)) + clothLag(aLimb, position);\n#else\n transformed += baseN * (clothOffset(aLimb, position, aHair) - 0.004 * fabricV(aLimb, position));\n#endif');
     sh.fragmentShader = FRAG_HEAD + sh.fragmentShader
-      .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( bodyColour() * diffuse, opacity );')
+      .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( bodyColour() * diffuse, opacity );\n#ifdef GARMENT\n if (gGar < 0.5) discard;\n#endif')
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = gRough * mix(1.0, gFab > 0.5 ? 0.62 : 0.5, uWetK);')
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   if (gFab > 0.5) {
@@ -298,11 +305,20 @@ function patch(mat) {
       // fabric sheen: polyester kits catch the floodlights at grazing angles
       .replace('#include <opaque_fragment>', 'outgoingLight += diffuseColor.rgb * pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0) * (0.22 * gFab + 0.06);\n  // skin: a little warm light scattered under the surface\n  if (gFab < 0.5 && gRough > 0.4 && gRough < 0.6) outgoingLight += diffuseColor.rgb * vec3(0.09, 0.035, 0.02) * 0.8;\n#include <opaque_fragment>');
   };
-  mat.customProgramCacheKey = () => 'human-v7';
+  mat.customProgramCacheKey = () => 'human-v8' + (mat.defines && mat.defines.GARMENT !== undefined ? '-g' : '');
 }
 
 const col = (c) => new THREE.Color(c);
 /** A player's own material (all players share the program, each has its own uniforms). */
+/** The shirt + shorts as their own layer over the body (same skeleton, its own swing). */
+export function garmentMaterial(bodyMat) {
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0 });
+  m.defines = { GARMENT: '' };
+  m.userData.u = bodyMat.userData.u;
+  patch(m);
+  return m;
+}
+
 export function humanMaterial() {
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0 });
   m.userData.u = {

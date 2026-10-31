@@ -319,20 +319,23 @@ class Game {
     const from = Math.atan2(-ball.vel.x, -ball.vel.z);           // direction the ball is coming from
     const ang = Math.abs(Math.atan2(Math.sin(from - toGoal), Math.cos(from - toGoal)));
     // decide once per cross whether he goes overhead; otherwise wait for it to drop a bit
-    if (ps.overhead == null) ps.overhead = this.rng.chance(0.35);
-    if (ball.pos.y > 1.5 && !ps.overhead && hd > 0.8) return;
+    if (ps.style == null) { const r = this.rng.next(); ps.style = r < 0.5 ? 'header' : r < 0.72 ? 'bicycle' : 'volley'; }
     let type;
-    if (ball.pos.y > 1.5) type = 'bicycle';
-    else if (ball.pos.y > 0.75 && ang > 0.8) type = 'sidevolley';
+    if (ball.pos.y > 1.45) {
+      if (ps.style === 'volley' && hd > 0.8) return;          // let it drop for the volley
+      if (ball.pos.y > 2.7 && hd > 0.8) return;
+      type = ps.style === 'bicycle' ? 'bicycle' : 'header';
+    } else if (ball.pos.y > 0.75 && ang > 0.8) type = 'sidevolley';
     else type = 'volley';
     // body shape: facing goal for a volley, side-on for a side volley, back to goal for a bicycle
     const sgn = Math.sign(Math.sin(from - toGoal)) || 1;
     const heading = type === 'bicycle' ? toGoal + Math.PI : type === 'sidevolley' ? toGoal - sgn * 1.2 : toGoal;
+    const off = type === 'header' ? 0.18 : 0.55;
     this.switchControl(r, true);
     this._endBallCam();
     // glide (don't teleport) into the striking position while the body shape blends in
-    const to = new THREE.Vector3(ball.pos.x - Math.sin(heading) * 0.55, 0, ball.pos.z - Math.cos(heading) * 0.55);
-    const dur = type === 'bicycle' ? 1.3 : 0.8;
+    const to = new THREE.Vector3(ball.pos.x - Math.sin(heading) * off, 0, ball.pos.z - Math.cos(heading) * off);
+    const dur = type === 'bicycle' ? 1.3 : type === 'header' ? 0.9 : 0.8;
     r.playAction(type, dur, { kickLeg: 1 });
     ball.vel.multiplyScalar(0.15);
     ball.frozen = true;                      // hangs for the strike
@@ -340,6 +343,41 @@ class Game {
     this.setTimeScale(0.3, 0.08);            // slow-mo on the contact
     void 0;
     this.audio.anticipate();
+  }
+
+  /**
+   * Your corner: hold CROSS. Full hold (the limit) = a perfect high ball onto the penalty
+   * spot for a header / volley / bicycle; less = lower; a quick tap = driven along the
+   * ground and he just finishes it.
+   */
+  _userCorner(u, held) {
+    const R = this.match.restart, ball = this.ball, L = CONFIG.pitch.length / 2;
+    const p = Math.min(1, held / 0.75);
+    const mates = this.teammates.filter((q) => q.visible && !q.sentOff && !q.isKeeper);
+    let t = null, bd = Infinity;
+    for (const q of mates) { const d = Math.hypot(q.pos.x - (L - 10), q.pos.z); if (d < bd) { bd = d; t = q; } }
+    if (!t) { this.match.takeRestart('lofted', null); return; }
+    if (bd > 7) t.place(L - 12, -Math.sign(R.z || 1) * 1.5, Math.PI / 2);
+    this.match.restart = null;
+    ball.frozen = false; ball.owner = null; ball.lastTouch = u;
+    this.hud.setButtonMode('all'); this.input.joystick.setVisible(true);
+    u.playAction('pass', 0.5, { kickLeg: 1, variant: p < 0.3 ? 'ground' : 'chipped' });
+    const aim = { x: L - 10.5 + (this.rng.next() - 0.5) * 2, z: -Math.sign(R.z || 1) * (0.5 + this.rng.next() * 2) };
+    let v;
+    if (p < 0.3) {
+      // driven low along the ground → he just side-foots it in
+      const dx = aim.x - ball.pos.x, dz = aim.z - ball.pos.z, d = Math.hypot(dx, dz);
+      const sp = Math.min(24, d * 1.1 + 6);
+      v = [(dx / d) * sp, 0, (dz / d) * sp];
+      this._autoShotFor = t;
+    } else v = this.passing.solveLoft(ball.pos, aim, 0.3 + 0.55 * p);
+    ball.kick(v[0], v[1], v[2], { type: 'pass', by: u, ignoreTime: 0.35, time: this.simTime });
+    ball.pass = { from: u, to: t, aim: new THREE.Vector3(aim.x, 0, aim.z), t0: this.simTime, kind: p < 0.3 ? 'ground' : 'lofted', finish: p >= 0.3 };
+    t.ai.receiving = true;
+    t.moveTo(aim.x, aim.z, t.attrs.sprintSpeed, 0.3);
+    this.audio.kick(0.6, 'pass');
+    this.events.emit('pass', { from: u, to: t, aim, speed: Math.hypot(v[0], v[1], v[2]), kind: 'corner' });
+    if (p >= 0.3) this.startBallCam(t);
   }
 
   /** Does a predicted shot path stay clear of the posts and crossbar? */
@@ -885,6 +923,16 @@ class Game {
     if (c && !u.sprinting && dist2D(u.pos, c.pos) < 5.5) { u.faceTowards(c.pos.x, c.pos.z); u.jockey = true; }
     // auto-switch when you're out of the play and someone's much better placed
     this._autoSwitchT = (this._autoSwitchT || 0) - dt;
+    // assisted defending: hands off the stick and your man gets goal-side and closes the carrier down
+    if (c && mag < 0.3 && !u.ai.tackling && u.stumble <= 0) {
+      const gx = -CONFIG.pitch.length / 2;
+      const dxg = gx - c.pos.x, dzg = -c.pos.z, dl = Math.hypot(dxg, dzg) || 1;
+      const tx = c.pos.x + (dxg / dl) * 1.3, tz = c.pos.z + (dzg / dl) * 1.3;
+      const far = dist2D(u.pos, c.pos) > 6;
+      u.moveTo(tx, tz, far ? u.attrs.sprintSpeed : u.runSpeed, 0.3);
+      u.sprinting = far;
+      u.faceTowards(c.pos.x, c.pos.z);
+    }
     // their pass in flight: your man reads it and goes to cut it out by himself (unless you're steering him)
     if (ball.pass && !ball.owner && ball.pass.from && ball.pass.from.team === 'away' && !u.ai.tackling && mag < 0.3) {
       const it = this.homeAI._interceptor([u]);
@@ -967,6 +1015,7 @@ class Game {
     ev.on('gain', ({ player }) => {
       player.ai.holdT = 0; player.ai.decideAt = null; player.ai.carry = null;
       if (player.team === 'home' && !player.isKeeper) { this._endBallCam(); this.switchControl(player, true); }
+      if (player === this._autoShotFor) { this._autoShotFor = null; this._autoShootNow = player; }
       // they've won it: hand you whoever's best placed to get it back
       else if (player.team === 'away' && !this.autoplay && this.sm.is(STATES.PLAYING)) { this._autoSwitchT = 1.2; this._switchBest(true); }
       if (this.sm.is(STATES.SHOT_FLIGHT)) this.backToPlay();
@@ -1110,6 +1159,11 @@ class Game {
     const R = this.match.restart;
     if (R && R.team === 'home' && R.phase === 'ready' && R.taker === u) {
       u.steer(0, 0, 0);
+      if (R.type === 'corner') {
+        this.hud.setButtonMode('cross'); this.input.joystick.setVisible(false);
+        if (pg || tg) this._userCorner(u, (pg || tg).held || 0);
+        return;
+      }
       if (pg || tg) {
         const l = Math.hypot(wx, wz);
         const dir = l > 0.2 ? { x: wx / l, z: wz / l } : null;
@@ -1118,8 +1172,16 @@ class Game {
       return;
     }
     if (R) return;
+    if (this._autoShootNow) {
+      const a = this._autoShootNow; this._autoShootNow = null;
+      if (this.ball.owner === a) this.shooting.aiShoot(a);
+    }
     if (this._defending()) { this._defendControl(u, pg, tg, sg, wx, wz, mag, dt); return; }
     this.homeAI.pressHeld = false;
+    if (u.justCut) {
+      u.justCut = false;
+      for (const d of this.defenders) if (dist2D(d.pos, u.pos) < 4.5 && !d.ai.tackling) { d.lagT = 0.5; d.tackleCooldown = Math.max(d.tackleCooldown, 0.7); }
+    }
     let dx = wx, dz = wz;
     if (mag < 0.2) { dx = Math.sin(u.heading); dz = Math.cos(u.heading); }
     const kg = inp.consumeGesture('skill');

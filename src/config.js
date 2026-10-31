@@ -48,7 +48,7 @@ export const CONFIG = {
     floor: 30, // stats at or below this map to the worst value
   },
   statMap: {
-    sprintSpeed: (pace) => sMap(pace, 7.3, 9.6),          // m/s top speed (×1.08 when you sprint: ~37 km/h for the quickest)
+    sprintSpeed: (pace) => sMap(pace, 7.6, 10.0),          // m/s top speed (×1.08 when you sprint: ~37 km/h for the quickest)
     runFactor: 0.72,                                      // full tilt (no sprint) = sprint * runFactor
     jogFactor: 0.45,
     accel: (acc) => sMap(acc, 5.5, 11.5),                 // m/s² towards target speed
@@ -58,7 +58,7 @@ export const CONFIG = {
     sprintTouchExtra: (dri) => sMap(dri, 0.55, 0.3),      // extra touch push when sprinting
     touchError: (dri) => sMap(dri, 0.14, 0.03),           // radians of random touch deviation
     controlReach: (ctl) => sMap(ctl, 0.55, 0.85),         // how far from the foot the ball can be touched
-    turnControl: (ctl) => sMap(ctl, 0.6, 1.0),            // turn-rate multiplier while dribbling
+    turnControl: (ctl) => sMap(ctl, 0.9, 1.35),            // turn-rate multiplier while dribbling
     firstTouch: (ctl) => sMap(ctl, 0.55, 0.95),           // 1 = perfect cushion on receiving
     tackleResist: (ctl, dri) => (sMap(ctl, 0, 0.5) + sMap(dri, 0, 0.5)) * 0.5, // 0..0.5 tackle-success reduction
     passError: (pas) => sMap(pas, 0.11, 0.015),           // radians σ of pass direction error
@@ -100,7 +100,7 @@ export const CONFIG = {
     sharpTurnBrake: 0.6,       // braking strength in sharp turns
     headingLerp: 12,           // visual body turn smoothing
     labelHeight: 2.25,
-    sprintBoost: 1.08,        // extra pace when holding SPRINT
+    sprintBoost: 1.12,        // extra pace when holding SPRINT
     cutAngle: 0.95,            // stick change (rad) on the ball that triggers a quick cut
     cutSnap: 0.55,              // fraction of the turn done instantly in a cut
     cutKeepSpeed: 0.8,         // speed kept through the cut

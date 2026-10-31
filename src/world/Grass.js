@@ -41,6 +41,7 @@ export const GRASS = {
   uStripe: { value: 0.11 },
   uWear: { value: null },
   uTime: { value: 0 },
+  uSnow: { value: 0 },
 };
 
 // ---- pitch wear: where players run, turn and slide, the turf gets scuffed and flattened
@@ -104,7 +105,7 @@ export function grassMaterial(shell = false) {
  #endif`);
     sh.fragmentShader = (shell ? '#define SHELL\n' : '') + `varying vec3 vGW;
 varying float vLayer;
-uniform float uWet, uStripe, uStripeW; uniform vec3 uGrass; uniform vec2 uHalf; uniform sampler2D uDetail, uWear;
+uniform float uWet, uSnow, uStripe, uStripeW; uniform vec3 uGrass; uniform vec2 uHalf; uniform sampler2D uDetail, uWear;
 float wearAt(vec2 p) { vec2 uv = vec2((p.x + ${WSX / 2}.0) / ${WSX}.0, (p.y + ${WSZ / 2}.0) / ${WSZ}.0); return (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) ? 0.0 : texture2D(uWear, uv).r; }
 float gh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float gn(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
@@ -144,9 +145,17 @@ vec3 turf() {
   gWear = lw;
   // the unmown surround: a little darker and duller
   c *= mix(0.86, 1.0, inside);
+  // snow lying in patches: white drifts, half-covered turf between, green where it's been played on
+  if (uSnow > 0.0) {
+    float sn = gn(p * 0.07 + 3.0) * 0.55 + gn(p * 0.33 + 11.0) * 0.3 + gn(p * 1.9) * 0.15;
+    sn -= lw * 0.6 + wear * 0.3;
+    float cover = smoothstep(0.38, 0.66, sn);
+    c = mix(c, vec3(0.78, 0.81, 0.86) * (0.92 + 0.12 * n1), cover * uSnow);
+    gRoughW = 0.85;
+  }
   // wet: darker and glossy
   c *= 1.0 - 0.2 * uWet;
-  gRoughW = mix(0.93, 0.38 + 0.2 * n2, uWet) + wear * 0.05;
+  gRoughW = uSnow > 0.0 ? 0.85 : mix(0.93, 0.38 + 0.2 * n2, uWet) + wear * 0.05;
   return c;
 }
 ` + sh.fragmentShader

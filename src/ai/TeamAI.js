@@ -237,6 +237,8 @@ export class TeamAI {
       m.signal = false;
       if (carrier !== m) m.wantDir = null;
       if (m.ai.tackling) { this._tackleUpdate(m, dt); continue; }
+      // wrong-footed by a cut / skill: carries on the way he was going for a moment
+      if (m.lagT > 0) { m.lagT -= dt; m.aiLabel = 'beaten'; continue; }
       if (m.stumble > 0) { m.aiLabel = 'recover'; m.steer(m.vel.x, m.vel.z, 1); continue; }
       if (carrier === m) { this._onBall(m, dt); continue; }
       if (ball.pass && ball.pass.to === m && !ball.owner) { this.receive(m); continue; }

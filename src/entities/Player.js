@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { CONFIG, clamp } from '../config.js';
 import { dampT, lerpAngle, angleDiff, headingOf, wrapAngle } from '../core/MathUtil.js';
 import { Animator } from '../anim/Animator.js';
-import { humanGeometry, humanMaterial, bindHuman, RIG, BONE_NAMES, HAIR_STYLES } from './HumanBody.js';
+import { humanGeometry, humanMaterial, garmentMaterial, bindHuman, RIG, BONE_NAMES, HAIR_STYLES } from './HumanBody.js';
 
 // joints recorded for the goal replay (after IK), in order
 const REC_JOINTS = (P) => [P.body, P.torso, P.head, P.legL.hip, P.legL.knee, P.legL.ankle, P.legR.hip, P.legR.knee,
@@ -208,7 +208,15 @@ export class Player {
     root.add(mesh);
     bindHuman(mesh, BONE_NAMES.map((n) => byName[n]), P);
     this.mesh = mesh;
-    this.meshes = [mesh];
+    // shirt + shorts: a separate layer on the same skeleton that swings on its own
+    this.garmentMat = garmentMaterial(this.material);
+    const gm = new THREE.SkinnedMesh(mesh.geometry, this.garmentMat);
+    gm.bind(mesh.skeleton, mesh.bindMatrix);
+    gm.castShadow = true;
+    gm.frustumCulled = false; mesh.frustumCulled = false;
+    root.add(gm);
+    this.garment = gm;
+    this.meshes = [mesh, gm];
     this.u = this.material.userData.u;
     this._applyLook(L, true);
 
@@ -374,6 +382,7 @@ export class Player {
 
   setShadows(on) {
     this.mesh.castShadow = on;
+    if (this.garment) this.garment.castShadow = on;
     this.blob.visible = !on;
   }
 
@@ -381,10 +390,13 @@ export class Player {
   setGhost(alpha) {
     if (this._ghost === alpha) return;
     this._ghost = alpha;
-    const on = alpha < 0.999, mt = this.material;
-    if (mt.transparent !== on) { mt.transparent = on; mt.needsUpdate = true; }
-    mt.opacity = alpha;
-    mt.depthWrite = !on;
+    const on = alpha < 0.999;
+    for (const mt of [this.material, this.garmentMat]) {
+      if (!mt) continue;
+      if (mt.transparent !== on) { mt.transparent = on; mt.needsUpdate = true; }
+      mt.opacity = alpha;
+      mt.depthWrite = !on;
+    }
   }
 
   setVisible(v) {
@@ -462,7 +474,9 @@ export class Player {
     if (hasBall) desiredSpeed *= A.dribbleSpeed;
     desiredSpeed *= this.staminaFactor();
     if (this.skillHold != null) desiredSpeed = Math.min(desiredSpeed, this.skillHold);
-    const maxSpeed = A.sprintSpeed * (hasBall ? A.dribbleSpeed : 1) * (this.isUser || this.controlled ? 1.1 : 1.02);
+    // a burst after a sharp cut / skill on the ball
+    if (this.dribBoost > 0) { this.dribBoost -= dt; if (hasBall || this.isUser) desiredSpeed *= 1.12; }
+    const maxSpeed = A.sprintSpeed * (hasBall ? A.dribbleSpeed : 1) * (this.isUser || this.controlled ? 1.14 : 1.02) * (this.dribBoost > 0 ? 1.12 : 1);
     desiredSpeed = Math.min(desiredSpeed, maxSpeed);
 
     const curSpeed = Math.hypot(this.vel.x, this.vel.z);
@@ -484,6 +498,7 @@ export class Player {
         this.heading = wrapAngle(this.heading + snap * 0.8);
         this.playAction('turn', 0.32, { variant: 'cut', side: Math.sign(snap) || 1, kickLeg: Math.sign(snap) > 0 ? -1 : 1 });
         this.justCut = true;
+        this.dribBoost = 1.2;
       }
       const t = clamp(curSpeed / A.sprintSpeed, 0, 1);
       let turnRate = P.turnRateStill + (P.turnRateRun - P.turnRateStill) * Math.sqrt(t);
@@ -585,14 +600,14 @@ export class Player {
     if (U && U.uLag) {
       // fabric inertia: a spring chasing the opposite of the body's acceleration, billowing back at speed
       const a = A.accS, sp = Math.hypot(this.vel.x, this.vel.z), dt = Math.min(0.05, this._animDt || 0.016);
-      const tx = Math.max(-0.2, Math.min(0.2, -a.y * 0.016));
-      const tz = Math.max(-0.24, Math.min(0.18, -a.x * 0.016 - sp * 0.016));
-      const ty = Math.min(0.1, sp * 0.009);
+      const tx = Math.max(-0.11, Math.min(0.11, -a.y * 0.009));
+      const tz = Math.max(-0.14, Math.min(0.1, -a.x * 0.009 - sp * 0.009));
+      const ty = Math.min(0.05, sp * 0.005);
       const L = this._lag || (this._lag = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 });
       const n = Math.ceil(dt / 0.008), h = dt / n;
       for (let i = 0; i < n; i++) for (const [k, t] of [['x', tx], ['y', ty], ['z', tz]]) {
         const v = 'v' + k;
-        L[v] += ((t - L[k]) * 110 - L[v] * 6) * h;
+        L[v] += ((t - L[k]) * 70 - L[v] * 10) * h;
         L[k] += L[v] * h;
         if (!Number.isFinite(L[k])) { L[k] = 0; L[v] = 0; }
         L[k] = Math.max(-0.3, Math.min(0.3, L[k]));

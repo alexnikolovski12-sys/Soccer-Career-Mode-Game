@@ -521,3 +521,13 @@ html.portrait .flash { top: calc(var(--sat) + 100px); }
 
 .weather .o-btn.w.on { box-shadow: 0 0 0 3px #7cf5ff inset; }
 .weather .o-btn.w { margin-top: 8px; }
+
+/* ----------------------------------------------------------- match controls: dark grey, see-through, no colours */
+.act { --c1: rgba(200,205,212,0.55) !important; --c2: rgba(120,125,132,0.45) !important;
+  background: radial-gradient(circle at 50% 40%, rgba(40,42,46,0.55), rgba(18,19,22,0.6) 70%) !important;
+  box-shadow: 0 0 0 calc(var(--u) * 6) rgba(10,11,13,0.22), 0 6px 14px rgba(0,0,0,0.3) !important; color: rgba(255,255,255,0.88); }
+.act .ring { opacity: 0.5; }
+.act .chev { opacity: 0.55 !important; }
+.joy-base { background: radial-gradient(circle, rgba(20,21,24,0.45), rgba(10,11,13,0.35)) !important; border-color: rgba(255,255,255,0.18) !important; }
+.joy-knob { background: radial-gradient(circle at 45% 40%, rgba(70,72,78,0.75), rgba(28,29,33,0.75)) !important; border-color: rgba(255,255,255,0.25) !important; box-shadow: 0 4px 10px rgba(0,0,0,0.35) !important; }
+.pad.mode-cross .act:not(.pass) { display: none; }
