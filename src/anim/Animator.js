@@ -89,6 +89,14 @@ const SETS = {
 
 let uid = 0;
 
+/** Steps per second at a running speed (m/s), from sprint studies of footballers / sprinters. */
+const CAD = [[0, 1.4], [1.4, 1.85], [2.5, 2.45], [3.5, 2.75], [5, 3.0], [6.5, 3.3], [8, 3.8], [9.3, 4.3], [10.5, 4.55]];
+function cadenceAt(v) {
+  if (v <= CAD[0][0]) return CAD[0][1];
+  for (let i = 1; i < CAD.length; i++) if (v <= CAD[i][0]) { const [a, fa] = CAD[i - 1], [b, fb] = CAD[i]; return fa + ((v - a) / (b - a)) * (fb - fa); }
+  return CAD[CAD.length - 1][1];
+}
+
 export class Animator {
   constructor(player) {
     this.p = player;
@@ -374,12 +382,22 @@ export class Animator {
 
     // stride: phase speed so planted feet don't slide (ground speed / stride length)
     let stride = strideW > 0 ? strideSum / strideW : L[set.walk].speed * L[set.walk].dur;
-    // faster than the sprint clip: longer strides (and a little more cadence)
-    const over = wF > 0.5 && s > this.vSprint ? clamp((s - this.vSprint) / this.vSprint, 0, 0.6) : 0;
-    let amp = strideK * (1 + over * 0.45);
+    let amp = strideK;
     if (s < this.vWalk) stride *= 0.55 + 0.45 * (s / this.vWalk);  // tiny steps when shuffling
     stride *= amp;
-    this.phaseRate = s > 0.05 ? (s / Math.max(0.3, stride)) * this.style.cadence : 0;
+    let rate = s > 0.05 ? (s / Math.max(0.3, stride)) * this.style.cadence : 0;
+    // Real footballers lengthen their stride far more than they quicken it: about 2.75
+    // steps/s at a 3.5 m/s jog, ~3.3 at 6.5 m/s, ~4.3 at a 9.3 m/s sprint (≈2.1 m per step).
+    // The mocap runs are slow, so above a jog we hold the cadence to that curve and open the
+    // legs up instead (bigger hip / knee swing) — no more legs spinning at 7–8 steps a second.
+    if (wF > 0.5 && s > 3.4) {
+      const want = cadenceAt(s) * 0.5 * this.style.cadence;          // cycles per second
+      const extra = clamp(rate / want, 1, 2.3) * clamp((s - 3.4) / 1.2, 0, 1) + 1 * (1 - clamp((s - 3.4) / 1.2, 0, 1));
+      amp *= extra;
+      rate /= extra;
+      this.strideExtra = extra;
+    } else this.strideExtra = 1;
+    this.phaseRate = rate;
     // turning on the spot: little shuffle steps
     if (s < 0.6 && Math.abs(this.yawRate) > 1.5) this.phaseRate = Math.max(this.phaseRate, 0.9);
     this.phase = (this.phase + this.phaseRate * dt) % 1;
@@ -397,7 +415,7 @@ export class Animator {
       const l = Math.hypot(nx, ny, nz, nw) || 1;
       p[j] = nx / l; p[j + 1] = ny / l; p[j + 2] = nz / l; p[j + 3] = nw / l;
     }
-    for (const j of [H.kneeL, H.kneeR]) p[j] = Math.max(0, mean[j] + (p[j] - mean[j]) * k);
+    for (const j of [H.kneeL, H.kneeR]) p[j] = clamp(mean[j] + (p[j] - mean[j]) * Math.min(k, 1.6), 0, 2.35);
   }
 
   // ------------------------------------------------------------ starts, stops, cuts, turns
@@ -694,10 +712,10 @@ export class Animator {
     const k = this.style.arm;
     const mean = this.lib[this.set.run].mean;
     for (const [j, sg] of [[Q.shL, 1], [Q.shR, -1]]) {
-      if (k !== 1 && this.sp > 1) {
+      if ((k !== 1 || (this.strideExtra || 1) > 1) && this.sp > 1) {
         let x = mean[j], y = mean[j + 1], z = mean[j + 2], w = mean[j + 3];
         if (x * out[j] + y * out[j + 1] + z * out[j + 2] + w * out[j + 3] < 0) { x = -x; y = -y; z = -z; w = -w; }
-        const t = 1 + (k - 1) * clamp(this.sp / 4, 0, 1);
+        const t = (1 + (k - 1) * clamp(this.sp / 4, 0, 1)) * (1 + ((this.strideExtra || 1) - 1) * 0.55);
         const nx = x + (out[j] - x) * t, ny = y + (out[j + 1] - y) * t, nz = z + (out[j + 2] - z) * t, nw = w + (out[j + 3] - w) * t;
         const l = Math.hypot(nx, ny, nz, nw) || 1;
         out[j] = nx / l; out[j + 1] = ny / l; out[j + 2] = nz / l; out[j + 3] = nw / l;

@@ -382,10 +382,10 @@ export const CONFIG = {
     maxPixelRatio: 2,
     // levels from best (3) to worst (0)
     levels: [
-      { name: 'Low',    shadows: false, resScale: 0.6,  crowd: 'simple' },
-      { name: 'Medium', shadows: false, resScale: 0.78, crowd: 'simple' },
-      { name: 'High',   shadows: false, resScale: 1.0,  crowd: 'full' },
-      { name: 'Ultra',  shadows: true,  resScale: 1.0,  crowd: 'full' },
+      { name: 'Low',    shadows: false, resScale: 0.6,  crowd: 'simple', post: false },
+      { name: 'Medium', shadows: false, resScale: 0.78, crowd: 'simple', post: false },
+      { name: 'High',   shadows: false, resScale: 0.9,  crowd: 'full', post: true },
+      { name: 'Ultra',  shadows: true,  resScale: 1.0,  crowd: 'full', post: true },
     ],
     startLevel: 3,
     downFps: 50, downTime: 2,

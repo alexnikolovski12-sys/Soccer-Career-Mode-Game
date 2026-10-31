@@ -577,6 +577,8 @@ export class Player {
     r.rotation.y = lerpAngle(this.prevHeading, this.heading, alpha) + (this.spinYaw || 0) + A.visYaw;
     A.apply(A.pose, this.parts, this.heightScale);
     if (this.visible) A.solveIK(this.parts, this.heightScale, this._animDt || 0);
+    const mu = this.material && this.material.userData.u && this.material.userData.u.uMove;
+    if (mu) mu.value += (Math.min(1, Math.hypot(this.vel.x, this.vel.z) / 8) - mu.value) * 0.15;
     if (this.ring) {
       const pulse = 0.85 + Math.sin(time * 4) * 0.12;
       this.ring.scale.setScalar(pulse);

@@ -5,38 +5,64 @@ import { CONFIG } from '../config.js';
 
 const GOAL_X = () => CONFIG.pitch.length / 2;
 
-function makeBallTexture() {
-  const c = document.createElement('canvas');
-  c.width = 256; c.height = 128;
-  const g = c.getContext('2d');
-  g.fillStyle = '#f7f7f4';
-  g.fillRect(0, 0, 256, 128);
-  // Original panel pattern: offset dark hexes + a coloured band
-  g.fillStyle = '#1d2433';
-  for (let i = 0; i < 6; i++) {
-    for (let j = 0; j < 3; j++) {
-      const x = i * 44 + (j % 2) * 22 + 10, y = j * 44 + 20;
-      g.beginPath();
-      for (let k = 0; k < 6; k++) {
-        const a = (k / 6) * Math.PI * 2;
-        g.lineTo(x + Math.cos(a) * 11, y + Math.sin(a) * 9);
-      }
-      g.fill();
+/**
+ * A modern six-panel match ball, drawn on an equirectangular map: propeller-shaped
+ * panels (curved seams from twisting a cube's faces), graphic bands along the seams,
+ * and a matching bump map so the seams catch the light.
+ */
+function makeBallTextures() {
+  const W = 512, H = 256;
+  const col = document.createElement('canvas'), bmp = document.createElement('canvas');
+  col.width = bmp.width = W; col.height = bmp.height = H;
+  const cg = col.getContext('2d'), bg = bmp.getContext('2d');
+  const ci = cg.createImageData(W, H), bi = bg.createImageData(W, H);
+  const palette = [[255, 106, 26], [18, 32, 64], [0, 168, 214], [18, 32, 64], [255, 106, 26], [0, 168, 214]];
+  for (let y = 0; y < H; y++) {
+    const lat = (0.5 - (y + 0.5) / H) * Math.PI;
+    for (let x = 0; x < W; x++) {
+      const lon = ((x + 0.5) / W) * Math.PI * 2;
+      let dx = Math.cos(lat) * Math.cos(lon), dy = Math.sin(lat), dz = Math.cos(lat) * Math.sin(lon);
+      // twist about the dominant axis → curved, propeller-like panel edges
+      const ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
+      let face, u, v, m;
+      if (ax >= ay && ax >= az) { face = dx > 0 ? 0 : 1; m = ax; u = dy / ax; v = dz / ax; }
+      else if (ay >= az) { face = dy > 0 ? 2 : 3; m = ay; u = dz / ay; v = dx / ay; }
+      else { face = dz > 0 ? 4 : 5; m = az; u = dx / az; v = dy / az; }
+      const tw = 0.55 * (u * u + v * v);
+      const cu = u * Math.cos(tw) - v * Math.sin(tw), cv = u * Math.sin(tw) + v * Math.cos(tw);
+      // distance to the panel edge in the twisted square
+      const edge = 1 - Math.max(Math.abs(cu), Math.abs(cv)) * 0.93;
+      const seam = Math.max(0, 1 - Math.abs(edge) / 0.025);
+      // graphics: a curved band hugging one side of each panel, plus a small mark in the middle
+      const band = Math.abs(cu + 0.55 * cv * cv - 0.45) < 0.12 && Math.abs(cv) < 0.8;
+      const dot = Math.hypot(cu, cv) < 0.13;
+      let r = 246, g = 246, b = 242;
+      if (band) { [r, g, b] = palette[face]; }
+      else if (dot) { r = 30; g = 34; b = 44; }
+      // seams: darker grooves
+      const k = 1 - seam * 0.55;
+      const i = (y * W + x) * 4;
+      ci.data[i] = r * k; ci.data[i + 1] = g * k; ci.data[i + 2] = b * k; ci.data[i + 3] = 255;
+      const bv = 255 * (1 - seam * 0.9) - (band ? 8 : 0);
+      bi.data[i] = bi.data[i + 1] = bi.data[i + 2] = bv; bi.data[i + 3] = 255;
+      void m;
     }
   }
-  g.fillStyle = '#ff7a1a';
-  g.fillRect(0, 60, 256, 6);
-  const t = new THREE.CanvasTexture(c);
+  cg.putImageData(ci, 0, 0); bg.putImageData(bi, 0, 0);
+  const t = new THREE.CanvasTexture(col);
   t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+  t.anisotropy = 4;
+  const bt = new THREE.CanvasTexture(bmp);
+  return { map: t, bump: bt };
 }
 
 export class Ball {
   constructor(scene) {
     const r = CONFIG.ball.radius;
+    const tx = makeBallTextures();
     this.mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(r, 20, 14),
-      new THREE.MeshLambertMaterial({ map: makeBallTexture() }),
+      new THREE.SphereGeometry(r, 32, 20),
+      new THREE.MeshPhysicalMaterial({ map: tx.map, bumpMap: tx.bump, bumpScale: 1.2, roughness: 0.42, clearcoat: 0.55, clearcoatRoughness: 0.25 }),
     );
     this.mesh.castShadow = true;
     scene.add(this.mesh);

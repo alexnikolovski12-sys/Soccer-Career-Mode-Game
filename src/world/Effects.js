@@ -60,6 +60,61 @@ export class Effects {
     }
   }
 
+  /** Turf / spray kicked up by a strike, a slide or a hard plant. wet = water spray instead. */
+  turf(x, z, dx = 0, dz = 0, amount = 1, wet = false) {
+    if (!this.bits) this._initBits();
+    const n = Math.round(6 + 10 * amount);
+    for (let k = 0; k < n; k++) {
+      const b = this.bitPool[this.bitNext = (this.bitNext + 1) % this.bitPool.length];
+      b.p.set(x + (Math.random() - 0.5) * 0.25, 0.04, z + (Math.random() - 0.5) * 0.25);
+      const sp = (1.2 + Math.random() * 2.5) * (0.6 + amount * 0.6);
+      b.v.set(dx * sp + (Math.random() - 0.5) * 1.6, 1.5 + Math.random() * 2.6 * (0.5 + amount * 0.5), dz * sp + (Math.random() - 0.5) * 1.6);
+      b.r.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+      b.life = 0.6 + Math.random() * 0.6;
+      b.size = wet ? 0.025 + Math.random() * 0.02 : 0.03 + Math.random() * 0.05;
+      const c = wet ? [0.75, 0.8, 0.86] : Math.random() < 0.7 ? [0.09 + Math.random() * 0.05, 0.22 + Math.random() * 0.08, 0.05] : [0.2, 0.15, 0.08];
+      this.bits.setColorAt(this.bitPool.indexOf(b), this._c.setRGB(...c));
+    }
+    this.bits.instanceColor.needsUpdate = true;
+    this.bitsOn = 2;
+  }
+
+  _initBits() {
+    const N = 120;
+    const g = new THREE.PlaneGeometry(1, 1);
+    this.bits = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.9 }), N);
+    this.bits.frustumCulled = false;
+    this._c = new THREE.Color();
+    for (let i = 0; i < N; i++) this.bits.setColorAt(i, this._c.setRGB(0.1, 0.25, 0.06));
+    this.bitPool = Array.from({ length: N }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Euler(), life: 0, size: 0.04 }));
+    this.bitNext = 0;
+    this.scene.add(this.bits);
+  }
+
+  /** A breath of vapour in front of a player's face (cold nights / snow). */
+  breath(x, y, z, hx, hz) {
+    if (!this.breaths) {
+      const c = document.createElement('canvas'); c.width = c.height = 32;
+      const g = c.getContext('2d');
+      const grd = g.createRadialGradient(16, 16, 1, 16, 16, 15);
+      grd.addColorStop(0, 'rgba(235,240,248,0.55)'); grd.addColorStop(1, 'rgba(235,240,248,0)');
+      g.fillStyle = grd; g.fillRect(0, 0, 32, 32);
+      const tex = new THREE.CanvasTexture(c);
+      this.breaths = Array.from({ length: 40 }, () => {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+        sp.visible = false; this.scene.add(sp);
+        return { s: sp, life: 0, v: new THREE.Vector3() };
+      });
+      this.breathNext = 0;
+    }
+    const b = this.breaths[this.breathNext = (this.breathNext + 1) % this.breaths.length];
+    b.life = 1.1;
+    b.s.visible = true;
+    b.s.position.set(x + hx * 0.16, y, z + hz * 0.16);
+    b.s.scale.setScalar(0.12);
+    b.v.set(hx * 0.5, 0.12, hz * 0.5);
+  }
+
   burstConfetti(at) {
     this.confetti.visible = true;
     for (const c of this.parts) {
@@ -124,6 +179,36 @@ export class Effects {
       m.ring.scale.setScalar(s);
       m.cone.position.y = 2.45 + Math.sin(time * 8) * 0.08;
       if (m.t <= 0) this.hideMarker();
+    }
+    // turf bits
+    if (this.bitsOn > 0) {
+      this.bitsOn -= dt;
+      for (let i = 0; i < this.bitPool.length; i++) {
+        const b = this.bitPool[i];
+        if (b.life > 0) {
+          b.life -= dt;
+          b.v.y -= 9.8 * dt;
+          b.v.multiplyScalar(1 - 1.2 * dt);
+          b.p.addScaledVector(b.v, dt);
+          if (b.p.y < 0.01) { b.p.y = 0.01; b.v.set(0, 0, 0); }
+          b.r.x += 9 * dt; b.r.z += 7 * dt;
+        }
+        this._q.setFromEuler(b.r);
+        this._s.setScalar(b.life > 0 ? b.size : 0);
+        this._m.compose(b.p, this._q, this._s);
+        this.bits.setMatrixAt(i, this._m);
+      }
+      this.bits.instanceMatrix.needsUpdate = true;
+    }
+    // breath
+    if (this.breaths) for (const b of this.breaths) {
+      if (b.life <= 0) continue;
+      b.life -= dt;
+      b.s.position.addScaledVector(b.v, dt);
+      b.v.multiplyScalar(1 - 1.5 * dt);
+      b.s.scale.setScalar(0.12 + (1.1 - b.life) * 0.35);
+      b.s.material.opacity = Math.max(0, Math.min(1, b.life / 0.6)) * 0.5;
+      if (b.life <= 0) b.s.visible = false;
     }
     // puffs
     for (const p of this.puffs) {

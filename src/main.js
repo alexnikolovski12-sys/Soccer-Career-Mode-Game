@@ -9,10 +9,14 @@ import { Audio } from './core/Audio.js';
 import { Quality } from './core/Quality.js';
 import { makeRng, dist2D } from './core/MathUtil.js';
 import { Weather } from './world/Weather.js';
+import { Look, TIMES } from './world/Look.js';
+import { FloodShadows } from './world/FloodShadows.js';
+import { Post } from './world/Post.js';
 import { Pitch } from './world/Pitch.js';
 import { CameraRig } from './world/Camera.js';
 import { Effects } from './world/Effects.js';
 import { Player } from './entities/Player.js';
+import { HUMAN_FX } from './entities/HumanBody.js';
 import { Ball } from './entities/Ball.js';
 import { Keeper } from './entities/Keeper.js';
 import { TeamAI, FORMATIONS } from './ai/TeamAI.js';
@@ -56,7 +60,7 @@ class Game {
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.05;
     r.shadowMap.enabled = true;
-    r.shadowMap.type = THREE.PCFShadowMap;
+    r.shadowMap.type = THREE.PCFSoftShadowMap;
     this.host.appendChild(r.domElement);
     this.renderer = r;
     this.scene = new THREE.Scene();
@@ -64,6 +68,10 @@ class Game {
     this.camRig = new CameraRig();
     this.pitch = new Pitch(this.scene);
     this.weather = new Weather(this.scene, this.pitch);
+    this.look = new Look(r, this.scene, this.pitch);
+    this.floodShadows = new FloodShadows(this.scene, 26);
+    this.post = new Post(r);
+    this.setLook('night', 'clear');
     this.effects = new Effects(this.scene);
     this.ball = new Ball(this.scene);
     // free kick aim line (ball → goal) and its target ring
@@ -756,6 +764,24 @@ class Game {
     this.ts = { from: this.loop.timeScale, to, t: 0, dur };
   }
 
+  // ------------------------------------------------------------ look
+  /** Time of day (night / dusk / day) × weather (clear / rain / snow). */
+  setLook(time, weather) {
+    this.look.set(time, weather);
+    this.weather.set(weather, this.quality && this.quality.current && !this.quality.current.post ? 0.5 : 1);
+    this.floodShadows.setStrength(this.look.flood);
+    const night = this.look.flood > 0.5;
+    this.post.setLook({ exposure: this.look.exposure, bloom: night ? 0.55 : 0.32, thresh: night ? 1.15 : 1.4, sat: time === 'day' ? 1.05 : 1.1, contrast: 0.12 });
+    this.matchTime = time; this.matchWeather = weather;
+    HUMAN_FX.wet.value = weather === 'rain' ? 1 : 0;
+  }
+
+  /** Draw the frame: through the post chain on the higher quality levels. */
+  renderFrame(cam = this.camRig.camera) {
+    if (this.post.enabled) this.post.render(this.scene, cam, this.realTime);
+    else { this.renderer.setRenderTarget(null); this.renderer.render(this.scene, cam); }
+  }
+
   // ------------------------------------------------------------ quality
   applyQuality(lvl) {
     const r = this.renderer;
@@ -765,6 +791,7 @@ class Game {
     for (const p of [...this.homeSquad, ...this.awaySquad, this.ref]) p.setShadows(lvl.shadows);
     this.ball.mesh.castShadow = lvl.shadows;
     this.pitch.setCrowdQuality(lvl.crowd === 'full');
+    this.post.enabled = !!lvl.post;
     if (changed) this.scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
     this._resize();
   }
@@ -876,6 +903,7 @@ class Game {
     const ev = this.events;
     ev.on('tackleWon', ({ victim, by }) => {
       if (victim === this.user) this.camRig.addShake(0.12);
+      if (by) this.effects.turf(by.pos.x, by.pos.z, Math.sin(by.heading), Math.cos(by.heading), by.anim && by.anim.variant === 'slide' ? 1.2 : 0.4, this.matchWeather === 'rain');
       if (victim && victim.team === 'home') this.audio.groan(0.8);
       if (by && by.team === 'home') this.audio.cheer(0.5);
     });
@@ -884,7 +912,15 @@ class Game {
       this.camRig.addShake(0.1);
       if (type === 'parry') this.audio.kick(0.6);
     });
-    ev.on('pass', ({ from }) => { this.lastPasser = from; if (from === this.user) this.effects.puff(this.ball.pos.x, this.ball.pos.z); });
+    ev.on('pass', ({ from, speed }) => {
+      this.lastPasser = from;
+      if (from === this.user) this.effects.puff(this.ball.pos.x, this.ball.pos.z);
+      if (speed > 18 || this.matchWeather === 'rain') this.effects.turf(this.ball.pos.x, this.ball.pos.z, 0, 0, speed > 18 ? 0.5 : 0.3, this.matchWeather === 'rain');
+    });
+    ev.on('shot', ({ shooter, power }) => {
+      const b = this.ball.pos, h = shooter ? shooter.heading : 0;
+      this.effects.turf(b.x, b.z, Math.sin(h) * 0.6, Math.cos(h) * 0.6, 0.6 + (power || 0.6) * 0.6, this.matchWeather === 'rain');
+    });
     // FC-style switching: whichever of your teammates gets the ball, you now control them
     ev.on('gain', ({ player }) => {
       player.ai.holdT = 0; player.ai.decideAt = null; player.ai.carry = null;
@@ -1226,8 +1262,10 @@ class Game {
     this.ut.close();
     // weather: mostly clear, sometimes rain, now and then snow
     const wk = opts.weather || (opts.training ? 'clear' : (() => { const r = this.rng.next(); return r < 0.58 ? 'clear' : r < 0.84 ? 'rain' : 'snow'; })());
-    this.weather.set(wk, this.quality.current && this.quality.current.shadows ? 1 : 0.5);
-    this.matchWeather = wk;
+    const tk = opts.time || (opts.training ? 'day' : (() => { const r = this.rng.next(); return r < 0.5 ? 'night' : r < 0.72 ? 'dusk' : 'day'; })());
+    this.setLook(tk, wk);
+    this.cold = wk === 'snow' || (tk === 'night' && this.rng.chance(0.35)) || (wk === 'rain' && tk !== 'day' && this.rng.chance(0.5));
+    if (this.pitch.crowd) this.pitch.crowd.setColours(home.kit.kitColour, away.kit.kitColour);
     this.match.kickoffTeam = opts.training || this.rng.chance(0.5) ? 'home' : 'away';
     this.sm.change(STATES.KICKOFF, { banner: opts.training ? 'TRAINING' : wk === 'rain' ? 'KICK OFF · RAIN' : wk === 'snow' ? 'KICK OFF · SNOW' : 'KICK OFF' });
   }
@@ -1255,6 +1293,7 @@ class Game {
   }
 
   onGoal(team, scorer) {
+    if (this.pitch.crowd) this.pitch.crowd.cheer(team === 'home' ? 7 : 3);
     this.goalTeam = team;
     this.scorer = scorer && !scorer.isKeeper ? scorer : (team === 'home' ? this.user : this.defenders[0]);
     if (team === 'home' && this.scorer.team === 'home' && this.scorer !== this.user) this.switchControl(this.scorer, true);
@@ -1601,7 +1640,23 @@ class Game {
     this.pitch.update(paused ? 0 : scaledDt);
     this.effects.update(paused ? 0 : realDt, this.realTime);
     this.camRig.update(realDt, this);
-    this.weather.update(paused ? 0 : realDt, this.camRig.pos, this.realTime || 0);
+    this.weather.update(paused ? 0 : realDt, this.camRig.pos, this.realTime || 0, this.camRig.look);
+    this.pitch.updateStadium(paused ? 0 : realDt, this.realTime, this.camRig.camera.position);
+    HUMAN_FX.time.value = this.realTime % 1000;
+    if (this.cold && !paused && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT, STATES.GOAL, STATES.KICKOFF)) {
+      for (const p of this.players) {
+        if (!p.visible) continue;
+        p._breathT = (p._breathT ?? Math.random() * 2) - realDt;
+        if (p._breathT <= 0) {
+          const sp = Math.hypot(p.vel.x, p.vel.z);
+          p._breathT = sp > 5 ? 0.45 + Math.random() * 0.3 : 1.3 + Math.random() * 1.6;   // panting when sprinting
+          const hd = p.parts.head;
+          hd.getWorldPosition(this._bv || (this._bv = new THREE.Vector3()));
+          this.effects.breath(this._bv.x, this._bv.y - 0.02, this._bv.z, Math.sin(p.heading), Math.cos(p.heading));
+        }
+      }
+    }
+    this.floodShadows.update(this.players);
     this.pitch.focusShadows(this.camRig.look.x, this.camRig.look.z);
     this.hud.update(this);
     this.debug.update();
@@ -1614,9 +1669,10 @@ class Game {
       this._crowdT = 0.3;
       const x = Math.abs(this.ball.pos.x);
       this.audio.setCrowd(Math.max(0.15, Math.min(1, (x - 15) / 35)));
+      if (this.pitch.crowd) this.pitch.crowd.setExcitement(Math.max(0, Math.min(1, (x - 25) / 25)));
     }
 
-    this.renderer.render(this.scene, this.camRig.camera);
+    this.renderFrame(this.camRig.camera);
     if (!replaying && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT, STATES.GOAL)) {
       this.replay.record(this.simTime);
     }
