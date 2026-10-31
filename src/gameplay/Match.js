@@ -15,6 +15,7 @@ export class Match {
 
   reset(opts = {}) {
     this.halfSeconds = opts.halfSeconds || CONFIG.match.halfSeconds;
+    this.added = null; this._spT = null;
     this.clock = 0;            // game seconds in this half (0 … 45 × 60)
     this.half = 1;
     this.homeGoals = 0; this.awayGoals = 0;
@@ -102,11 +103,21 @@ export class Match {
       if (g.ball.lastKick && g.ball.lastKick.type === 'shot') g.audio.groan(0.5);
       return;
     }
-    // end of the half: wait for a quiet moment, never past +3
-    const over = this.clock >= 45 * 60;
-    if (over) {
-      const danger = Math.abs(ball.pos.x) > L - 25 && (ball.owner || ball.pass);
-      if (!danger || this.clock >= 48 * 60) this._endHalf();
+    // end of the half: added time, then wait for a quiet moment — and never mid-chance:
+    // a shot, a penalty or a free kick that's on its way always gets to finish
+    if (this.clock >= 45 * 60) {
+      if (this.added == null) {
+        this.added = 1 + Math.floor(Math.random() * 3) + (this.goals.length > 2 ? 1 : 0);
+        g.hud.flash(`+${this.added} MIN ADDED TIME`, 'neutral');
+      }
+      if (this.clock >= (45 + this.added) * 60) {
+        const lk = ball.lastKick;
+        const live = ball.speed > 3 && ((lk && (lk.type === 'shot' || lk.setPiece)) || Math.abs(ball.pos.x) > L - 30);
+        const sinceSP = this._spT != null ? this.clock - this._spT : 1e9;
+        const danger = live || sinceSP < 3 * this.rate || g.keeper.state === 'holding' || g.homeKeeper.state === 'holding'
+          || (Math.abs(ball.pos.x) > L - 25 && (ball.owner || ball.pass));
+        if (!danger || (this.clock >= (45 + this.added + 2) * 60 && !live && sinceSP > 5 * this.rate)) this._endHalf();
+      }
     }
   }
 
@@ -127,6 +138,7 @@ export class Match {
     if (this.half === 1) {
       this.half = 2;
       this.clock = 0;
+      this.added = null; this._spT = null;
       this.kickoffTeam = 'away';
       g.onHalfTime();
     } else {
@@ -150,6 +162,13 @@ export class Match {
   startRestart(type, team, x, z, opts = {}) {
     const g = this.game, ball = g.ball;
     if (this.restart) return;
+    // training (no outfield opposition): every restart is yours; an "away corner" becomes your goal kick
+    if (g.matchOpts && g.matchOpts.training && team === 'away' && type !== 'goalkick' && type !== 'kickoff') {
+      const L = CONFIG.pitch.length / 2;
+      if (type === 'corner' || type === 'penalty') { type = 'goalkick'; x = -(L - 5.5); z = Math.sign(z || 1) * 3.5; }
+      team = 'home';
+    }
+    if (g.matchOpts && g.matchOpts.training && type === 'kickoff') team = 'home';
     g.passing.reset();
     g.shooting.cancelStrike();
     g.skills.reset();
@@ -245,6 +264,7 @@ export class Match {
     if (!R || R.phase !== 'ready') return false;
     const tk = R.taker, s = R.team === 'home' ? 1 : -1;
     this.restart = null;
+    if (R.type === 'penalty' || R.type === 'freekick' || R.type === 'corner') this._spT = this.clock;
     ball.frozen = false;
     if (tk.anim.action === 'armsup') tk.anim.action = null;
     const mates = g.teammatesOf(tk).filter((p) => !p.isKeeper && p.visible && !p.sentOff);

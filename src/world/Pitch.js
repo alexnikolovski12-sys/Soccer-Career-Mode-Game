@@ -284,6 +284,7 @@ export class Pitch {
     geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
     const sky = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
     sky.renderOrder = -10;
+    this.skyMesh = sky;
     this.group.add(sky);
   }
 
@@ -466,6 +467,7 @@ export class Pitch {
   _lights() {
     const hemi = new THREE.HemisphereLight('#c9d8ff', '#2b4a2a', 1.35);
     this.scene.add(hemi);
+    this.hemi = hemi;
     const sun = new THREE.DirectionalLight('#fff6e6', 2.1);
     sun.position.set(-25, 45, 20);
     sun.castShadow = true;

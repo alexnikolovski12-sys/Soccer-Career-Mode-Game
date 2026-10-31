@@ -135,6 +135,16 @@ export class CameraRig {
       this.desiredLook.set(b.x + nx * 3, b.y * 0.6 + 0.6, b.z + nz * 3);
       posK = C.flight.damping; lookK = 10;
       fov = this.portrait ? 60 : 46;
+    } else if (this.mode === 'setpiece') {
+      // third person: behind the ball on the line to goal, just over the taker's shoulder
+      const b = game.ball.pos, e = this.opts.end || 1;
+      const dx = e * gx - b.x, dz = -b.z * 0.85, l = Math.hypot(dx, dz) || 1;
+      const nx = dx / l, nz = dz / l;
+      const back = this.portrait ? 7 : 5.6, side = 1.35;
+      this.desiredPos.set(b.x - nx * back - nz * side, 2.45, b.z - nz * back + nx * side);
+      this.desiredLook.set(b.x + nx * Math.min(l, 12), 0.75, b.z + nz * Math.min(l, 12));
+      posK = 4; lookK = 5;
+      fov = this.portrait ? 62 : 52;
     } else if (this.mode === 'celebrate') {
       const t = this.opts.target || game.user.pos;
       const ang = (this.opts.angle || 0) + game.realTime * 0.25;

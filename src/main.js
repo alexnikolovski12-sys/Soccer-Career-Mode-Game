@@ -8,6 +8,7 @@ import { Input } from './core/Input.js';
 import { Audio } from './core/Audio.js';
 import { Quality } from './core/Quality.js';
 import { makeRng, dist2D } from './core/MathUtil.js';
+import { Weather } from './world/Weather.js';
 import { Pitch } from './world/Pitch.js';
 import { CameraRig } from './world/Camera.js';
 import { Effects } from './world/Effects.js';
@@ -62,6 +63,7 @@ class Game {
 
     this.camRig = new CameraRig();
     this.pitch = new Pitch(this.scene);
+    this.weather = new Weather(this.scene, this.pitch);
     this.effects = new Effects(this.scene);
     this.ball = new Ball(this.scene);
     // free kick aim line (ball → goal) and its target ring
@@ -591,6 +593,7 @@ class Game {
       if (!sg) return false;
       const sp = this.setPiece;
       this.setPiece = null;
+      this.match._spT = this.match.clock;
       this.hud.setPenaltyMeter(false);
       this.hud.setButtonMode('all');
       this.input.joystick.setVisible(true);
@@ -628,6 +631,7 @@ class Game {
       const power = sp.fkPower ?? 0;
       this._endFreeKickUI();
       this.setPiece = null;
+      this.match._spT = this.match.clock;
       if (this.shooting.freeKick(u, sp.aimZ ?? 0, power) === true) this.sm.change(STATES.SHOT_FLIGHT);
       return false;
     }
@@ -817,7 +821,8 @@ class Game {
     if (c && !u.sprinting && dist2D(u.pos, c.pos) < 5.5) { u.faceTowards(c.pos.x, c.pos.z); u.jockey = true; }
     // auto-switch when you're out of the play and someone's much better placed
     this._autoSwitchT = (this._autoSwitchT || 0) - dt;
-    if (this._autoSwitchT <= 0 && mag < 0.3 && dist2D(u.pos, ball.pos) > CONFIG.match.autoSwitchDistance) { this._switchBest(true); this._autoSwitchT = 1.2; }
+    // (standing still: from 10 m; while you're steering him: only when he's really out of it)
+    if (this._autoSwitchT <= 0 && !u.ai.tackling && dist2D(u.pos, ball.pos) > (mag < 0.3 ? 10 : 16)) { this._switchBest(true); this._autoSwitchT = 1.2; }
   }
 
   /** Switch to the home outfielder best placed to get to the ball (goal-side preferred). */
@@ -884,6 +889,8 @@ class Game {
     ev.on('gain', ({ player }) => {
       player.ai.holdT = 0; player.ai.decideAt = null; player.ai.carry = null;
       if (player.team === 'home' && !player.isKeeper) { this._endBallCam(); this.switchControl(player, true); }
+      // they've won it: hand you whoever's best placed to get it back
+      else if (player.team === 'away' && !this.autoplay && this.sm.is(STATES.PLAYING)) { this._autoSwitchT = 1.2; this._switchBest(true); }
       if (this.sm.is(STATES.SHOT_FLIGHT)) this.backToPlay();
     });
     ev.on('keeperHold', () => { if (this.sm.is(STATES.SHOT_FLIGHT)) this.backToPlay(); });
@@ -1205,6 +1212,8 @@ class Game {
     this.matchOpts = opts;
     this.setPiece = null;
     for (const p of [...this.homeSquad, ...this.awaySquad]) { p.sentOff = false; p.setVisible(true); p.stayDown = false; }
+    // training: just you, your team and their keeper
+    if (opts.training) for (const p of this.awaySquad.slice(1)) { p.sentOff = true; p.setVisible(false); p.pos.set(0, 0, 80); }
     // you start on the striker
     if (this.user !== this.homeSquad[10]) { this.user.setControlled(false); this.user = this.homeSquad[10]; this.user.setControlled(true); }
     for (const p of this.homeSquad) if (p !== this.user) p.setControlled(false);
@@ -1215,8 +1224,12 @@ class Game {
     this.audio.setMatchAudio(true);
     this.audio.setCrowd(0.3);
     this.ut.close();
-    this.match.kickoffTeam = this.rng.chance(0.5) ? 'home' : 'away';
-    this.sm.change(STATES.KICKOFF, { banner: 'KICK OFF' });
+    // weather: mostly clear, sometimes rain, now and then snow
+    const wk = opts.weather || (opts.training ? 'clear' : (() => { const r = this.rng.next(); return r < 0.58 ? 'clear' : r < 0.84 ? 'rain' : 'snow'; })());
+    this.weather.set(wk, this.quality.current && this.quality.current.shadows ? 1 : 0.5);
+    this.matchWeather = wk;
+    this.match.kickoffTeam = opts.training || this.rng.chance(0.5) ? 'home' : 'away';
+    this.sm.change(STATES.KICKOFF, { banner: opts.training ? 'TRAINING' : wk === 'rain' ? 'KICK OFF · RAIN' : wk === 'snow' ? 'KICK OFF · SNOW' : 'KICK OFF' });
   }
 
   _setupSide(team, side, squad) {
@@ -1386,6 +1399,14 @@ class Game {
         g.simulate(dt);
       },
       frame(realDt) {
+        // free kicks and penalties: over the taker's shoulder, looking at goal
+        {
+          const sp = g.setPiece, R = g.match.restart;
+          const own = sp && sp.phase === 'ready';
+          const theirs = R && R.taker && (R.type === 'penalty' || R.type === 'freekick');
+          if ((own || theirs) && g.camRig.mode !== 'setpiece') { g.camRig.setMode('setpiece', { end: own ? 1 : R.team === 'home' ? 1 : -1 }); }
+          else if (!own && !theirs && g.camRig.mode === 'setpiece') g.camRig.setMode('broadcast');
+        }
         const has = g.ball.owner === g.user;
         const pen = g.setPiece && g.setPiece.penalty;
         g.hud.setShotCharge(has && !pen ? g.shooting.chargeFrom(g.input.chargeTime('shoot')) : 0);
@@ -1580,6 +1601,7 @@ class Game {
     this.pitch.update(paused ? 0 : scaledDt);
     this.effects.update(paused ? 0 : realDt, this.realTime);
     this.camRig.update(realDt, this);
+    this.weather.update(paused ? 0 : realDt, this.camRig.pos, this.realTime || 0);
     this.pitch.focusShadows(this.camRig.look.x, this.camRig.look.z);
     this.hud.update(this);
     this.debug.update();

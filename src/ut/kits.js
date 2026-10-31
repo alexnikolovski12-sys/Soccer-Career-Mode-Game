@@ -29,3 +29,6 @@ export function keeperKit(a, b) {
   const c = opts.find((o) => dist(o, a.primary) > 110 && dist(o, b.primary) > 110) || '#2bd47d';
   return { kitColour: c, kitColour2: '#16161c', accent: '#16161c', shortsColour: '#16161c', socksColour: c, pattern: 0, sponsor: -1, gloveColour: '#f2f2f2' };
 }
+
+/** Two kits too alike to play against each other. */
+export function clashes(a, b) { return dist(a.primary, b.primary) < 120 || (dist(a.primary, b.primary) + dist(a.shorts, b.shorts) < 170); }
