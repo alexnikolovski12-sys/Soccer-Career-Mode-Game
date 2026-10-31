@@ -891,11 +891,11 @@ class Game {
       if (it) { u.moveTo(it.pt.x, it.pt.z, u.attrs.sprintSpeed, 0.2); u.sprinting = true; }
     }
     // always on the man nearest the ball: hand over as soon as a teammate is clearly better placed
-    if (this._autoSwitchT <= 0 && !u.ai.tackling && u.stumble <= 0) { this._switchBest(true, mag < 0.3 ? 1.5 : 2.5); this._autoSwitchT = 0.5; }
+    if (this._autoSwitchT <= 0 && !u.ai.tackling && u.stumble <= 0) { this._switchBest(true, mag < 0.3 ? 0.4 : 0.9, true); this._autoSwitchT = 0.2; }
   }
 
   /** Switch to the home outfielder best placed to get to the ball (goal-side preferred). */
-  _switchBest(quiet = false, margin = 6) {
+  _switchBest(quiet = false, margin = 6, nearest = false) {
     const ball = this.ball, u = this.user;
     const tgt = ball.owner || (ball.pass && ball.pass.to) || null;
     const bx = tgt ? tgt.pos.x : ball.pos.x, bz = tgt ? tgt.pos.z : ball.pos.z;
@@ -903,11 +903,11 @@ class Game {
     for (const p of this.teammates) {
       if (p.stumble > 0.3 || p.ai.tackling) continue;
       let s = Math.hypot(p.pos.x - bx, p.pos.z - bz);
-      if (p.pos.x < bx) s -= 2.5;                 // goal-side (your goal is at −x)
+      if (!nearest && p.pos.x < bx) s -= 2.5;     // goal-side (your goal is at −x)
       if (s < bs) { bs = s; best = p; }
     }
     if (!best) return;
-    const cur = Math.hypot(u.pos.x - bx, u.pos.z - bz) - (u.pos.x < bx ? 2.5 : 0);
+    const cur = Math.hypot(u.pos.x - bx, u.pos.z - bz) - (!nearest && u.pos.x < bx ? 2.5 : 0);
     if (quiet && bs > cur - margin) return;
     if (best) { this.switchControl(best, true); this.effects.showMarker(best); }
   }
@@ -1719,11 +1719,11 @@ class Game {
     {
       const cp = this.camRig.camera.position, lk = this.camRig.look;
       const sh = this.pitch.shells;
-      sh.visible = this.post.enabled;
+      sh.visible = this.post.enabled && cp.y < 9;   // only when the camera's close enough to see blades
       if (sh.visible) {
         // the patch of real blades sits between the camera and what it's looking at
         const fx = lk.x - cp.x, fz = lk.z - cp.z, fl = Math.hypot(fx, fz) || 1;
-        const k = Math.min(fl, 22);
+        const k = Math.min(fl, 8);
         sh.position.set(cp.x + (fx / fl) * k, 0, cp.z + (fz / fl) * k);
       }
       this.pitch.lines.position.y = sh.visible ? 0.076 : 0.006;

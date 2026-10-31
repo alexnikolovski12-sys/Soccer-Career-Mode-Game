@@ -278,6 +278,7 @@ export class Player {
     this.ring.rotation.x = -Math.PI / 2;
     this.ring.position.y = 0.02;
     this.ring.renderOrder = 2;
+    this.ring.material.opacity = 0; this.ring.material.colorWrite = false;   // no circle under your man (more realistic)
     root.add(this.ring);
     // upside-down red triangle over whoever you control
     this.label = Player._sprite(markerTex('triangle'), 0.034, 0.03);
@@ -584,14 +585,17 @@ export class Player {
     if (U && U.uLag) {
       // fabric inertia: a spring chasing the opposite of the body's acceleration, billowing back at speed
       const a = A.accS, sp = Math.hypot(this.vel.x, this.vel.z), dt = Math.min(0.05, this._animDt || 0.016);
-      const tx = Math.max(-0.13, Math.min(0.13, -a.y * 0.011));
-      const tz = Math.max(-0.16, Math.min(0.12, -a.x * 0.011 - sp * 0.011));
-      const ty = Math.min(0.07, sp * 0.0065);
+      const tx = Math.max(-0.2, Math.min(0.2, -a.y * 0.016));
+      const tz = Math.max(-0.24, Math.min(0.18, -a.x * 0.016 - sp * 0.016));
+      const ty = Math.min(0.1, sp * 0.009);
       const L = this._lag || (this._lag = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 });
-      for (const [k, t] of [['x', tx], ['y', ty], ['z', tz]]) {
+      const n = Math.ceil(dt / 0.008), h = dt / n;
+      for (let i = 0; i < n; i++) for (const [k, t] of [['x', tx], ['y', ty], ['z', tz]]) {
         const v = 'v' + k;
-        L[v] += ((t - L[k]) * 120 - L[v] * 5.5) * dt;
-        L[k] += L[v] * dt;
+        L[v] += ((t - L[k]) * 110 - L[v] * 6) * h;
+        L[k] += L[v] * h;
+        if (!Number.isFinite(L[k])) { L[k] = 0; L[v] = 0; }
+        L[k] = Math.max(-0.3, Math.min(0.3, L[k]));
       }
       U.uLag.value.set(L.x, L.y, L.z);
       U.uDirt.value = this.dirt || 0;
@@ -599,7 +603,7 @@ export class Player {
     if (this.ring) {
       const pulse = 0.85 + Math.sin(time * 4) * 0.12;
       this.ring.scale.setScalar(pulse);
-      this.ring.material.opacity = 0.55 + Math.sin(time * 4) * 0.2;
+      this.ring.material.opacity = 0;
     }
   }
 

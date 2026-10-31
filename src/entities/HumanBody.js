@@ -120,7 +120,12 @@ vec3 clothLag(float Lm, vec3 p) {
   else if (Lm >= 0.0 && Lm < 5.0 && Lm < uSleeve) w = 0.5 * smoothstep(0.2, 0.55, Lm);   // sleeves
   // a wave runs down the fabric as it swings (flag / cape-like), bigger at speed
   float wave = sin(uHT * (7.0 + 6.0 * uMove) - p.y * 18.0 + p.x * 9.0);
-  return (uLag * (1.0 + 0.35 * wave) + vec3(0.0, abs(uLag.z) * 0.6 * wave, 0.0)) * w;
+  vec3 L = uLag * (1.0 + 0.35 * wave) + vec3(0.0, abs(uLag.z) * 0.6 * wave, 0.0);
+  vec3 nn = normalize(vec3(p.x, 0.0, p.z * 1.3) + 1e-4);
+  float into = dot(L, nn);
+  if (into < 0.0) L -= nn * into * 0.85;             // don't sink into the body
+  L += nn * length(uLag) * 0.35;                      // the swinging cloth lifts off the body
+  return L * w;
 }
 float clothOffset(float Lm, vec3 p, float h) {
   float off = 0.0;
@@ -287,14 +292,13 @@ function patch(mat) {
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   if (gFab > 0.5) {
     vec3 bp = vBind;
-    float fold = sin(bp.y * 120.0 + sin(bp.x * 37.0 + uHT * 2.0) * 2.5 + uHT * (2.0 + 5.0 * uMove)) * smoothstep(1.4, 1.0, bp.y)
-               + 0.6 * sin(bp.y * 70.0 - bp.x * 60.0 + uHT * 3.0 * uMove);
-    normal = normalize(normal + vec3(0.0, fold * 0.09, fold * 0.03));
+    float fold = sin(bp.y * 38.0 + sin(bp.x * 14.0 + uHT * 1.5) * 1.5 + uHT * (1.5 + 3.0 * uMove)) * smoothstep(1.4, 1.0, bp.y);
+    normal = normalize(normal + vec3(0.0, fold * 0.05, fold * 0.02));
   }`)
       // fabric sheen: polyester kits catch the floodlights at grazing angles
       .replace('#include <opaque_fragment>', 'outgoingLight += diffuseColor.rgb * pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0) * (0.22 * gFab + 0.06);\n  // skin: a little warm light scattered under the surface\n  if (gFab < 0.5 && gRough > 0.4 && gRough < 0.6) outgoingLight += diffuseColor.rgb * vec3(0.09, 0.035, 0.02) * 0.8;\n#include <opaque_fragment>');
   };
-  mat.customProgramCacheKey = () => 'human-v6';
+  mat.customProgramCacheKey = () => 'human-v7';
 }
 
 const col = (c) => new THREE.Color(c);

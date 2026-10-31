@@ -139,6 +139,7 @@ export class Effects {
   }
 
   showMarker(player) {
+    return;   // no switch / receiver markers (more realistic)
     this.marker.target = player;
     this.marker.t = CONFIG.pass.markerTime;
     this.marker.g.visible = true;

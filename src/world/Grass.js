@@ -156,14 +156,14 @@ vec3 turf() {
     // real blades: each ~8 mm cell holds a blade of random height that tapers to a tip;
     // trodden / worn turf is shorter and flattened
     float dc = length(cameraPosition - vGW);
-    if (dc > 48.0) discard;
+    if (dc > 14.0) discard;          // beyond this a phone can't resolve single blades (they turn into moiré lines)
     vec2 q = vGW.xz * 70.0;
     vec2 cell = floor(q), f = fract(q) - 0.5;
     float hgt = 0.5 + 0.5 * gh(cell);
     hgt *= 1.0 - 0.75 * gWear;
     float r = length(f + (vec2(gh(cell + 3.1), gh(cell + 7.7)) - 0.5) * 0.4);
     // far away the blades thicken into a soft pile so they don't shimmer
-    float fat = clamp(dc / 40.0, 0.0, 1.0) * 0.35;
+    float fat = smoothstep(6.0, 14.0, dc) * 0.6;
     if (vLayer > hgt || r > (0.42 + fat) * (1.0 - vLayer / hgt) + 0.05 + fat * 0.5) discard;
     diffuseColor.rgb *= 0.55 + 0.65 * vLayer;            // dark down in the thatch, bright tips
   }

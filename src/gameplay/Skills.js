@@ -34,7 +34,7 @@ const SCRIPTED = {
   // roll it back with the sole, up the back of the standing leg, heel flick over the head
   rainbow: { dur: 1.05, anim: 'rainbowS', beat: 0.85, hold: 0.55, holdSpeed: 0.8,
     ball: [[0, 0.34, 0, R], [0.24, -0.1, 0.07, R], [0.4, -0.2, 0.06, 0.4], [0.47, -0.16, 0.04, 0.62]],
-    flight: { from: 0.47, to: [2.7, 0, R], apex: 2.55 },
+    flight: { from: 0.47, to: [3.2, 0, R], apex: 2.55 },
     player: [[0, 0, 0], [0.5, 0.15, 0], [1, 1.2, 0]] },
   // Marseille turn: step on it, spin back over it with the right sole, finish with the left
   roulette: { dur: 0.95, anim: 'rouletteS', beat: 0.65, hold: 0.95, holdSpeed: 0.6,
@@ -206,7 +206,15 @@ export class Skills {
       o.pos.x += (px - o.pos.x) * Math.min(1, dt * 14);
       o.pos.z += (pz - o.pos.z) * Math.min(1, dt * 14);
       o.skillHold = sc.holdSpeed;
-    } else o.skillHold = null;
+    } else {
+      o.skillHold = null;
+      // rainbow: he chases it down and takes it back by himself
+      if (sc.flight) {
+        const [lx, lz] = W(sc.flight.to[0], sc.flight.to[1]);
+        o.moveTo(lx, lz, o.attrs.sprintSpeed, 0.05);
+        o.sprinting = true;
+      }
+    }
     // body turn
     if (sc.turn) {
       const [amt, t0, t1] = sc.turn;
