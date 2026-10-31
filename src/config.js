@@ -390,7 +390,7 @@ export const CONFIG = {
     startLevel: 3,
     downFps: 50, downTime: 2,
     upFps: 58, upTime: 6,
-    shadowMapSize: 1024,
+    shadowMapSize: 2048,
   },
 
   // --------------------------------------------------------------- full matches

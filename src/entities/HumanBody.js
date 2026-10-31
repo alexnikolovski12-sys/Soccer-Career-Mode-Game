@@ -118,15 +118,17 @@ vec3 clothLag(float Lm, vec3 p) {
   if (Lm < 0.0 && p.y < neckY(p) && p.y > 0.86) w = smoothstep(1.42, 0.98, p.y);          // shirt: the hem swings most
   else if (Lm >= 5.0 && Lm - 10.0 < 0.55) w = 0.8 * smoothstep(0.05, 0.55, Lm - 10.0);    // shorts legs
   else if (Lm >= 0.0 && Lm < 5.0 && Lm < uSleeve) w = 0.5 * smoothstep(0.2, 0.55, Lm);   // sleeves
-  return uLag * w;
+  // a wave runs down the fabric as it swings (flag / cape-like), bigger at speed
+  float wave = sin(uHT * (7.0 + 6.0 * uMove) - p.y * 18.0 + p.x * 9.0);
+  return (uLag * (1.0 + 0.35 * wave) + vec3(0.0, abs(uLag.z) * 0.6 * wave, 0.0)) * w;
 }
 float clothOffset(float Lm, vec3 p, float h) {
   float off = 0.0;
   if (aEye > 0.5) return 0.0;
   // shirt / shorts flutter in the wind of running (a few mm, rippling up the body)
   float fl = sin(uHT * (9.0 + 5.0 * uMove) + p.y * 26.0 + p.x * 17.0) * 0.5 + sin(uHT * 13.0 - p.y * 41.0 + p.z * 23.0) * 0.5;
-  if (Lm < 0.0 && p.y < neckY(p) && p.y > 0.86) off += fl * (0.0015 + 0.0045 * uMove) * smoothstep(1.4, 1.05, p.y);
-  if (Lm >= 5.0 && Lm - 10.0 < 0.55) off += fl * (0.001 + 0.004 * uMove) * smoothstep(0.0, 0.5, Lm - 10.0);
+  if (Lm < 0.0 && p.y < neckY(p) && p.y > 0.86) off += fl * (0.003 + 0.016 * uMove) * smoothstep(1.42, 0.98, p.y);
+  if (Lm >= 5.0 && Lm - 10.0 < 0.55) off += fl * (0.002 + 0.013 * uMove) * smoothstep(0.0, 0.5, Lm - 10.0);
   if (Lm >= 5.0) {
     float l = Lm - 10.0;
     if (l < 0.55) off = 0.016 + 0.016 * smoothstep(0.0, 0.55, l);
@@ -290,9 +292,9 @@ function patch(mat) {
     normal = normalize(normal + vec3(0.0, fold * 0.09, fold * 0.03));
   }`)
       // fabric sheen: polyester kits catch the floodlights at grazing angles
-      .replace('#include <opaque_fragment>', 'outgoingLight += diffuseColor.rgb * pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0) * (0.22 * gFab + 0.06) ;\n#include <opaque_fragment>');
+      .replace('#include <opaque_fragment>', 'outgoingLight += diffuseColor.rgb * pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0) * (0.22 * gFab + 0.06);\n  // skin: a little warm light scattered under the surface\n  if (gFab < 0.5 && gRough > 0.4 && gRough < 0.6) outgoingLight += diffuseColor.rgb * vec3(0.09, 0.035, 0.02) * 0.8;\n#include <opaque_fragment>');
   };
-  mat.customProgramCacheKey = () => 'human-v5';
+  mat.customProgramCacheKey = () => 'human-v6';
 }
 
 const col = (c) => new THREE.Color(c);

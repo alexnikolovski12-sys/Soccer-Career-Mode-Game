@@ -254,15 +254,17 @@ export class Possession {
       if (loftTo && p !== loftTo && ball.pos.y > D.receiveMaxHeight) continue;
       // the intended receiver gets a big, forgiving reach so passes almost always arrive
       const intended = ball.pass && ball.pass.to === p;
-      const r = D.receiveReach + p.attrs.reach * 0.25 + (p === loftTo ? 0.7 : 0) + (intended ? D.receiverBonus : 0);
+      // your team reads their passes: a bigger reach to cut them out
+      const cut = p.team === 'home' && ball.pass && ball.pass.from && ball.pass.from.team === 'away' ? 0.95 : 0;
+      const r = D.receiveReach + p.attrs.reach * 0.25 + (p === loftTo ? 0.7 : 0) + (intended ? D.receiverBonus : 0) + cut;
       if (d < r && d < bestD) { best = p; bestD = d; }
     }
     if (!best) return;
     if (ball.pass && ball.pass.to && best.team !== ball.pass.to.team) {
       // interception attempt — a crisp pass zipped past a defender often beats him
       const fromUser = ball.pass.from && ball.pass.from.team === 'home';
-      const skill = CONFIG.teamMap.interceptSkill(best.rating) * (fromUser ? 0.45 : 1) * (best.isUser ? 1.25 : 1);
-      const p = Math.min(0.9, skill * (0.55 + 0.45 * Math.max(0, 1 - ball.speed / 24)));
+      const skill = CONFIG.teamMap.interceptSkill(best.rating) * (fromUser ? 0.45 : 1) * (best.team === 'home' ? 1.7 : 1) * (best.isUser ? 1.2 : 1);
+      const p = Math.min(best.team === 'home' ? 0.95 : 0.9, skill * (0.55 + 0.45 * Math.max(0, 1 - ball.speed / 24)));
       if (ball.speed > 4 && g.rng.next() > p) { ball.ignore.set(best, 0.4); return; }
     }
     this.gain(best);

@@ -94,9 +94,10 @@ export function grassMaterial(shell = false) {
     sh.vertexShader = 'varying vec3 vGW;\nvarying float vLayer;\nuniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
  vLayer = 0.0;
  #ifdef USE_INSTANCING
-   vLayer = instanceMatrix[3].y / 0.03;
+   vLayer = instanceMatrix[3].y / 0.07;
    // blades lean in the breeze, more at the tips
-   transformed.x += sin(uTime * 1.7 + position.x * 0.31 + position.y * 0.17) * 0.004 * vLayer * vLayer;
+   transformed.x += sin(uTime * 1.7 + (instanceMatrix * vec4(position, 1.0)).x * 0.31) * 0.012 * vLayer * vLayer;
+   transformed.z += cos(uTime * 1.3 + (instanceMatrix * vec4(position, 1.0)).z * 0.27) * 0.008 * vLayer * vLayer;
    vGW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
  #else
    vGW = (modelMatrix * vec4(transformed, 1.0)).xyz;
@@ -155,14 +156,15 @@ vec3 turf() {
     // real blades: each ~8 mm cell holds a blade of random height that tapers to a tip;
     // trodden / worn turf is shorter and flattened
     float dc = length(cameraPosition - vGW);
-    if (dc > 9.0) discard;          // past a few metres the blades are below a pixel: the turf shader takes over
-    vec2 q = vGW.xz * 125.0;
+    if (dc > 48.0) discard;
+    vec2 q = vGW.xz * 70.0;
     vec2 cell = floor(q), f = fract(q) - 0.5;
-    float hgt = 0.55 + 0.45 * gh(cell);
+    float hgt = 0.5 + 0.5 * gh(cell);
     hgt *= 1.0 - 0.75 * gWear;
     float r = length(f + (vec2(gh(cell + 3.1), gh(cell + 7.7)) - 0.5) * 0.4);
-    if (vLayer > hgt || r > 0.42 * (1.0 - vLayer / hgt) + 0.04) discard;
-    if (vLayer > 0.2 && dc > 9.0 - 3.0 * vLayer) discard;
+    // far away the blades thicken into a soft pile so they don't shimmer
+    float fat = clamp(dc / 40.0, 0.0, 1.0) * 0.35;
+    if (vLayer > hgt || r > (0.42 + fat) * (1.0 - vLayer / hgt) + 0.05 + fat * 0.5) discard;
     diffuseColor.rgb *= 0.55 + 0.65 * vLayer;            // dark down in the thatch, bright tips
   }
 #endif`)
@@ -173,12 +175,12 @@ vec3 turf() {
 }
 
 /** Grass blades for close-up shots: stacked shells around the action, only drawn when the camera is near. */
-export function grassShells(layers = 10) {
-  const geo = new THREE.PlaneGeometry(20, 20, 1, 1);
+export function grassShells(layers = 12) {
+  const geo = new THREE.PlaneGeometry(70, 56, 1, 1);
   geo.rotateX(-Math.PI / 2);
   const m = new THREE.InstancedMesh(geo, grassMaterial(true), layers);
   const M = new THREE.Matrix4();
-  for (let i = 0; i < layers; i++) { M.makeTranslation(0, ((i + 1) / layers) * 0.03, 0); m.setMatrixAt(i, M); }
+  for (let i = 0; i < layers; i++) { M.makeTranslation(0, ((i + 1) / layers) * 0.07, 0); m.setMatrixAt(i, M); }
   m.frustumCulled = false;
   m.receiveShadow = true;
   m.renderOrder = 0;

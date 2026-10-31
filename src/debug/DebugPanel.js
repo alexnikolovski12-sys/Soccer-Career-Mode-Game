@@ -36,6 +36,7 @@ export class DebugPanel {
   }
 
   toggle(v = !this.open) {
+    if (!window.__BREAKAWAY_DEV) return;   // no tuning panel in the game (it could change ratings)
     this.open = v;
     this.el.classList.toggle('show', v);
   }

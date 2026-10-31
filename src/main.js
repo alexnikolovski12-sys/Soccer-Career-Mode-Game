@@ -41,8 +41,7 @@ class Events {
 }
 
 const easeInOut = (t) => t * t * (3 - 2 * t);
-const CELEBRATIONS = ['kneeslide', 'kneeslide', 'bellyslide', 'airplane', 'jumpfist', 'spinjump', 'spinjump', 'spinjump', 'armscrossed', 'thumbsback', 'bow', 'pointsky', 'cuptheear',
-  'shush', 'armscrossed', 'salute', 'calmdown', 'heart', 'badgepoint', 'robot', 'backflip'];
+const CELEBRATIONS = ['spinjump', 'kneeslide'];   // SIUUU and the knee slide
 
 class Game {
   constructor() {
@@ -144,7 +143,9 @@ class Game {
       resume: () => this.resume(),
       quit: () => this.quitMatch(),
       mute: () => { this.audio.setMuted(!this.audio.muted); this.hud.setMuted(this.audio.muted); },
-      debug: () => this.debug.toggle(),
+      debug: () => this.openWeather(),
+      weather: (w) => { this.setLook(this.matchTime || 'night', w); if (this.sm.is(STATES.PAUSED)) this.resume(); },
+      weatherClosed: () => { if (this.sm.is(STATES.PAUSED)) this.resume(); },
       cancelShot: () => {},
       next: () => this.continueMatch(),
       fkAction: (a) => { if (this.setPiece && this.setPiece.fk) this.setPiece.fkAction = a; },
@@ -154,6 +155,7 @@ class Game {
     this.match = new Match(this);
     this.moments = this.match;       // older call sites (rating hooks)
     this.quality = new Quality((lvl) => this.applyQuality(lvl));
+    this.quality.locked = true;      // always the top graphics level
     this.debug = new DebugPanel(this, this.uiRoot);
     this.ut = new UltimateTeam(document.getElementById('app'), this);
 
@@ -780,6 +782,14 @@ class Game {
     this.ts = { from: this.loop.timeScale, to, t: 0, dur };
   }
 
+  /** The in-match settings: weather only. */
+  openWeather() {
+    if (!this.sm.is(STATES.MENU, STATES.LOADING) && !this.sm.is(STATES.PAUSED)) this.pause();
+    const el = this.hud.weatherEl;
+    el.querySelectorAll('.w').forEach((b) => b.classList.toggle('on', b.dataset.w === this.matchWeather));
+    el.classList.add('show');
+  }
+
   // ------------------------------------------------------------ look
   /** Time of day (night / dusk / day) × weather (clear / rain / snow). */
   setLook(time, weather) {
@@ -875,6 +885,11 @@ class Game {
     if (c && !u.sprinting && dist2D(u.pos, c.pos) < 5.5) { u.faceTowards(c.pos.x, c.pos.z); u.jockey = true; }
     // auto-switch when you're out of the play and someone's much better placed
     this._autoSwitchT = (this._autoSwitchT || 0) - dt;
+    // their pass in flight: your man reads it and goes to cut it out by himself (unless you're steering him)
+    if (ball.pass && !ball.owner && ball.pass.from && ball.pass.from.team === 'away' && !u.ai.tackling && mag < 0.3) {
+      const it = this.homeAI._interceptor([u]);
+      if (it) { u.moveTo(it.pt.x, it.pt.z, u.attrs.sprintSpeed, 0.2); u.sprinting = true; }
+    }
     // always on the man nearest the ball: hand over as soon as a teammate is clearly better placed
     if (this._autoSwitchT <= 0 && !u.ai.tackling && u.stumble <= 0) { this._switchBest(true, mag < 0.3 ? 1.5 : 2.5); this._autoSwitchT = 0.5; }
   }
@@ -1155,8 +1170,9 @@ class Game {
           // their scorer wheels away to the corner, arms up
           if (!cel.target) cel.target = { x: -CONFIG.pitch.length / 2 + 9, z: (p.pos.z >= 0 ? 1 : -1) * (CONFIG.pitch.width / 2 - 4) };
           const d = p.moveTo(cel.target.x, cel.target.z, p.attrs.sprintSpeed, 1);
-          if (d < 2 && p.anim.action !== 'jumpfist') p.playAction('jumpfist', 9, { loop: true });
-          else if (d >= 2 && p.anim.action !== 'armsup') p.playAction('armsup', 9, {});
+          // their scorer: a knee slide too
+          if (d < 6 && !cel.awaySlide) { cel.awaySlide = { x: Math.sin(p.heading), z: Math.cos(p.heading), v: Math.max(5.5, p.speed) }; p.playAction('kneeslide', 2.6, { hold: true }); }
+          if (cel.awaySlide) { const s2 = cel.awaySlide; p.steer(0, 0, 0); p.vel.set(0, 0, 0); p.pos.x += s2.x * s2.v * dt; p.pos.z += s2.z * s2.v * dt; s2.v *= Math.exp(-1.5 * dt); }
         }
         continue;
       }
@@ -1570,7 +1586,7 @@ class Game {
           const late = m.minute >= 80 && (m.homeGoals === m.awayGoals || m.homeGoals === m.awayGoals + 1);
           if (late) {
             g.celebration.big = true;
-            g.celebration.type = Math.random() < 0.6 ? 'kneeslide' : 'jumpfist';
+            g.celebration.type = Math.random() < 0.5 ? 'kneeslide' : 'spinjump';
             g._startBigCelebration();
             g.hud.flash(m.homeGoals === m.awayGoals ? 'LATE EQUALISER!' : 'LATE WINNER!', 'good');
           } else g.hud.flash(`${g.scorer ? g.scorer.name : ''} ${m.minute}'`.trim(), 'good');
@@ -1702,14 +1718,15 @@ class Game {
     // grass blades when the camera is in close (celebrations, set pieces, replays)
     {
       const cp = this.camRig.camera.position, lk = this.camRig.look;
-      const near = cp.y < 4 && Math.hypot(cp.x - lk.x, cp.z - lk.z) < 20;
       const sh = this.pitch.shells;
-      sh.visible = near && this.post.enabled;
+      sh.visible = this.post.enabled;
       if (sh.visible) {
+        // the patch of real blades sits between the camera and what it's looking at
         const fx = lk.x - cp.x, fz = lk.z - cp.z, fl = Math.hypot(fx, fz) || 1;
-        sh.position.set(cp.x + (fx / fl) * 6, 0, cp.z + (fz / fl) * 6);
+        const k = Math.min(fl, 22);
+        sh.position.set(cp.x + (fx / fl) * k, 0, cp.z + (fz / fl) * k);
       }
-      this.pitch.lines.position.y = sh.visible ? 0.032 : 0.006;
+      this.pitch.lines.position.y = sh.visible ? 0.076 : 0.006;
       GRASS.uTime.value = this.realTime % 1000;
     }
     // the pitch wears where they run (and badly where they slide)

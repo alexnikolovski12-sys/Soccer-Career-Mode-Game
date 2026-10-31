@@ -49,7 +49,7 @@ export class HUD {
     this.btnGear = el('button', 'icon-btn', ICON.gear);
     this.btnPause.setAttribute('aria-label', 'Pause');
     this.btnMute.setAttribute('aria-label', 'Mute');
-    this.btnGear.setAttribute('aria-label', 'Debug');
+    this.btnGear.setAttribute('aria-label', 'Weather');
     icons.append(this.btnPause, this.btnMute, this.btnGear);
     right.appendChild(icons);
     top.appendChild(right);
@@ -142,6 +142,15 @@ export class HUD {
     r.appendChild(this.pauseEl);
     this._tap(this.pauseEl.querySelector('.resume'), () => this.h.resume());
     this._tap(this.pauseEl.querySelector('.quit'), () => this.h.quit && this.h.quit());
+
+    // ---- settings (in a match): the weather is the only thing you can change
+    this.weatherEl = el('div', 'overlay pause weather', `
+      <div class="o-card"><div class="o-title">WEATHER</div>
+      <button class="o-btn w" data-w="clear">Clear</button><button class="o-btn w" data-w="rain">Rain</button><button class="o-btn w" data-w="snow">Snow</button>
+      <button class="o-btn quit wclose">Close</button></div>`);
+    r.appendChild(this.weatherEl);
+    this.weatherEl.querySelectorAll('.w').forEach((b) => this._tap(b, () => { this.h.weather && this.h.weather(b.dataset.w); this.weatherEl.classList.remove('show'); }));
+    this._tap(this.weatherEl.querySelector('.wclose'), () => { this.weatherEl.classList.remove('show'); this.h.weatherClosed && this.h.weatherClosed(); });
 
     // ---- start overlay
     this.startEl = el('div', 'overlay start', `

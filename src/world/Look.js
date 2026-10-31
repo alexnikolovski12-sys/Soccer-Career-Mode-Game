@@ -127,7 +127,7 @@ export class Look {
     GRASS.uStripe.value = snow ? 0.05 : 0.11;
     // floodlights on / off
     this.flood = L.flood;
-    if (p.setFloodlights) p.setFloodlights(L.flood, time);
+    if (p.setFloodlights) p.setFloodlights(L.flood, time, weather);
     // environment
     if (this.envRT) this.envRT.dispose();
     const es = this._envScene(L, rain);

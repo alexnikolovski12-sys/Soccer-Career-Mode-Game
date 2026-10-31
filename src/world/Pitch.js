@@ -474,6 +474,29 @@ export class Pitch {
         this.glows.push(sp);
       }
     }
+    // floodlight beams: faint cones of light through the night air
+    {
+      const beamGeo = new THREE.ConeGeometry(7, 24, 18, 1, true);
+      beamGeo.translate(0, -12, 0);
+      const bc = document.createElement('canvas'); bc.width = 4; bc.height = 64;
+      const bg = bc.getContext('2d'); const gr = bg.createLinearGradient(0, 0, 0, 64);
+      gr.addColorStop(0, 'rgba(255,250,235,1)'); gr.addColorStop(1, 'rgba(255,250,235,0)');
+      bg.fillStyle = gr; bg.fillRect(0, 0, 4, 64);
+      this.beamMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(bc), transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+      this.beams = [];
+      for (const S of sides) {
+        const dFront = S.d0 + 7, hf = S.half(dFront);
+        for (let k = 0; k < 3; k++) {
+          const lx = -hf * 0.6 + k * hf * 0.6;
+          const m = new THREE.Mesh(beamGeo, this.beamMat);
+          m.position.set(...W3(S.rot, lx, 28.5, dFront - 0.5));
+          const tgt = new THREE.Vector3(...W3(S.rot, lx * 0.6, 0, S.d0 - 30));
+          m.lookAt(tgt); m.rotateX(-Math.PI / 2);
+          m.renderOrder = 5;
+          this.group.add(m); this.beams.push(m);
+        }
+      }
+    }
     const roofMesh = new THREE.Mesh(mergeGeometries(roofs), new THREE.MeshLambertMaterial({ color: '#30353f', side: THREE.DoubleSide }));
     this.group.add(roofMesh);
     this.stripMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.98, 0.93).multiplyScalar(6), side: THREE.DoubleSide, fog: false });
@@ -500,8 +523,9 @@ export class Pitch {
   }
 
   /** Floodlights on (night) / dimmed (dusk) / off (day). */
-  setFloodlights(k) {
+  setFloodlights(k, time, weather) {
     this.floodK = k;
+    if (this.beams) { for (const b of this.beams) b.visible = k > 0.4; this.beamMat.opacity = (weather === 'rain' || weather === 'snow' ? 0.035 : 0.016) * k; }
     for (const g of this.glows) g.visible = k > 0.05;
     this.glowMat.opacity = Math.min(1, k * 1.1);
     this.stripMat.color.setRGB(1, 0.98, 0.93).multiplyScalar(k > 0.05 ? 1.5 + 5 * k : 0.35);
@@ -521,7 +545,7 @@ export class Pitch {
     const s = CONFIG.quality.shadowMapSize;
     sun.shadow.mapSize.set(s, s);
     const cam = sun.shadow.camera;
-    cam.left = -20; cam.right = 20; cam.top = 20; cam.bottom = -20; cam.near = 5; cam.far = 140;
+    cam.left = -30; cam.right = 30; cam.top = 30; cam.bottom = -30; cam.near = 5; cam.far = 140;
     sun.shadow.bias = -0.0006;
     sun.shadow.normalBias = 0.02;
     sun.shadow.radius = 3;

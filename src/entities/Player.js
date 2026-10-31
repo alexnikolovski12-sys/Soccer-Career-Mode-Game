@@ -584,13 +584,13 @@ export class Player {
     if (U && U.uLag) {
       // fabric inertia: a spring chasing the opposite of the body's acceleration, billowing back at speed
       const a = A.accS, sp = Math.hypot(this.vel.x, this.vel.z), dt = Math.min(0.05, this._animDt || 0.016);
-      const tx = Math.max(-0.05, Math.min(0.05, -a.y * 0.0035));
-      const tz = Math.max(-0.06, Math.min(0.05, -a.x * 0.0035 - sp * 0.0032));
-      const ty = Math.min(0.025, sp * 0.0018);
+      const tx = Math.max(-0.13, Math.min(0.13, -a.y * 0.011));
+      const tz = Math.max(-0.16, Math.min(0.12, -a.x * 0.011 - sp * 0.011));
+      const ty = Math.min(0.07, sp * 0.0065);
       const L = this._lag || (this._lag = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 });
       for (const [k, t] of [['x', tx], ['y', ty], ['z', tz]]) {
         const v = 'v' + k;
-        L[v] += ((t - L[k]) * 260 - L[v] * 11) * dt;
+        L[v] += ((t - L[k]) * 120 - L[v] * 5.5) * dt;
         L[k] += L[v] * dt;
       }
       U.uLag.value.set(L.x, L.y, L.z);

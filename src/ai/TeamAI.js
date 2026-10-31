@@ -216,7 +216,8 @@ export class TeamAI {
       const { d: dd, t } = pointSegDist2D(d.pos, ball.pos, end);
       const px = ball.pos.x + (end.x - ball.pos.x) * t, pz = ball.pos.z + (end.z - ball.pos.z) * t;
       const tb = Math.hypot(px - ball.pos.x, pz - ball.pos.z) / sp;
-      const td = d.attrs.reaction + Math.max(0, dd - CONFIG.defender.interceptReach) / d.attrs.sprintSpeed;
+      const home = d.team === 'home';
+      const td = d.attrs.reaction * (home ? 0.6 : 1) + Math.max(0, dd - CONFIG.defender.interceptReach - (home ? 1.0 : 0)) / d.attrs.sprintSpeed;
       const margin = td - tb;
       if (margin < 0 && margin < bestMargin) { bestMargin = margin; best = { d, pt: { x: px, z: pz } }; }
     }

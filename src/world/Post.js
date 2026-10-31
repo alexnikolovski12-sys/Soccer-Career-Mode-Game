@@ -32,7 +32,7 @@ void main() {
   gl_FragColor = vec4(c * 0.25, 1.0);
 }`;
 
-const FINAL = `uniform sampler2D tScene, tB1, tB2; uniform float uExposure, uBloom, uSat, uContrast, uVignette, uTime;
+const FINAL = `uniform sampler2D tScene, tB1, tB2; uniform vec2 uPx; uniform float uExposure, uBloom, uSat, uContrast, uVignette, uTime;
 uniform vec3 uLift, uGain; varying vec2 vUv;
 vec3 RRTAndODTFit(vec3 v) { vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }
 vec3 aces(vec3 color) {
@@ -45,6 +45,15 @@ vec3 aces(vec3 color) {
 vec3 toSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 void main() {
   vec3 c = texture2D(tScene, vUv).rgb;
+  // broadcast-style sharpening (unsharp mask) + a whisper of lens fringing toward the edges
+  vec2 px = uPx;
+  vec3 blur = (texture2D(tScene, vUv + vec2(px.x, 0.0)).rgb + texture2D(tScene, vUv - vec2(px.x, 0.0)).rgb
+             + texture2D(tScene, vUv + vec2(0.0, px.y)).rgb + texture2D(tScene, vUv - vec2(0.0, px.y)).rgb) * 0.25;
+  c = max(c + (c - blur) * 0.45, 0.0);
+  vec2 cq = (vUv - 0.5);
+  float ca = dot(cq, cq) * 0.004;
+  c.r = mix(c.r, texture2D(tScene, vUv - cq * ca * 2.0).r, 0.5);
+  c.b = mix(c.b, texture2D(tScene, vUv + cq * ca * 2.0).b, 0.5);
   c += (texture2D(tB1, vUv).rgb * 0.55 + texture2D(tB2, vUv).rgb * 0.9) * uBloom;
   c = aces(c * uExposure);
   // grade (display-referred): saturation, gentle S-curve, cool lift / warm gain
@@ -83,7 +92,7 @@ export class Post {
     this.mBlur = sm(BLUR, { tSrc: { value: null }, uDir: { value: new THREE.Vector2() } });
     this.mDown = sm(DOWN, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } });
     this.mFinal = sm(FINAL, {
-      tScene: { value: null }, tB1: { value: null }, tB2: { value: null },
+      tScene: { value: null }, tB1: { value: null }, tB2: { value: null }, uPx: { value: new THREE.Vector2(1, 1) },
       uExposure: { value: 1 }, uBloom: { value: 0.6 }, uSat: { value: 1.08 }, uContrast: { value: 0.12 }, uVignette: { value: 0.22 },
       uLift: { value: new THREE.Vector3(0.006, 0.008, 0.014) }, uGain: { value: new THREE.Vector3(1.0, 0.995, 0.98) }, uTime: { value: 0 },
     });
@@ -133,6 +142,7 @@ export class Post {
     bl.tSrc.value = this.c.texture; bl.uDir.value.set(1 / this.c.width, 0); this._pass(this.mBlur, this.d);
     bl.tSrc.value = this.d.texture; bl.uDir.value.set(0, 1 / this.c.height); this._pass(this.mBlur, this.c);
     const f = this.mFinal.uniforms;
+    f.uPx.value.set(1 / this.w, 1 / this.h);
     f.tScene.value = this.scene.texture; f.tB1.value = this.a.texture; f.tB2.value = this.c.texture; f.uTime.value = time % 100;
     this._pass(this.mFinal, null);
   }

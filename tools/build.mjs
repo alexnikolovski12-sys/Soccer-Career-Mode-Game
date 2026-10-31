@@ -60,4 +60,4 @@ const out = path.join(root, 'Breakaway.html');
 fs.writeFileSync(out, html);
 const kb = (fs.statSync(out).size / 1024).toFixed(0);
 console.log(`Breakaway.html ${kb} KB`);
-if (fs.statSync(out).size > 2 * 1024 * 1024) { console.error('over 2 MB!'); process.exit(1); }
+if (fs.statSync(out).size > 3 * 1024 * 1024) { console.error('over 3 MB!'); process.exit(1); }

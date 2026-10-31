@@ -518,3 +518,6 @@ html.portrait .flash { top: calc(var(--sat) + 100px); }
   background: linear-gradient(90deg, #38e86a, #ffe14d 60%, #ff4b5c); }
 .powerbar span { display: none; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-weight: 800; font-size: 11px; letter-spacing: 0.06em; text-shadow: 0 1px 2px #000; opacity: 0.9; }
 .act.sprint span small { display: block; font-size: 0.55em; letter-spacing: 0.08em; opacity: 0.85; margin-top: -2px; }
+
+.weather .o-btn.w.on { box-shadow: 0 0 0 3px #7cf5ff inset; }
+.weather .o-btn.w { margin-top: 8px; }
