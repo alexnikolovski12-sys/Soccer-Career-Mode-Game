@@ -40,7 +40,7 @@ class Events {
 }
 
 const easeInOut = (t) => t * t * (3 - 2 * t);
-const CELEBRATIONS = ['kneeslide', 'kneeslide', 'bellyslide', 'airplane', 'jumpfist', 'spinjump', 'spinjump', 'spinjump', 'armscrossed', 'pointsky', 'cuptheear',
+const CELEBRATIONS = ['kneeslide', 'kneeslide', 'bellyslide', 'airplane', 'jumpfist', 'spinjump', 'spinjump', 'spinjump', 'armscrossed', 'thumbsback', 'bow', 'pointsky', 'cuptheear',
   'shush', 'armscrossed', 'salute', 'calmdown', 'heart', 'badgepoint', 'robot', 'backflip'];
 
 class Game {
@@ -235,7 +235,7 @@ class Game {
     this.user = p;
     this.players = [this.user, ...this.teammates, this.homeKeeperPlayer, ...this.defenders, this.keeperPlayer];
     this.lastPasser = null;
-    if (!quiet) this.hud.flash(p.name || 'SWITCH', 'neutral');
+    if (!quiet) void 0;
   }
 
   /**
@@ -265,6 +265,14 @@ class Game {
       F.t += dt;
       const r = F.r;
       r.steer(0, 0, 0);
+      if (F.from && F.t <= F.glide + dt) {
+        const k = Math.min(1, F.t / F.glide), e = k * k * (3 - 2 * k);
+        r.savePrev();
+        r.pos.lerpVectors(F.from, F.to, e);
+        let dh = F.h1 - F.h0; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+        r.heading = F.h0 + dh * e;
+        r.vel.set(0, 0, 0);
+      }
       if (F.t >= F.at && !F.done) {
         F.done = true;
         const P = CONFIG.pitch, gx = P.length / 2, hw = P.goalWidth / 2;
@@ -319,15 +327,15 @@ class Game {
     const heading = type === 'bicycle' ? toGoal + Math.PI : type === 'sidevolley' ? toGoal - sgn * 1.2 : toGoal;
     this.switchControl(r, true);
     this._endBallCam();
-    r.place(ball.pos.x - Math.sin(heading) * 0.55, ball.pos.z - Math.cos(heading) * 0.55, heading);
-    r.savePrev();
+    // glide (don't teleport) into the striking position while the body shape blends in
+    const to = new THREE.Vector3(ball.pos.x - Math.sin(heading) * 0.55, 0, ball.pos.z - Math.cos(heading) * 0.55);
     const dur = type === 'bicycle' ? 1.3 : 0.8;
     r.playAction(type, dur, { kickLeg: 1 });
-    ball.vel.set(0, 0, 0);
+    ball.vel.multiplyScalar(0.15);
     ball.frozen = true;                      // hangs for the strike
-    this.finishing = { r, t: 0, at: dur * 0.4, type, done: false };
+    this.finishing = { r, t: 0, at: dur * 0.4, type, done: false, from: r.pos.clone(), to, h0: r.heading, h1: heading, glide: dur * 0.32 };
     this.setTimeScale(0.3, 0.08);            // slow-mo on the contact
-    this.hud.flash(type === 'bicycle' ? 'BICYCLE KICK!' : type === 'sidevolley' ? 'SIDE VOLLEY!' : 'VOLLEY!', 'good');
+    void 0;
     this.audio.anticipate();
   }
 
@@ -509,9 +517,15 @@ class Game {
   /** Card held up in the referee's raised right hand. */
   _cardFrame() {
     if (!this.cardMesh.visible) return;
-    const r = this.ref, h = r.heading;
-    // right side of the body, at full arm stretch
-    this.cardMesh.position.set(r.pos.x - Math.cos(h) * 0.2, 2.42, r.pos.z + Math.sin(h) * 0.2);
+    const r = this.ref;
+    // in the raised right hand: from the elbow along the forearm
+    const el = r.parts.armR.el;
+    el.updateMatrixWorld(true);
+    const v = this._cv || (this._cv = new THREE.Vector3()), dq = this._cq || (this._cq = new THREE.Quaternion());
+    el.getWorldPosition(this.cardMesh.position);
+    el.getWorldQuaternion(dq);
+    v.set(0, -0.36 * r.heightScale, 0).applyQuaternion(dq);
+    this.cardMesh.position.add(v);
     this.cardMesh.lookAt(this.camRig.camera.position);
   }
 
@@ -860,12 +874,12 @@ class Game {
     if (c && !u.sprinting && dist2D(u.pos, c.pos) < 5.5) { u.faceTowards(c.pos.x, c.pos.z); u.jockey = true; }
     // auto-switch when you're out of the play and someone's much better placed
     this._autoSwitchT = (this._autoSwitchT || 0) - dt;
-    // (standing still: from 10 m; while you're steering him: only when he's really out of it)
-    if (this._autoSwitchT <= 0 && !u.ai.tackling && dist2D(u.pos, ball.pos) > (mag < 0.3 ? 10 : 16)) { this._switchBest(true); this._autoSwitchT = 1.2; }
+    // always on the man nearest the ball: hand over as soon as a teammate is clearly better placed
+    if (this._autoSwitchT <= 0 && !u.ai.tackling && u.stumble <= 0) { this._switchBest(true, mag < 0.3 ? 1.5 : 2.5); this._autoSwitchT = 0.5; }
   }
 
   /** Switch to the home outfielder best placed to get to the ball (goal-side preferred). */
-  _switchBest(quiet = false) {
+  _switchBest(quiet = false, margin = 6) {
     const ball = this.ball, u = this.user;
     const tgt = ball.owner || (ball.pass && ball.pass.to) || null;
     const bx = tgt ? tgt.pos.x : ball.pos.x, bz = tgt ? tgt.pos.z : ball.pos.z;
@@ -878,7 +892,7 @@ class Game {
     }
     if (!best) return;
     const cur = Math.hypot(u.pos.x - bx, u.pos.z - bz) - (u.pos.x < bx ? 2.5 : 0);
-    if (quiet && bs > cur - 6) return;
+    if (quiet && bs > cur - margin) return;
     if (best) { this.switchControl(best, true); this.effects.showMarker(best); }
   }
 
@@ -1146,11 +1160,25 @@ class Game {
         continue;
       }
       if (sc && p.team === team && t > 0.4) {
-        const ang = (this.players.indexOf(p) + 1) * 1.3;
-        const tx = sc.pos.x - Math.cos(ang) * 1.8 * (team === 'home' ? 1 : -1), tz = sc.pos.z + Math.sin(ang) * 1.8;
-        const d = p.moveTo(tx, tz, p.attrs.sprintSpeed, 2);
+        // each teammate has his own way of joining in: the nearest two wrap him up,
+        // the next slaps a high five, others point at him on the run or bounce in the huddle
+        if (!p.celRole) {
+          const mates = this.players.filter((q) => q.team === team && q !== sc && !q.isKeeper)
+            .sort((a, b) => Math.hypot(a.pos.x - sc.pos.x, a.pos.z - sc.pos.z) - Math.hypot(b.pos.x - sc.pos.x, b.pos.z - sc.pos.z));
+          mates.forEach((q, i) => { q.celRole = i < 2 ? 'hug' : i < 4 ? 'highfive' : Math.random() < 0.5 ? 'teamjump' : 'pointat'; q.celIdx = i; });
+        }
+        const ang = (p.celIdx || 0) * 1.25 + (team === 'home' ? 0 : Math.PI);
+        const rr = p.celRole === 'hug' ? 0.75 : p.celRole === 'highfive' ? 1.25 : 1.9 + ((p.celIdx || 0) % 3) * 0.5;
+        const tx = sc.pos.x - Math.cos(ang) * rr, tz = sc.pos.z + Math.sin(ang) * rr;
+        p.sprinting = true;
+        const d = p.moveTo(tx, tz, p.attrs.sprintSpeed, p.celRole === 'hug' ? 0.6 : 1.5);
         p.faceTowards(sc.pos.x, sc.pos.z);
-        if (d < 2.6 && p.anim.action !== 'teamjump') p.playAction('teamjump', 0.9, { loop: true, offset: ang });
+        const near = d < (p.celRole === 'hug' ? 1.2 : 2.4);
+        if (near) {
+          if (p.celRole === 'highfive') { if (p.anim.action !== 'highfive' || p.anim.t > 1.3) p.playAction('highfive', 0.75 + Math.random() * 0.6, { hold: false }); }
+          else if (p.celRole === 'hug') { if (p.anim.action !== 'hug') p.playAction('hug', 30, { loop: true, offset: p.celIdx }); }
+          else if (p.anim.action !== 'teamjump') p.playAction('teamjump', 0.9, { loop: true, offset: ang });
+        } else if (p.celRole === 'pointat' && d > 3) { if (p.anim.action !== 'pointat') p.playAction('pointat', 9, {}); }
         else if (d > 4 && p.anim.action !== 'armsup' && p.anim.action !== 'teamjump') p.playAction('armsup', 9, {});
         continue;
       }
@@ -1217,7 +1245,8 @@ class Game {
           cel.slide = { x: hx, z: hz, v: Math.max(5.5, u.speed) };
           u.playAction(cel.type, 2.6, { hold: true });
         } else if (cel.type === 'backflip') u.playAction('backflip', 1.15, {});
-        else if (['cuptheear', 'shush', 'armscrossed', 'salute', 'calmdown', 'heart', 'badgepoint', 'robot'].includes(cel.type)) u.playAction(cel.type, 9, { loop: true });
+        else if (['cuptheear', 'shush', 'armscrossed', 'salute', 'calmdown', 'heart', 'badgepoint', 'robot', 'thumbsback'].includes(cel.type)) u.playAction(cel.type, 9, { loop: true });
+        else if (cel.type === 'bow') u.playAction('bow', 2.2, { hold: true });
         else if (cel.type === 'jumpfist') u.playAction('jumpfist', 9, { loop: true });
         else if (cel.type === 'spinjump') { u.playAction('spinjump', 1.4, { hold: true, side: this.rng.sign() }); cel.siu = 0.78; }
         else if (cel.type === 'pointsky') u.playAction('pointsky', 9, { loop: true });
@@ -1362,7 +1391,7 @@ class Game {
     this.finishing = null;
     this.ball.frozen = false;
     this.cardMesh.visible = false;
-    for (const p of this.players) { p.stayDown = false; p.anim.action = null; p.ai.tackling = null; p.sad = null; p.sadDelay = null; }
+    for (const p of this.players) { p.stayDown = false; p.anim.action = null; p.ai.tackling = null; p.sad = null; p.sadDelay = null; p.celRole = null; }
     for (const p of this.extras) p.setVisible(false);
     this.extras = [];
     this.setPiece = null;
@@ -1557,7 +1586,7 @@ class Game {
       frame(realDt) {
         const home = g.goalTeam === 'home';
         if (g.goalPhase === 'live') {
-          if (sm.time > 1.3 && g.camRig.mode === 'goalview') g.camRig.setMode('celebrate', { target: g.scorer ? g.scorer.pos : g.user.pos });
+          if (sm.time > 1.3 && g.camRig.mode === 'goalview') g.camRig.setMode('celebrate', { target: g.scorer ? g.scorer.pos : g.user.pos, p: g.scorer || g.user });
           const hold = CONFIG.juice.celebrateTime * (g.celebration && g.celebration.big ? 1.5 : home ? 1 : 0.6);
           if (sm.time > hold) {
             const J = CONFIG.juice;
@@ -1577,7 +1606,7 @@ class Game {
           else {
             const show = g.replay.t >= g.goalSimTime;
             for (const p of g.extras) p.parts.root.visible = show;
-            if (g.replay.t > g.goalSimTime + J2.replayTail && g.camRig.mode === 'replay' && g.scorer) g.camRig.setMode('celebrate', { target: g.scorer.parts.root.position, angle: 0.6 });
+            if (g.replay.t > g.goalSimTime + J2.replayTail && g.camRig.mode === 'replay' && g.scorer) g.camRig.setMode('celebrate', { target: g.scorer.parts.root.position, angle: 0.6, p: g.scorer });
           }
         }
       },

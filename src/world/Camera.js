@@ -32,6 +32,7 @@ export class CameraRig {
   }
 
   setMode(mode, opts = {}) {
+    if (mode !== this.mode) this._celH = null;
     this.mode = mode;
     this.opts = opts;
   }
@@ -146,13 +147,27 @@ export class CameraRig {
       posK = 4; lookK = 5;
       fov = this.portrait ? 62 : 52;
     } else if (this.mode === 'celebrate') {
-      const t = this.opts.target || game.user.pos;
-      const ang = (this.opts.angle || 0) + game.realTime * 0.25;
-      const r = this.portrait ? 9 : 7;
-      this.desiredPos.set(t.x + Math.cos(ang) * r, 2.6, t.z + Math.sin(ang) * r);
-      this.desiredLook.set(t.x, 1.1, t.z);
-      posK = 2.5; lookK = 4;
-      fov = this.portrait ? 58 : 45;
+      const t = this.opts.target || game.user.pos, pl = this.opts.p;
+      if (pl && !pl.isRef) {
+        // TV close-up: low, long lens, in front of the scorer (we see his face), drifting
+        // slowly round him with a hand-held wobble
+        const tt = game.realTime;
+        const h = (this._celH == null ? (this._celH = pl.heading) : (this._celH += Math.atan2(Math.sin(pl.heading - this._celH), Math.cos(pl.heading - this._celH)) * Math.min(1, dt * 0.8)));
+        const ang = h + Math.sin(tt * 0.3) * 0.7 + (this.opts.angle || 0) * 0.3;
+        const r = this.portrait ? 8 : 6.2;
+        this.desiredPos.set(t.x + Math.sin(ang) * r, 1.55 + Math.sin(tt * 0.5) * 0.15, t.z + Math.cos(ang) * r);
+        this.desiredLook.set(t.x, 1.25, t.z);
+        this.desiredPos.x += Math.sin(tt * 1.7) * 0.06; this.desiredPos.y += Math.sin(tt * 2.3) * 0.04;
+        posK = 2.2; lookK = 5;
+        fov = this.portrait ? 50 : 34;
+      } else {
+        const ang = (this.opts.angle || 0) + game.realTime * 0.25;
+        const r = this.portrait ? 9 : 7;
+        this.desiredPos.set(t.x + Math.cos(ang) * r, 2.6, t.z + Math.sin(ang) * r);
+        this.desiredLook.set(t.x, 1.1, t.z);
+        posK = 2.5; lookK = 4;
+        fov = this.portrait ? 58 : 45;
+      }
     } else if (this.mode === 'replay') {
       // broadcast-style side view tracking the ball, low and close
       const b = this.opts.ballPos || game.ball.mesh.position;

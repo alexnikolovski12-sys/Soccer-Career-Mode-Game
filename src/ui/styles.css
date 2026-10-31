@@ -272,19 +272,19 @@ html, body {
 .b-sub { margin-top: 4px; font-weight: 700; font-size: calc(var(--u) * 20); color: var(--gold); text-shadow: 0 2px 8px rgba(0,0,0,0.6); }
 
 .bigbanner {
-  position: absolute; left: 0; right: 0; top: 30%; text-align: center;
-  font-weight: 800; font-style: italic; font-size: calc(var(--u) * 70); line-height: 1;
+  position: absolute; left: 0; right: 0; top: calc(var(--sat) + 108px); text-align: center; pointer-events: none;
+  font-weight: 800; font-style: italic; font-size: calc(var(--u) * 30); line-height: 1; letter-spacing: 0.04em;
   opacity: 0; transition: opacity 0.3s;
   text-shadow: 0 6px 30px rgba(0,0,0,0.55);
 }
 .bigbanner.show { opacity: 1; }
 .bigbanner span { display: inline-block; animation: pop 0.5s cubic-bezier(.2,1.6,.4,1) both; }
-.bigbanner.good { font-size: calc(var(--u) * 112); color: var(--gold); }
+.bigbanner.good { font-size: calc(var(--u) * 38); color: var(--gold); }
 .bigbanner.good span { animation: popBig 0.6s cubic-bezier(.2,1.6,.4,1) both; }
 .bigbanner.bad { color: #ff8a95; }
 .bigbanner.neutral { color: #fff; }
 @keyframes pop { 0% { transform: scale(0.3) translateY(30px); opacity: 0; } 100% { transform: none; opacity: 1; } }
-@keyframes popBig { 0% { transform: scale(2.4) rotate(-12deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes popBig { 0% { transform: scale(1.6) rotate(-6deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
 
 .flash {
   position: absolute; left: 50%; top: calc(var(--sat) + 74px);
@@ -449,7 +449,7 @@ html.portrait .rotate-hint { bottom: auto; top: calc(var(--sat) + 104px); }
 html.portrait .mstats span:first-child { display: none; }
 html.portrait .aim-hint { top: calc(var(--sat) + 110px); white-space: normal; width: 90%; }
 html.portrait .banner.intro { top: 22%; }
-html.portrait .bigbanner.good { font-size: calc(var(--u) * 92); }
+html.portrait .bigbanner.good { font-size: calc(var(--u) * 40); }
 html.portrait .flash { top: calc(var(--sat) + 100px); }
 
 /* ----------------------------------------------------------- debug */
@@ -511,10 +511,10 @@ html.portrait .flash { top: calc(var(--sat) + 100px); }
 .pad.defending .act.through { background: radial-gradient(circle at 50% 35%, rgba(255,170,60,0.5), rgba(110,60,10,0.45)); }
 .o-btn.quit { background: rgba(255,255,255,0.1) !important; color: #fff !important; margin-top: 10px; }
 /* power bar under your player */
-.powerbar { position: absolute; left: 0; top: 0; width: 76px; margin-left: -38px; height: 9px; border-radius: 5px; pointer-events: none; z-index: 6;
+.powerbar { position: absolute; left: 0; top: 0; width: 44px; margin-left: -22px; height: 5px; border-radius: 3px; pointer-events: none; z-index: 6;
   background: rgba(0,0,0,0.55); box-shadow: 0 0 0 1.5px rgba(255,255,255,0.7); opacity: 0; transition: opacity 0.12s; }
 .powerbar.show { opacity: 1; }
 .powerbar i { position: absolute; left: 0; top: 0; bottom: 0; width: var(--v, 0%); border-radius: 5px;
   background: linear-gradient(90deg, #38e86a, #ffe14d 60%, #ff4b5c); }
-.powerbar span { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-weight: 800; font-size: 11px; letter-spacing: 0.06em; text-shadow: 0 1px 2px #000; opacity: 0.9; }
+.powerbar span { display: none; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-weight: 800; font-size: 11px; letter-spacing: 0.06em; text-shadow: 0 1px 2px #000; opacity: 0.9; }
 .act.sprint span small { display: block; font-size: 0.55em; letter-spacing: 0.08em; opacity: 0.85; margin-top: -2px; }

@@ -252,6 +252,37 @@ export function handPose(name, k, T, anim, out) {
       T.shLz = 0.4; T.shRz = -0.4; T.kneeL = T.kneeR = 0.3 + Math.abs(Math.cos(t * 6.5)) * 0.5; T.headPitch = 0.2;
       break;
     }
+    case 'hug': {
+      // arms wrapped round the scorer, leaning in, rocking
+      const v = Math.min(1, k * 6), b = Math.sin((anim.t + (anim.offset || 0)) * 7) * 0.08;
+      T.shL = T.shR = (1.35 + b) * v; T.shLz = -0.3 * v; T.shRz = 0.3 * v; T.elL = T.elR = 1.15 * v;
+      T.lean = 0.2 * v; T.headPitch = 0.1 * v; T.bodyY = Math.abs(b) * 0.4;
+      break;
+    }
+    case 'highfive': {
+      // slap: reach up, smack, back down
+      const v = Math.sin(Math.min(1, k * 1.3) * Math.PI);
+      T.shR = 2.75 * v; T.shRz = -0.25 * v; T.elR = 0.25; T.shL = 0.3 * v; T.lean = -0.05 * v; T.headPitch = 0.25 * v;
+      T.bodyY = Math.max(0, Math.sin(k * Math.PI)) * 0.18;
+      break;
+    }
+    case 'pointat': {
+      T.shR = 1.6; T.shRz = -0.1; T.elR = 0.05; T.shL = 0.4; T.shLz = 0.3; T.headPitch = 0.1;
+      break;
+    }
+    case 'thumbsback': {
+      // turns his back to the fans and points at the name on his shirt
+      const v = Math.min(1, k * 4);
+      T.shL = T.shR = 2.35 * v; T.shLz = 0.75 * v; T.shRz = -0.75 * v; T.elL = T.elR = 2.35 * v;
+      T.headPitch = 0.3 * v; T.lean = -0.12 * v;
+      break;
+    }
+    case 'bow': {
+      // a slow bow to the crowd
+      const v = Math.sin(Math.min(1, k * 1.15) * Math.PI);
+      T.lean = 0.85 * v; T.shR = 0.9 * v; T.elR = 1.6 * v; T.shL = -0.35 * v; T.headPitch = -0.3 * v;
+      break;
+    }
     case 'armsup': {
       T.shL = 2.5; T.shR = 2.5; T.elL = T.elR = 0.2; T.shLz = 0.5; T.shRz = -0.5; T.headPitch = 0.2;
       break;
@@ -548,9 +579,10 @@ export function handPose(name, k, T, anim, out) {
     case 'card': {
       // right arm straight up holding the card, left arm pointing at the spot
       const v = Math.min(1, k / 0.15) * (k > 0.88 ? (1 - k) / 0.12 : 1);
-      T.shR = 3.05 * v; T.shRz = -0.12 * v; T.elR = 0.02;
-      T.shL = 0.9 * v; T.shLz = 0.35 * v; T.elL = 0.05;
-      T.headPitch = -0.1 * v; T.lean = -0.04 * v;
+      // stand square and upright, card held straight up, the other arm pointing to the spot
+      T.shR = 3.1 * v; T.shRz = -0.05 * v; T.elR = 0.0;
+      T.shL = 1.35 * v; T.shLz = 0.2 * v; T.elL = 0.05;
+      T.headPitch = -0.05 * v; T.lean = 0; T.bodyRoll = 0; T.twist = 0;
       break;
     }
     case 'point': {

@@ -240,7 +240,13 @@ export class Match {
     if (R.type === 'throw') { fx = R.x + s * 4; fz = 0; }
     if (R.type === 'corner') { fx = s * (L - 8); fz = 0; }
     if (R.type === 'penalty') { fx = s * L; fz = 0; }
-    if (R.type === 'kickoff') { fx = R.x - s * 10; fz = 0; }
+    if (R.type === 'kickoff') {
+      // face the teammate he'll knock it to (alongside him on the halfway line), not his own goal
+      const mates = (team === 'home' ? [g.user, ...g.teammates] : g.defenders).filter((p) => p !== taker && p.visible && !p.sentOff);
+      const m = mates.reduce((b, p) => (!b || Math.hypot(p.pos.x - R.x, p.pos.z - R.z) < Math.hypot(b.pos.x - R.x, b.pos.z - R.z) ? p : b), null);
+      R.kickMate = m;
+      fx = m ? m.pos.x : R.x; fz = m ? m.pos.z : 6;
+    }
     const dx = fx - R.x, dz = fz - R.z, dl = Math.hypot(dx, dz) || 1;
     const back = R.type === 'throw' ? 0.05 : 0.7;
     R.standX = R.x - (dx / dl) * back; R.standZ = R.z - (dz / dl) * back;
@@ -304,6 +310,7 @@ export class Match {
     if (tk.isUser && dir) g.passing.requestUserPass(tk, dir.x, dir.z, kind || 'ground');
     else {
       if (R.type === 'freekick' && g.shooting.aiCanShoot(tk) && Math.hypot(s * L - R.x, R.z) < 24 && g.rng.chance(0.6)) { g.shooting.aiShoot(tk); return true; }
+      if (R.type === 'kickoff' && R.kickMate) { g.passing.requestAIPass(tk, R.kickMate); return true; }
       const dx = R.type === 'kickoff' ? -s : s, sel = g.passing.selectTarget(tk, dx, 0);
       g.passing.requestAIPass(tk, sel ? sel.target : mates[0]);
     }
@@ -347,7 +354,7 @@ export class Match {
     const fw = (kick === 'home' ? [g.user, ...g.teammates] : g.defenders).filter((p) => p.visible && !p.sentOff)
       .sort((a, b) => s * (b.slot?.fx ?? 0) - s * (a.slot?.fx ?? 0));
     if (fw[0]) fw[0].place(-s * 0.7, 0.3, s > 0 ? Math.PI / 2 : -Math.PI / 2);
-    if (fw[1]) fw[1].place(-s * 2.5, 6, s > 0 ? Math.PI / 2 : -Math.PI / 2);
+    if (fw[1]) fw[1].place(-s * 1.2, 5, Math.atan2(s * 1.2, -5));   // alongside, facing the ball
     if (kick === 'home' && fw[0]) g.switchControl(fw[0], true);
     for (const p of g.players) p.savePrev();
     ball.savePrev();

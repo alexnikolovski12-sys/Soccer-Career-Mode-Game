@@ -117,6 +117,7 @@ uniform vec3 uCamPos;
 varying vec2 vUv;
 varying vec3 vShirt, vSkin;
 varying float vLight;
+varying float vFlash;
 #include <fog_pars_vertex>
 void main() {
   float ph = iData.y, sc = iData.z;
@@ -131,6 +132,8 @@ void main() {
   float up = step(1.0 - clamp(uCheer * 1.2 + uExcite * 0.25, 0.0, 1.0), fract(ph * 7.31));
   vUv = vec2((iData.x + uv.x) / ${COLS}.0, (up + uv.y) * 0.5);
   vShirt = iShirt; vSkin = iSkin; vLight = iData.w;
+  // phone cameras going off when there's a goal
+  vFlash = uCheer * step(0.992, fract(uTime * (0.6 + fract(ph * 3.7)) + ph * 91.0));
   vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
@@ -142,6 +145,7 @@ uniform float uLight;
 varying vec2 vUv;
 varying vec3 vShirt, vSkin;
 varying float vLight;
+varying float vFlash;
 #include <fog_pars_fragment>
 void main() {
   vec4 a = texture2D(uAtlas, vUv);
@@ -150,6 +154,7 @@ void main() {
   vec3 c = mix(pants, vShirt, a.g);
   c = mix(c, vSkin, a.b);
   c *= (0.3 + 0.7 * a.r) * uLight * vLight;
+  c += vec3(vFlash * 6.0);
   gl_FragColor = vec4(c, 1.0);
   #include <fog_fragment>
 }`;

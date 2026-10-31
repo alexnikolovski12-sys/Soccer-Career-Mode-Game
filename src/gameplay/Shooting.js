@@ -120,7 +120,9 @@ export class Shooting {
       const T = k.T, f = Math.min(1, 1 - k.t / T);
       p.pos.lerpVectors(k.from, k.to, f);
       p.vel.subVectors(k.to, k.from).multiplyScalar(1 / T);
-      p.heading = p.prevHeading = k.heading;
+      // turn into the run-up smoothly (no snapping round)
+      let dh = k.heading - p.heading; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+      p.heading += dh * Math.min(1, dt * 14);
       p.steer(0, 0, 0);
     } else if (ball.owner !== p) { this.strike = null; return; }
     if (k.t > 0) return;
@@ -214,7 +216,7 @@ export class Shooting {
     }
     const launch = this.solve(start, T, quality === 'miss' ? maxSp * 0.95 : maxSp * 0.88, 0);
     launch.result.forceBeat = quality === 'perfect';
-    g.hud.flash(quality === 'perfect' ? 'PERFECT!' : quality === 'ok' ? 'GOOD CONTACT' : 'POOR CONTACT', quality === 'miss' ? 'bad' : 'good');
+    void 0;
     return this.fire(shooter, launch, { kind: 'driven', power: 0.9, pressure: 0, dist: 11 });
   }
 
@@ -252,7 +254,7 @@ export class Shooting {
     const curve = (z >= 0 ? 1 : -1) * F.curve;
     const T = new THREE.Vector3(gx, y, z);
     const launch = this.solve(start, T, speed, curve);
-    g.hud.flash(sweet ? (q > 0.6 ? 'PERFECT STRIKE!' : 'GOOD STRIKE') : power < F.zoneLo ? 'TOO SOFT' : 'TOO MUCH', sweet ? 'good' : 'bad');
+    void 0;
     const ok = this.fire(shooter, launch, { kind: 'finesse', power: 0.8, pressure: 0, dist: 20 });
     if (ok && sweet && this.flight) for (const d of g.defenders) this.flight.blocked.add(d); // clears the wall
     return ok;
@@ -295,7 +297,7 @@ export class Shooting {
     const g = this.game, ball = g.ball, S = CONFIG.shot;
     shooter.playAction('fakeshot', 0.6, { kickLeg: 1, side: g.rng.sign() });
     g.audio.anticipate();
-    g.hud.flash('FAKE SHOT', 'good');
+    void 0;
     let fooled = 0;
     for (const d of g.defenders) {
       if (d.stumble > 0) continue;

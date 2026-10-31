@@ -154,7 +154,9 @@ export class TeamAI {
           if (dd < bd) { bd = dd; best = d; }
         }
         const userClose = userD(carrier.pos) < bd + 3;
-        if (best && (!user || this.pressHeld || !userClose)) {
+        // assisted defending: a teammate always closes him down too (and will tackle), even when you're on him
+        void userClose;
+        if (best) {
           best.ai.state = ball.owner === carrier ? 'press' : 'mark'; best.ai.mark = carrier; take(best); this.presser = best;
         } else this.presser = null;
         // cover when he's near our goal
@@ -389,7 +391,7 @@ export class TeamAI {
     }
     const ball = g.ball;
     // your teammates mostly contain; the opposition (and teammates you've told to press) go in
-    const eager = D.tackleEagerness * (0.6 + d.rating / 100) * (this.team === 'home' && !this.pressHeld ? 0.45 : 1);
+    const eager = D.tackleEagerness * (0.6 + d.rating / 100) * (this.team === 'home' && !this.pressHeld ? 0.8 : 1);
     if (ball.owner === c && dist < D.tackleRange && d.tackleCooldown <= 0 && g.rng.next() < eager * dt) this.startTackle(d, c);
   }
 

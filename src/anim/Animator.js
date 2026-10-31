@@ -58,9 +58,9 @@ const ACTIONS = {
   dragback: { hand: 'legs' }, elastico: { hand: 'legs' }, flick: { hand: 'legs' },
   point: { hand: 'armR', fadeIn: 0.1, fadeOut: 0.25 },
   // first-time finishes off a cross + the referee showing a card
-  volley: { hand: 'full', fadeIn: 0.05, fadeOut: 0.3 },
-  sidevolley: { hand: 'full', fadeIn: 0.05, fadeOut: 0.3 },
-  bicycle: { hand: 'full', fadeIn: 0.05, fadeOut: 0.35 },
+  volley: { hand: 'full', fadeIn: 0.2, fadeOut: 0.35 },
+  sidevolley: { hand: 'full', fadeIn: 0.2, fadeOut: 0.35 },
+  bicycle: { hand: 'full', fadeIn: 0.22, fadeOut: 0.4 },
   cuptheear: { hand: 'upper', fadeIn: 0.2, fadeOut: 0.3, clip: (an, A) => A.set.idle },
   shush: { hand: 'upper', fadeIn: 0.2, fadeOut: 0.3, clip: (an, A) => A.set.idle },
   armscrossed: { hand: 'upper', fadeIn: 0.25, fadeOut: 0.3, clip: (an, A) => A.set.idle },
@@ -71,7 +71,7 @@ const ACTIONS = {
   robot: { hand: 'full', fadeIn: 0.15, fadeOut: 0.3 },
   backflip: { hand: 'full', fadeIn: 0.06, fadeOut: 0.3 },
   bellyslide: { hand: 'full', fadeIn: 0.1, fadeOut: 0.3 },
-  card: { hand: 'upper', fadeIn: 0.12, fadeOut: 0.3, clip: (an, A) => A.set.idle },
+  card: { hand: 'full', fadeIn: 0.15, fadeOut: 0.3 },
   // celebrations
   kneeslide: { hand: 'full', fadeIn: 0.12, fadeOut: 0.3 },
   airplane: { hand: 'arms', fadeIn: 0.25, fadeOut: 0.3 },
@@ -80,6 +80,11 @@ const ACTIONS = {
   pointsky: { hand: 'arms', fadeIn: 0.25, fadeOut: 0.3, clip: (an, A) => A.set.idle },
   teamjump: { hand: 'arms', fadeIn: 0.2, fadeOut: 0.3, clip: () => 'jumpLoop', phaseFrom: 'offset' },
   armsup: { hand: 'arms', fadeIn: 0.25, fadeOut: 0.3 },
+  hug: { hand: 'upper', fadeIn: 0.2, fadeOut: 0.3, clip: (an, A) => A.set.idle },
+  highfive: { hand: 'arms', fadeIn: 0.1, fadeOut: 0.2 },
+  pointat: { hand: 'arms', fadeIn: 0.15, fadeOut: 0.25 },
+  thumbsback: { hand: 'upper', fadeIn: 0.25, fadeOut: 0.3, clip: (an, A) => A.set.idle },
+  bow: { hand: 'upper', fadeIn: 0.3, fadeOut: 0.3, clip: (an, A) => A.set.idle },
   celebrate: { hand: 'arms', fadeIn: 0.2, fadeOut: 0.3, clip: (an, A) => (A.rand < 0.5 ? 'jumpLoop' : A.rand < 0.75 ? 'happy1' : 'happy2'), handWeight: 0.7 },
 };
 
@@ -92,7 +97,7 @@ let uid = 0;
 
 /** What everyone watches: set by the game each frame (the ball). */
 export const ANIM_WORLD = { ball: new THREE.Vector3(), on: true };
-const NO_LOOK = new Set(['fall', 'dive', 'sitdown', 'crouchsad', 'dejected', 'hipshands', 'gkup', 'smother', 'stumble', 'tackle', 'celebrate', 'kneeslide', 'siu', 'crossarms', 'teamjump', 'gkthrow']);
+const NO_LOOK = new Set(['fall', 'dive', 'sitdown', 'crouchsad', 'dejected', 'hipshands', 'gkup', 'smother', 'stumble', 'tackle', 'celebrate', 'kneeslide', 'siu', 'crossarms', 'teamjump', 'gkthrow', 'card', 'volley', 'sidevolley', 'bicycle', 'header', 'hug', 'highfive', 'thumbsback', 'bow', 'armscrossed', 'spinjump', 'airplane', 'backflip', 'bellyslide']);
 const _hp = new THREE.Vector3(), _qt = new THREE.Quaternion(), _qi = new THREE.Quaternion(), _fd = new THREE.Vector3(), _dl = new THREE.Vector3(), _qd = new THREE.Quaternion();
 
 /** Steps per second at a running speed (m/s), from sprint studies of footballers / sprinters. */
