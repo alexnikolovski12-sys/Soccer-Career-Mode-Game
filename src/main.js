@@ -9,6 +9,7 @@ import { Audio } from './core/Audio.js';
 import { Quality } from './core/Quality.js';
 import { makeRng, dist2D } from './core/MathUtil.js';
 import { Weather } from './world/Weather.js';
+import { GRASS } from './world/Grass.js';
 import { Look, TIMES } from './world/Look.js';
 import { FloodShadows } from './world/FloodShadows.js';
 import { Post } from './world/Post.js';
@@ -1315,6 +1316,8 @@ class Game {
     const wk = opts.weather || (opts.training ? 'clear' : (() => { const r = this.rng.next(); return r < 0.58 ? 'clear' : r < 0.84 ? 'rain' : 'snow'; })());
     const tk = opts.time || (opts.training ? 'day' : (() => { const r = this.rng.next(); return r < 0.5 ? 'night' : r < 0.72 ? 'dusk' : 'day'; })());
     this.setLook(tk, wk);
+    this.pitch.wear.reset();
+    for (const p of [...this.homeSquad, ...this.awaySquad]) p.dirt = 0;
     this.cold = wk === 'snow' || (tk === 'night' && this.rng.chance(0.35)) || (wk === 'rain' && tk !== 'day' && this.rng.chance(0.5));
     if (this.pitch.crowd) this.pitch.crowd.setColours(home.kit.kitColour, away.kit.kitColour);
     this.match.kickoffTeam = opts.training || this.rng.chance(0.5) ? 'home' : 'away';
@@ -1696,6 +1699,33 @@ class Game {
     this.weather.update(paused ? 0 : realDt, this.camRig.pos, this.realTime || 0, this.camRig.look);
     this.pitch.updateStadium(paused ? 0 : realDt, this.realTime, this.camRig.camera.position);
     if (this.pitch.crowd) this.pitch.crowd.setBall(this.ball.pos);
+    // grass blades when the camera is in close (celebrations, set pieces, replays)
+    {
+      const cp = this.camRig.camera.position, lk = this.camRig.look;
+      const near = cp.y < 4 && Math.hypot(cp.x - lk.x, cp.z - lk.z) < 20;
+      const sh = this.pitch.shells;
+      sh.visible = near && this.post.enabled;
+      if (sh.visible) {
+        const fx = lk.x - cp.x, fz = lk.z - cp.z, fl = Math.hypot(fx, fz) || 1;
+        sh.position.set(cp.x + (fx / fl) * 6, 0, cp.z + (fz / fl) * 6);
+      }
+      this.pitch.lines.position.y = sh.visible ? 0.032 : 0.006;
+      GRASS.uTime.value = this.realTime % 1000;
+    }
+    // the pitch wears where they run (and badly where they slide)
+    if (!paused && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT)) {
+      for (const p of this.players) {
+        const sp = Math.hypot(p.vel.x, p.vel.z);
+        if (sp > 1.5) this.pitch.wear.add(p.pos.x, p.pos.z, sp * realDt * 0.0011, 0.35);
+        const act = p.anim.action;
+        if ((act === 'tackle' && p.anim.variant === 'slide') || act === 'dive' || act === 'fall') {
+          this.pitch.wear.add(p.pos.x, p.pos.z, realDt * 1.4, 0.45, Math.sin(p.heading), Math.cos(p.heading), 0.4);
+          p.dirt = Math.min(1, (p.dirt || 0) + realDt * (this.matchWeather === 'rain' ? 1.6 : 0.9));
+        }
+      }
+      this._wearT = (this._wearT || 0) - realDt;
+      if (this._wearT <= 0) { this._wearT = 0.5; this.pitch.wear.flush(); }
+    }
     HUMAN_FX.time.value = this.realTime % 1000;
     if (this.cold && !paused && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT, STATES.GOAL, STATES.KICKOFF)) {
       for (const p of this.players) {

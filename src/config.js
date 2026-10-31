@@ -48,8 +48,8 @@ export const CONFIG = {
     floor: 30, // stats at or below this map to the worst value
   },
   statMap: {
-    sprintSpeed: (pace) => sMap(pace, 6.9, 9.3),          // m/s top speed
-    runFactor: 0.8,                                       // full tilt (no sprint) = sprint * runFactor
+    sprintSpeed: (pace) => sMap(pace, 7.3, 9.6),          // m/s top speed (×1.08 when you sprint: ~37 km/h for the quickest)
+    runFactor: 0.72,                                      // full tilt (no sprint) = sprint * runFactor
     jogFactor: 0.45,
     accel: (acc) => sMap(acc, 5.5, 11.5),                 // m/s² towards target speed
     decel: (acc) => sMap(acc, 9, 15),
@@ -100,7 +100,7 @@ export const CONFIG = {
     sharpTurnBrake: 0.6,       // braking strength in sharp turns
     headingLerp: 12,           // visual body turn smoothing
     labelHeight: 2.25,
-    sprintBoost: 1.2,         // extra pace when holding SPRINT
+    sprintBoost: 1.08,        // extra pace when holding SPRINT
     cutAngle: 0.95,            // stick change (rad) on the ball that triggers a quick cut
     cutSnap: 0.55,              // fraction of the turn done instantly in a cut
     cutKeepSpeed: 0.8,         // speed kept through the cut

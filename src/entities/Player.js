@@ -460,7 +460,8 @@ export class Player {
     }
     if (hasBall) desiredSpeed *= A.dribbleSpeed;
     desiredSpeed *= this.staminaFactor();
-    const maxSpeed = A.sprintSpeed * (hasBall ? A.dribbleSpeed : 1) * 1.02;
+    if (this.skillHold != null) desiredSpeed = Math.min(desiredSpeed, this.skillHold);
+    const maxSpeed = A.sprintSpeed * (hasBall ? A.dribbleSpeed : 1) * (this.isUser || this.controlled ? 1.1 : 1.02);
     desiredSpeed = Math.min(desiredSpeed, maxSpeed);
 
     const curSpeed = Math.hypot(this.vel.x, this.vel.z);
@@ -579,6 +580,22 @@ export class Player {
     if (this.visible) A.solveIK(this.parts, this.heightScale, this._animDt || 0);
     const mu = this.material && this.material.userData.u && this.material.userData.u.uMove;
     if (mu) mu.value += (Math.min(1, Math.hypot(this.vel.x, this.vel.z) / 8) - mu.value) * 0.15;
+    const U = this.material && this.material.userData.u;
+    if (U && U.uLag) {
+      // fabric inertia: a spring chasing the opposite of the body's acceleration, billowing back at speed
+      const a = A.accS, sp = Math.hypot(this.vel.x, this.vel.z), dt = Math.min(0.05, this._animDt || 0.016);
+      const tx = Math.max(-0.05, Math.min(0.05, -a.y * 0.0035));
+      const tz = Math.max(-0.06, Math.min(0.05, -a.x * 0.0035 - sp * 0.0032));
+      const ty = Math.min(0.025, sp * 0.0018);
+      const L = this._lag || (this._lag = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 });
+      for (const [k, t] of [['x', tx], ['y', ty], ['z', tz]]) {
+        const v = 'v' + k;
+        L[v] += ((t - L[k]) * 260 - L[v] * 11) * dt;
+        L[k] += L[v] * dt;
+      }
+      U.uLag.value.set(L.x, L.y, L.z);
+      U.uDirt.value = this.dirt || 0;
+    }
     if (this.ring) {
       const pulse = 0.85 + Math.sin(time * 4) * 0.12;
       this.ring.scale.setScalar(pulse);

@@ -56,6 +56,8 @@ const ACTIONS = {
   crouchsad: { hand: 'full', fadeIn: 0.4, fadeOut: 0.4 },
   stepover: { hand: 'legs' }, feint: { hand: 'legs' }, croqueta: { hand: 'legs' }, spin: { hand: 'legs' },
   dragback: { hand: 'legs' }, elastico: { hand: 'legs' }, flick: { hand: 'legs' },
+  rainbowS: { hand: 'full', fadeIn: 0.1, fadeOut: 0.2 }, rouletteS: { hand: 'full', fadeIn: 0.08, fadeOut: 0.2 },
+  elasticoS: { hand: 'legs', fadeIn: 0.06, fadeOut: 0.18 }, dragturnS: { hand: 'full', fadeIn: 0.08, fadeOut: 0.2 },
   point: { hand: 'armR', fadeIn: 0.1, fadeOut: 0.25 },
   // first-time finishes off a cross + the referee showing a card
   volley: { hand: 'full', fadeIn: 0.2, fadeOut: 0.35 },

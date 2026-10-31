@@ -453,6 +453,53 @@ export function handPose(name, k, T, anim, out) {
       T.bodyRoll = side * 0.25 * (k < 0.5 ? -1 : 1) * v; T.lean = 0.2;
       break;
     }
+    // ---- the four scripted skill moves (body matches the ball path in Skills.js)
+    case 'rainbowS': {
+      const sm = (a, b) => { const t = Math.min(1, Math.max(0, (k - a) / (b - a))); return t * t * (3 - 2 * t); };
+      const roll = sm(0, 0.24), lift = sm(0.24, 0.42), flick = sm(0.42, 0.52), rec = sm(0.55, 0.95);
+      // right sole rolls it back between the feet
+      T.hipR = 0.35 - 0.6 * roll + 0.25 * lift; T.kneeR = 0.6 + 0.2 * lift;
+      // left heel lifts it up the back of the calf … then snaps up and flicks it over
+      T.hipL = 0.1 - 0.25 * lift - 0.3 * flick; T.kneeL = 0.35 + 0.95 * lift + 0.7 * flick;
+      const v = 1 - rec;
+      T.hipL *= v; T.kneeL = T.kneeL * v + 0.3 * (1 - v); T.hipR *= v; T.kneeR = T.kneeR * v + 0.3 * (1 - v);
+      T.bodyY = (-0.06 + 0.1 * flick) * v; T.lean = (0.12 + 0.12 * flick) * v;
+      T.shLz = 0.6 * v; T.shRz = -0.6 * v; T.shL = T.shR = 0.5 * flick * v; T.elL = T.elR = 0.5 * v;
+      T.headPitch = -0.45 * flick * (1 - sm(0.7, 0.95));
+      break;
+    }
+    case 'rouletteS': {
+      const sm = (a, b) => { const t = Math.min(1, Math.max(0, (k - a) / (b - a))); return t * t * (3 - 2 * t); };
+      const first = 1 - sm(0.45, 0.55);          // right sole on it, then the left
+      const on = sm(0, 0.12) * (1 - sm(0.88, 1));
+      T.hipR = (0.15 + 0.3 * first) * on; T.kneeR = (0.35 + 0.35 * first) * on;
+      T.hipL = (0.15 + 0.3 * (1 - first)) * on; T.kneeL = (0.35 + 0.35 * (1 - first)) * on;
+      T.bodyY = -0.1 * on; T.lean = (0.06 - 0.12 * Math.sin(k * Math.PI)) * on;
+      T.shLz = 0.85 * on; T.shRz = -0.85 * on; T.elL = T.elR = 0.7 * on; T.shL = T.shR = 0.3 * on;
+      T.headPitch = 0.35 * on;                    // eyes on the ball under his feet
+      break;
+    }
+    case 'elasticoS': {
+      const side = anim.side || 1;
+      const sm = (a, b) => { const t = Math.min(1, Math.max(0, (k - a) / (b - a))); return t * t * (3 - 2 * t); };
+      const out1 = sm(0, 0.3) * (1 - sm(0.3, 0.55)), back = sm(0.3, 0.55) * (1 - sm(0.7, 1));
+      T.hipR = 0.3 * (out1 + back) + 0.1; T.kneeR = 0.45 * (out1 + back) + 0.2;
+      T.twist = side * (0.55 * out1 - 0.6 * back);
+      T.bodyRoll = side * (-0.22 * out1 + 0.32 * back);
+      T.lean = 0.15 + 0.12 * back; T.bodyY = -0.06 * (out1 + back);
+      T.shLz = 0.6; T.shRz = -0.6;
+      break;
+    }
+    case 'dragturnS': {
+      const sm = (a, b) => { const t = Math.min(1, Math.max(0, (k - a) / (b - a))); return t * t * (3 - 2 * t); };
+      const on = sm(0, 0.15) * (1 - sm(0.8, 1)), drag = sm(0.2, 0.62);
+      T.hipR = (0.45 - 0.55 * drag) * on; T.kneeR = (0.7 - 0.2 * drag) * on;
+      T.hipL = 0.1 * on; T.kneeL = 0.3 * on;
+      T.lean = (-0.12 * (1 - drag) + 0.1 * drag) * on; T.bodyY = -0.05 * on;
+      T.shLz = 0.7 * on; T.shRz = -0.7 * on; T.elL = T.elR = 0.5 * on;
+      T.headPitch = 0.3 * on;
+      break;
+    }
     case 'flick': {
       // rainbow: heel flicks it up behind and over the head
       if (k < 0.45) {

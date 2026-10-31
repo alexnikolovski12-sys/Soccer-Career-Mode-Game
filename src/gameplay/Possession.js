@@ -21,7 +21,7 @@ export class Possession {
       // The ball never leaves the possession circle on its own: only a pass,
       // shot, tackle — or a flick skill lifting it over someone — moves it on.
       const sk = g.skills && g.skills.active;
-      const flicked = sk && sk.o === o && sk.sk.kick;
+      const flicked = sk && sk.o === o && (sk.sk.kick || sk.script);
       if (!flicked && ball.pos.y > 1.6) {
         ball.owner = null;
         g.events.emit('loose', { player: o });
@@ -48,6 +48,7 @@ export class Possession {
   dribble(o, dt) {
     const g = this.game, ball = g.ball, D = CONFIG.dribble;
     const sk = g.skills && g.skills.active;
+    if (sk && sk.o === o && sk.script) return;            // a scripted skill moves the ball itself
     if (sk && sk.o === o && sk.sk.kick) { this._leash(o, D.circleMax * 2.2); return; }
     if (ball.pos.y > 0.5) return;
     const st = o.drib || (o.drib = { side: 1, pref: Math.random() < 0.75 ? 1 : -1, last: 0 });

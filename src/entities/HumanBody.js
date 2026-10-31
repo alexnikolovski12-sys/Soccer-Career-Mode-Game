@@ -111,6 +111,15 @@ const VERT_HEAD = /* glsl */`
 attribute float aLimb; attribute float aHair; attribute float aEye; attribute vec3 aFace;
 ${COMMON}
 uniform float uHT, uMove;
+uniform vec3 uLag;
+vec3 clothLag(float Lm, vec3 p) {
+  if (aEye > 0.5) return vec3(0.0);
+  float w = 0.0;
+  if (Lm < 0.0 && p.y < neckY(p) && p.y > 0.86) w = smoothstep(1.42, 0.98, p.y);          // shirt: the hem swings most
+  else if (Lm >= 5.0 && Lm - 10.0 < 0.55) w = 0.8 * smoothstep(0.05, 0.55, Lm - 10.0);    // shorts legs
+  else if (Lm >= 0.0 && Lm < 5.0 && Lm < uSleeve) w = 0.5 * smoothstep(0.2, 0.55, Lm);   // sleeves
+  return uLag * w;
+}
 float clothOffset(float Lm, vec3 p, float h) {
   float off = 0.0;
   if (aEye > 0.5) return 0.0;
@@ -138,11 +147,12 @@ const FRAG_HEAD = /* glsl */`
 ${COMMON}
 uniform vec3 uSkin, uHairC, uKit, uKit2, uShorts, uSocks, uBoot, uNumCol, uGlove, uEyeC;
 uniform float uPattern, uGK, uFacial;
+uniform float uHT, uMove;
 uniform vec2 uNum;        // tens, ones (tens < 0 = single digit; both < 0 = none)
 uniform sampler2D uDigits; uniform sampler2D uSponsors; uniform float uSpon;
 float gRough;
 float gFab;
-uniform float uWetK;
+uniform float uWetK, uDirt;
 float hash3(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
 vec3 shirtCol(vec3 p, float Lm) {
   float pat = uPattern;
@@ -236,6 +246,17 @@ vec3 bodyColour() {
       gRough = mix(gRough, 0.5, hm);
     }
   }
+  // grass and mud from slides and falls (shows most on white kits): knees, shorts, socks, shirt side
+  if (gFab > 0.5 && uDirt > 0.01) {
+    vec3 q = p * vec3(16.0, 19.0, 16.0);
+    vec3 i = floor(q), f = fract(q); f = f * f * (3.0 - 2.0 * f);
+    float n = mix(mix(mix(hash3(i), hash3(i + vec3(1,0,0)), f.x), mix(hash3(i + vec3(0,1,0)), hash3(i + vec3(1,1,0)), f.x), f.y),
+                  mix(mix(hash3(i + vec3(0,0,1)), hash3(i + vec3(1,0,1)), f.x), mix(hash3(i + vec3(0,1,1)), hash3(i + vec3(1,1,1)), f.x), f.y), f.z);
+    float low = p.y < 1.05 ? 1.0 : 0.45;
+    float st = smoothstep(1.0 - uDirt * 0.4, 1.0 - uDirt * 0.4 + 0.08, n * low);
+    vec3 grassC = mix(vec3(0.16, 0.22, 0.07), vec3(0.2, 0.15, 0.08), hash3(i * 0.37));
+    col = mix(col, grassC * (0.6 + 0.6 * max(col.r, max(col.g, col.b))), st * 0.7);
+  }
   return col * (0.97 + 0.04 * grain);
 }
 `;
@@ -257,14 +278,21 @@ function patch(mat) {
    objectNormal = normalize(mix(objectNormal, cyl, 0.55));
  }`)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n vBind = position; vLimb = aLimb; { float isLeg = aLimb >= 5.0 ? 1.0 : 0.0, isArm = (aLimb >= 0.0 && aLimb < 5.0) ? 1.0 : 0.0; vReg = vec4(isLeg, isLeg > 0.5 ? aLimb - 10.0 : 0.0, isArm, isArm > 0.5 ? aLimb : 0.0); } vHair = aHair; vEye = aEye; vFace = aFace;')
-      .replace('#include <morphtarget_vertex>', '#include <morphtarget_vertex>\n transformed += baseN * clothOffset(aLimb, position, aHair);');
+      .replace('#include <morphtarget_vertex>', '#include <morphtarget_vertex>\n transformed += baseN * clothOffset(aLimb, position, aHair) + clothLag(aLimb, position);');
     sh.fragmentShader = FRAG_HEAD + sh.fragmentShader
       .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( bodyColour() * diffuse, opacity );')
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = gRough * mix(1.0, gFab > 0.5 ? 0.62 : 0.5, uWetK);')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  if (gFab > 0.5) {
+    vec3 bp = vBind;
+    float fold = sin(bp.y * 120.0 + sin(bp.x * 37.0 + uHT * 2.0) * 2.5 + uHT * (2.0 + 5.0 * uMove)) * smoothstep(1.4, 1.0, bp.y)
+               + 0.6 * sin(bp.y * 70.0 - bp.x * 60.0 + uHT * 3.0 * uMove);
+    normal = normalize(normal + vec3(0.0, fold * 0.09, fold * 0.03));
+  }`)
       // fabric sheen: polyester kits catch the floodlights at grazing angles
       .replace('#include <opaque_fragment>', 'outgoingLight += diffuseColor.rgb * pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0) * (0.22 * gFab + 0.06) ;\n#include <opaque_fragment>');
   };
-  mat.customProgramCacheKey = () => 'human-v4';
+  mat.customProgramCacheKey = () => 'human-v5';
 }
 
 const col = (c) => new THREE.Color(c);
@@ -275,7 +303,7 @@ export function humanMaterial() {
     uSkin: { value: col('#c68a5e') }, uHairC: { value: col('#1a1310') }, uKit: { value: col('#ffffff') }, uKit2: { value: col('#111111') },
     uShorts: { value: col('#ffffff') }, uSocks: { value: col('#ffffff') }, uBoot: { value: col('#111111') }, uNumCol: { value: col('#111111') },
     uGlove: { value: col('#f2f2f2') }, uEyeC: { value: col('#4a2e1a') },
-    uPattern: { value: 0 }, uGK: { value: 0 }, uMove: { value: 0 }, uSpon: { value: 0 }, uFacial: { value: 0 }, uSleeve: { value: 0.55 },
+    uPattern: { value: 0 }, uGK: { value: 0 }, uMove: { value: 0 }, uDirt: { value: 0 }, uLag: { value: new THREE.Vector3() }, uSpon: { value: 0 }, uFacial: { value: 0 }, uSleeve: { value: 0.55 },
     uHairA: { value: new THREE.Vector4(0, 0.012, 0.3, 0) }, uNum: { value: new THREE.Vector2(-1, 9) },
   };
   patch(m);
