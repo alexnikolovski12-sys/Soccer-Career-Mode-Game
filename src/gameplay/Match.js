@@ -173,7 +173,7 @@ export class Match {
     g.shooting.cancelStrike();
     g.skills.reset();
     if (g.ballCam) g._endBallCam();
-    this.restart = { type, team, x, z, phase: 'dead', t: type === 'kickoff' ? 0.1 : 0.9, taker: null, auto: 0 };
+    this.restart = { type, team, x, z, phase: 'dead', t: type === 'kickoff' ? 0.1 : type === 'penalty' || type === 'freekick' ? 2.0 : type === 'throw' ? 1.5 : 0.9, taker: null, auto: 0 };
     if (!opts.quiet) {
       const label = { throw: 'THROW-IN', corner: 'CORNER', goalkick: 'GOAL KICK', freekick: 'FREE KICK', penalty: 'PENALTY' }[type];
       if (label) g.hud.flash(label, team === 'home' ? 'good' : 'neutral');
@@ -190,7 +190,8 @@ export class Match {
       if (R.t > 0) return;
       this._placeRestart();
       R.phase = 'ready';
-      R.t = R.team === 'home' && !g.autoplay ? 5 : (R.type === 'penalty' ? 1.6 : 1.1 + g.rng.next() * 0.6);
+      // (the AI takes its time like real players: walking up, placing it, picking a spot)
+      R.t = R.team === 'home' && !g.autoplay ? 5 : R.type === 'penalty' ? 3.6 + g.rng.next() * 0.8 : R.type === 'freekick' ? 2.8 + g.rng.next() * 1.0 : R.type === 'throw' ? 2.2 + g.rng.next() * 0.9 : 1.1 + g.rng.next() * 0.6;
       return;
     }
     if (R.phase === 'ready') {

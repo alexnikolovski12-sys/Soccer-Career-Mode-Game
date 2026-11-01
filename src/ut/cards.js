@@ -5,6 +5,7 @@
 import { makeRng } from '../core/MathUtil.js';
 import { world, LEAGUE_COUNTRIES } from './world.js';
 import { cardDB as legacyDB } from './legacy/cards.js';
+import { REAL_CLUBS as OLD_REAL, parseSquad as oldParse } from './legacy/realdb2526.js';
 
 const DARK = new Set(['SEN', 'NGA', 'GHA', 'CIV', 'CMR', 'MLI', 'COD', 'GUI', 'BFA', 'GAB', 'JAM']);
 const MIXED = new Set(['BRA', 'FRA', 'ENG', 'NED', 'BEL', 'POR', 'USA', 'COL', 'MAR', 'CAN']);
@@ -82,6 +83,19 @@ function makeLook(rng, nat, real = null) {
   };
 }
 
+/** Stable card id from the player's name (so a transfer keeps your card). */
+const slug = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/[ıİ]/g, 'i').replace(/ł/g, 'l').replace(/đ/g, 'd').replace(/ß/g, 'ss').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const cardId = (p) => 'r_' + slug(`${p.first} ${p.last}`);
+let OLD_REAL_LIST = null;
+/** The first real-player release numbered its cards r0, r1, … in database order. */
+function oldRealCard(id) {
+  if (!OLD_REAL_LIST) {
+    OLD_REAL_LIST = [];
+    for (const c of LEAGUE_COUNTRIES) for (const club of OLD_REAL[c.id]) OLD_REAL_LIST.push(...oldParse(club[3]));
+  }
+  return OLD_REAL_LIST[+id.slice(1)];
+}
+
 /** The whole player database (built once). */
 export function cardDB() {
   if (DB) return DB;
@@ -95,7 +109,7 @@ export function cardDB() {
       const club = W.clubs[clubId];
       for (const p of club.squad) {
         const rng = makeRng(nameSeed(p.first + ' ' + p.last));
-        const id = `r${n}`;
+        const id = cardId(p);
         const stats = faceStats(rng, p.pos, p.ovr);
         // pace from what's known of the man: rapid, ordinary or not quick
         if (stats.pac) {
@@ -124,7 +138,10 @@ export function cardDB() {
 export function migrateCard(oldId, taken) {
   const db = cardDB();
   if (db.cards[oldId]) return oldId;
-  const old = legacyDB().cards[oldId];
+  // a real player from last season: same man if he's still in the game (moved clubs or not)
+  const prev = /^r\d+$/.test(oldId) ? oldRealCard(oldId) : null;
+  if (prev && db.cards[cardId(prev)] && !taken.has(cardId(prev))) { taken.add(cardId(prev)); return cardId(prev); }
+  const old = prev || legacyDB().cards[oldId];
   const pos = old ? old.pos : 'CM', ovr = old ? old.ovr : 70;
   const near = (c) => Math.abs(c.ovr - ovr) + (c.pos === pos ? 0 : posFit(c.pos, pos) ? 3 : 12) + (taken.has(c.id) ? 6 : 0);
   let best = db.list[0], bd = 1e9;
@@ -134,7 +151,7 @@ export function migrateCard(oldId, taken) {
 }
 
 export const card = (id) => cardDB().cards[id];
-export const legacyCard = (id) => legacyDB().cards[id];
+export const legacyCard = (id) => (/^r\d+$/.test(id) ? oldRealCard(id) : legacyDB().cards[id]);
 export const tierOf = (c) => (c.ovr >= 75 ? 'gold' : c.ovr >= 65 ? 'silver' : 'bronze');
 
 /** Quick-sell value. */

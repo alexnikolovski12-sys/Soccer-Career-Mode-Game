@@ -13,7 +13,7 @@ d.pos.set(L - 11, 0, 1.5);
 g.match.clock = 46 * 60; g.match.added = 1;
 g.onFoul({ by: d, victim: u });
 out.penSetPiece = !!(g.setPiece && g.setPiece.penalty);
-runUntil(() => g.setPiece && g.setPiece.phase === 'ready', 20);
+runUntil(() => g.setPiece && g.setPiece.phase === 'ready' && !g.foulRp, 35);
 run(0.8);
 out.penCam = g.camRig.mode;
 snap('penalty-cam');
@@ -41,7 +41,7 @@ const a = g.defenders[3];
 a.pos.set(-20, 0, 5); g.ball.pos.set(-19.4, 0.11, 5); g.ball.owner = a;
 g.user.pos.set(-19, 0, 5.5);
 g.onFoul({ by: g.user, victim: a });
-runUntil(() => !g.foulRp && g.match.restart && g.match.restart.taker, 14);   // (after the foul replay)
+runUntil(() => !g.foulRp && g.match.restart && g.match.restart.taker, 25);   // (after the foul replay)
 run(0.3);
 out.fkCam = g.camRig.mode;
 snap('their-freekick-cam');

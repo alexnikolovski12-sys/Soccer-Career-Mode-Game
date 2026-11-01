@@ -110,7 +110,7 @@ export class UltimateTeam {
   // ------------------------------------------------------------ save
   load() {
     try { const s = JSON.parse(localStorage.getItem(SAVE)); if (s && s.v === 1) this.s = s; } catch (_) { /* fresh */ }
-    if (this.s && !this.s.real) this._toRealPlayers();
+    if (this.s && this.s.real !== 2) this._toRealPlayers();
     return !!this.s;
   }
   save() { try { localStorage.setItem(SAVE, JSON.stringify(this.s)); } catch (_) { /* full / private */ } }
@@ -118,13 +118,13 @@ export class UltimateTeam {
   open() { this.el.classList.add('show'); if (!this.s) this._setup(); else this.render(); }
   close() { this.el.classList.remove('show'); }
 
-  /** Saves from before the real squads: every invented card becomes a real player of the same position and a similar rating. */
+  /** Older saves: invented cards (and last season's real ones that left the game) become a real player of the same position and a similar rating. */
   _toRealPlayers() {
     const s = this.s, taken = new Set();
     const owned = s.owned.slice().sort((a, b) => (this._legacyOvr(b.cid) - this._legacyOvr(a.cid)));
     for (const o of owned) o.cid = migrateCard(o.cid, taken);
     s.opps = null; s.market = null;
-    s.real = 1;
+    s.real = 2;   // 2 = 2026/27 squads
     this.save();
   }
   _legacyOvr(cid) { try { return legacyCard(cid)?.ovr || 0; } catch (_) { return 0; } }
@@ -265,7 +265,7 @@ export class UltimateTeam {
       const name = w.querySelector('.nm').value.trim() || 'Breakaway FC';
       const short = name.replace(/[^A-Za-z ]/g, '').split(/\s+/).filter((x) => x.length > 2 && !/^(FC|AFC|CF|SC)$/i.test(x))[0]?.slice(0, 3).toUpperCase() || 'BRK';
       this.s = {
-        v: 1, real: 1, clubName: name, short, kit, kit2: KIT_PRESETS.find((k) => clashes(k, kit)) ? KIT_PRESETS.find((k) => !clashes(k, kit)) : KIT_PRESETS[1], coins: 5000, owned: [], nextUid: 1,
+        v: 1, real: 2, clubName: name, short, kit, kit2: KIT_PRESETS.find((k) => clashes(k, kit)) ? KIT_PRESETS.find((k) => !clashes(k, kit)) : KIT_PRESETS[1], coins: 5000, owned: [], nextUid: 1,
         squad: { formation: '4-3-3', xi: new Array(11).fill(null), bench: [] },
         sb: { points: 0, played: 0, wins: 0, draws: 0, losses: 0 },
         prog: { wins: 0, goals: 0, clean: 0, proWins: 0, worldWins: 0, chem33: 0 }, claimed: {},

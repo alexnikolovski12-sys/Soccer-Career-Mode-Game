@@ -20,7 +20,7 @@ export class Replay {
     this.stride = this.players.length * Player.RECORD_SIZE + 7;
     // build-up + tail + the live celebration recorded before playback starts
     // build-up + the whole celebration (a big late-goal one runs longest)
-    const seconds = CONFIG.juice.replaySeconds + CONFIG.juice.celebrateTime * 1.6 + 2;
+    const seconds = Math.max(CONFIG.juice.replaySeconds + CONFIG.juice.celebrateTime * 1.6 + 2, 9);   // (a foul replay reaches ~6 s back)
     const cap = Math.ceil(seconds * 62);
     if (!this.buf || this.cap !== cap || this.buf.length !== cap * this.stride) {
       this.cap = cap;

@@ -48,7 +48,7 @@ export const CONFIG = {
     floor: 30, // stats at or below this map to the worst value
   },
   statMap: {
-    sprintSpeed: (pace) => sMap(pace, 7.25, 9.5),          // m/s top speed (×1.08 when you sprint: ~37 km/h for the quickest)
+    sprintSpeed: (pace) => sMap(pace, 6.9, 9.0),          // m/s top speed (×1.08 when you sprint: ~37 km/h for the quickest)
     runFactor: 0.72,                                      // full tilt (no sprint) = sprint * runFactor
     jogFactor: 0.45,
     accel: (acc) => sMap(acc, 5.5, 11.5),                 // m/s² towards target speed
@@ -140,8 +140,8 @@ export const CONFIG = {
 
   // --------------------------------------------------------------- free kicks / penalties
   setPiece: {
-    downTime: 0.9,             // watch the foul before the restart is set up
-    setupTime: 1.4,            // pause with the ball placed before play / aiming resumes
+    downTime: 1.6,             // watch the foul before the restart is set up
+    setupTime: 2.4,            // pause with the ball placed before play / aiming resumes
     wallDistance: 9.15,
     wallMaxRange: 32,          // build a wall when the free kick is this close to goal
     timerTopUp: 9,             // seconds left on the moment clock after a foul (at least)

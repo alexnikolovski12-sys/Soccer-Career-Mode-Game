@@ -1507,7 +1507,7 @@ class Game {
       if (this.sm.is(STATES.GOAL, STATES.HALFTIME, STATES.FULLTIME, STATES.MENU)) { this.foulRp = null; return; }
       r.wait -= realDt;
       if (r.wait > 0) return;
-      if (!this.replay.start(r.at - 3.6, r.at + 1.4, 0.5, r.at + 0.8)) { this.foulRp = null; return; }
+      if (!this.replay.start(r.at - 4.6, r.at + 1.6, 0.45, r.at + 1.1)) { this.foulRp = null; return; }
       r.on = true;
       r.cam = { mode: this.camRig.mode, opts: this.camRig.opts };
       const side = r.victim.pos.z > 0 ? -1 : 1, end = r.by.pos.x > r.victim.pos.x ? 1 : -1;
