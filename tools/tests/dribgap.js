@@ -2,7 +2,7 @@
 quickMatch();
 const out = {};
 const runCase = (label, sprint, wob, mag) => {
-  runUntil(() => g.sm.is('PLAYING') && !g.match.restart && !g.setPiece, 8);
+  runUntil(() => g.sm.is('PLAYING') && !g.match.restart && !g.setPiece && !g.foulRp, 30);
   for (const d of g.defenders) d.place(-45 + d.slot.fx * 5, d.slot.fz * 30, 0);
   const u = g.user; u.place(-20, 0, Math.PI / 2);
   g.passing.reset(); g.ball.reset(-19.5, 0); g.possession.gain(u);

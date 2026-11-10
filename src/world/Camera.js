@@ -34,7 +34,7 @@ export class CameraRig {
   get _fv() { return this.__fv || (this.__fv = this.desiredLook.clone()); }
 
   setMode(mode, opts = {}) {
-    if (mode !== this.mode) this._celH = null;
+    if (mode !== this.mode) { this._celH = null; this._ct = 0; }
     this.mode = mode;
     this.opts = opts;
   }
@@ -176,11 +176,37 @@ export class CameraRig {
       const side = this.opts.side || 1, e = this.opts.end || 1;
       // a foul replay follows the man who went down (the ball often runs away after the tackle)
       if (this.opts.follow) b = this._fv.copy(this.opts.follow).lerp(b, 0.25);
-      const near = this.opts.close ? 0.7 : 1;
-      this.desiredPos.set(b.x - e * 7 * near, 3.2 * near, b.z + side * (this.portrait ? 16 : 12) * near);
-      this.desiredLook.set(b.x + e * 1.5, 1, b.z);
-      posK = 3.5; lookK = 6;
-      fov = this.portrait ? 55 : 40;
+      const near = this.opts.close ? 0.7 : 1, ang = this.opts.angle;
+      if (ang === 'goal') {
+        // from behind the net, looking out at the finish
+        this.desiredPos.set(e * (gx + 4.5), 2.1, clamp(b.z * 0.35, -3, 3));
+        this.desiredLook.set(b.x, Math.max(0.6, b.y * 0.7), b.z);
+        posK = 2.5; lookK = 7; fov = this.portrait ? 60 : 42;
+      } else if (ang === 'reverse') {
+        // the far touchline, higher and wider
+        this.desiredPos.set(b.x + e * 8, 6.5, b.z + side * (this.portrait ? 22 : 17));
+        this.desiredLook.set(b.x + e * 2, 0.8, b.z);
+        posK = 3; lookK = 6; fov = this.portrait ? 55 : 38;
+      } else if (ang === 'low') {
+        // pitch level, tight on the challenge
+        this.desiredPos.set(b.x - e * 4.5, 0.9, b.z + side * 6.5);
+        this.desiredLook.set(b.x, 0.7, b.z);
+        posK = 3.5; lookK = 7; fov = this.portrait ? 55 : 36;
+      } else {
+        this.desiredPos.set(b.x - e * 7 * near, 3.2 * near, b.z + side * (this.portrait ? 16 : 12) * near);
+        this.desiredLook.set(b.x + e * 1.5, 1, b.z);
+        posK = 3.5; lookK = 6;
+        fov = this.portrait ? 55 : 40;
+      }
+    } else if (this.mode === 'crowd') {
+      // TV cutaway to the fans: a long lens up into the stand, drifting slowly along it
+      this._ct = (this._ct || 0) + dt;
+      const o = this.opts, W = CONFIG.pitch.width / 2, sd = o.side || 1, t = this._ct;
+      const x = (o.x || 0) + (o.pan || 1) * t * 0.9;
+      this.desiredPos.set(x, 2.2, sd * (W - 13));
+      this.desiredLook.set(x + (o.pan || 1) * 3, 8.5 + Math.sin(t * 0.7) * 0.5, sd * (W + 22));
+      posK = 5; lookK = 5;
+      fov = this.portrait ? 40 : 24;
     } else if (this.mode === 'goalview') {
       // looking back from behind the net (either end)
       const e = this.opts.end || 1;

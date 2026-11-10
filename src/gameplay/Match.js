@@ -179,6 +179,9 @@ export class Match {
       if (label) g.hud.flash(label, team === 'home' ? 'good' : 'neutral');
     }
     if (type !== 'kickoff') g.audio.whistle(false);
+    // TV: replay the chance after a shot that's gone out / been turned behind; otherwise now and then a crowd shot
+    if (g.chanceReplay && (type === 'corner' || type === 'goalkick') && g.chanceReplay()) return;
+    if (g.cutaway && (type === 'throw' || type === 'goalkick')) g.cutaway();
   }
 
   _restartStep(dt) {

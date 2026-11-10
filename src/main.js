@@ -50,6 +50,7 @@ class Game {
     this.layer = document.getElementById('touch-layer');
     this.config = CONFIG; // handy for console tuning: game.config.shot.wobbleScale = 0
     this.events = new Events();
+    this.events.on('shot', (e) => { this.lastShot = { t: this.simTime, team: e.shooter ? e.shooter.team : 'home' }; });
     this.rng = makeRng((Math.random() * 2 ** 31) | 0);
     this.simTime = 0;
     this.realTime = 0;
@@ -180,7 +181,7 @@ class Game {
     });
     window.addEventListener('pagehide', () => this.pause());
     this.layer.addEventListener('pointerdown', () => {
-      if (this.sm.is(STATES.GOAL) && this.goalPhase === 'replay') this._endReplay();
+      if (this.sm.is(STATES.GOAL) && (this.goalPhase === 'replay' || this.goalPhase === 'cut')) this._endReplay();
       else if (this.foulRp && this.foulRp.on && this.foulRp.age > 0.4) this._endFoulReplay();
     });
 
@@ -304,7 +305,6 @@ class Game {
           this.audio.kick(1, 'driven');
           this.finishing = null;
           this.sm.change(STATES.SHOT_FLIGHT);
-          this.setTimeScale(1, 0.7);
         }
       }
       return;
@@ -341,7 +341,6 @@ class Game {
     ball.vel.multiplyScalar(0.15);
     ball.frozen = true;                      // hangs for the strike
     this.finishing = { r, t: 0, at: dur * 0.4, type, done: false, from: r.pos.clone(), to, h0: r.heading, h1: heading, glide: dur * 0.32 };
-    this.setTimeScale(0.3, 0.08);            // slow-mo on the contact
     void 0;
     this.audio.anticipate();
   }
@@ -414,7 +413,14 @@ class Game {
   onFoul({ by, victim }) {
     if (!this.sm.is(STATES.PLAYING) || this.setPiece || this.match.restart) return;
     // after a beat of the live reaction, the TV replay of the challenge
-    this.foulRp = { at: this.simTime, wait: 1.15, victim, by, on: false, age: 0 };
+    {
+      const at = this.simTime, side = victim.pos.z > 0 ? -1 : 1, end = by.pos.x > victim.pos.x ? 1 : -1, fol = victim.parts.root.position;
+      this._queueTV({ wait: 1.15, clips: [
+        { from: at - 4.2, to: at + 1.4, speed: 0.5, slowUntil: at + 1.0, cam: { side, end, close: true, follow: fol } },
+        { from: at - 1.8, to: at + 0.7, speed: 0.33, cam: { side: -side, end: -end, close: true, follow: fol, angle: 'low' } },
+        ...(this.rng.next() < 0.45 ? [{ cut: 'crowd', dur: 2.4 }] : []),
+      ] }, true);
+    }
     const L = CONFIG.pitch.length / 2, P = CONFIG.pitch;
     const x = this.ball.pos.x, z = this.ball.pos.z;
     this.match.stats[by.team].fouls++;
@@ -1558,29 +1564,70 @@ class Game {
 
   resume() { if (this.sm.is(STATES.PAUSED)) this.sm.pop(); }
 
-  /** Foul replay: the last few seconds before the whistle, slowed down, from a low side-on camera. The match is frozen meanwhile. */
+  /**
+   * TV package: replay clips from different angles and cutaways, played while the
+   * match is frozen (the clock doesn't move). Used for fouls, big chances and stoppages.
+   * clip = { from, to, speed, slowUntil?, cam: {side, end, close?, follow?, angle?} } | { cut: 'crowd', dur }
+   */
+  _queueTV(pkg, force = false) {
+    if (this.foulRp && !force) return false;
+    if (this.foulRp && this.foulRp.on) this._endFoulReplay();
+    this.foulRp = { wait: pkg.wait ?? 0.8, clips: pkg.clips, i: -1, on: false, age: 0 };
+    return true;
+  }
+
   _foulReplayFrame(realDt) {
     const r = this.foulRp;
     if (!r.on) {
       if (this.sm.is(STATES.PAUSED)) return;
-      if (this.sm.is(STATES.GOAL, STATES.HALFTIME, STATES.FULLTIME, STATES.MENU)) { this.foulRp = null; return; }
+      if (this.sm.is(STATES.GOAL, STATES.HALFTIME, STATES.FULLTIME, STATES.MENU, STATES.KICKOFF)) { this.foulRp = null; return; }
       r.wait -= realDt;
       if (r.wait > 0) return;
-      if (!this.replay.start(r.at - 4.6, r.at + 1.6, 0.45, r.at + 1.1)) { this.foulRp = null; return; }
       r.on = true;
       r.cam = { mode: this.camRig.mode, opts: this.camRig.opts };
-      const side = r.victim.pos.z > 0 ? -1 : 1, end = r.by.pos.x > r.victim.pos.x ? 1 : -1;
-      this.replay.update(0);
-      this.camRig.setMode('replay', { side, end, close: true, follow: r.victim.parts.root.position });
-      this.camRig.opts.ballPos = this.replay.ballPos;
-      this.camRig.snap();
-      this.hud.setReplay(true);
+      this.ts = null;
       document.body.classList.add('in-replay');
+      if (!this._nextClip()) this._endFoulReplay();
       return;
     }
     r.age += realDt;
+    const c = r.clips[r.i];
+    if (c.cut) {
+      c.t += realDt;
+      if (c.t >= c.dur && !this._nextClip()) this._endFoulReplay();
+      return;
+    }
     this.camRig.opts.ballPos = this.replay.ballPos;
-    if (!this.replay.update(realDt)) this._endFoulReplay();
+    if (!this.replay.update(realDt) && !this._nextClip()) this._endFoulReplay();
+  }
+
+  /** Start the package's next clip; false when there are none left. */
+  _nextClip() {
+    const r = this.foulRp;
+    while (++r.i < r.clips.length) {
+      const c = r.clips[r.i];
+      if (c.cut) {
+        // cutaway: the fans, with everything on the pitch held still
+        this.replay.stop();
+        this.hud.setReplay(false);
+        this.loop.timeScale = 0;
+        c.t = 0;
+        const W = CONFIG.pitch.width / 2;
+        this.camRig.setMode('crowd', { x: Math.max(-40, Math.min(40, this.ball.pos.x)), side: this.rng.next() < 0.5 ? 1 : -1, pan: this.rng.next() < 0.5 ? 1 : -1, W });
+        this.camRig.snap();
+        if (this.pitch.crowd) this.pitch.crowd.setExcitement(0.7);
+        return true;
+      }
+      this.loop.timeScale = 1;
+      if (!this.replay.start(c.from, c.to, c.speed, c.slowUntil ?? Infinity)) continue;
+      this.replay.update(0);
+      this.camRig.setMode('replay', { ...c.cam });
+      this.camRig.opts.ballPos = this.replay.ballPos;
+      this.camRig.snap();
+      this.hud.setReplay(true);
+      return true;
+    }
+    return false;
   }
 
   _endFoulReplay() {
@@ -1588,8 +1635,55 @@ class Game {
     this.foulRp = null;
     this.replay.stop();
     this.hud.setReplay(false);
+    this.loop.timeScale = 1;
     if (r && r.cam) { this.camRig.setMode(r.cam.mode, r.cam.opts); this.camRig.snap(); }
     document.body.classList.remove('in-replay');
+  }
+
+  /** A shot that went wide or was saved and play stopped: show the chance again. */
+  chanceReplay() {
+    const s = this.lastShot;
+    if (!s || this.simTime - s.t > 6 || this.foulRp) return false;
+    this.lastShot = null;
+    const end = s.team === 'home' ? 1 : -1, side = this.ball.pos.z > 0 ? -1 : 1, to = Math.min(this.simTime, s.t + 1.8);
+    return this._queueTV({ wait: 0.9, clips: [
+      { from: s.t - 2.6, to, speed: 0.55, slowUntil: s.t + 1.2, cam: { side, end } },
+      { from: s.t - 1.0, to: Math.min(this.simTime, s.t + 1.3), speed: 0.4, cam: { end, angle: 'goal' } },
+    ] });
+  }
+
+  /** A stoppage now and then: cut away to the crowd while the restart is set up. */
+  cutaway() {
+    if (this.foulRp || this.rng.next() > 0.3) return false;
+    return this._queueTV({ wait: 0.5, clips: [{ cut: 'crowd', dur: 2.2 + this.rng.next() * 1.2 }] });
+  }
+
+  /** Next goal replay clip (or the crowd shot after the last one). */
+  _nextGoalClip() {
+    while (++this.goalClip < this.goalClips.length) {
+      const c = this.goalClips[this.goalClip];
+      if (!this.replay.start(c.from, c.to, c.speed, c.slow)) continue;
+      this.goalPhase = 'replay';
+      this.hud.setReplay(true);
+      this.replay.update(0);
+      this.camRig.setMode('replay', { ...c.cam });
+      this.camRig.opts.ballPos = this.replay.ballPos;
+      this.camRig.snap();
+      return true;
+    }
+    if (this.goalPhase === 'replay' || this.goalClip >= this.goalClips.length) {
+      // last: the fans
+      this.replay.stop();
+      this.hud.setReplay(false);
+      for (const p of this.extras) p.setVisible(false);
+      this.goalPhase = 'cut';
+      this.goalCutT = 2.6;
+      this.camRig.setMode('crowd', { x: this.goalTeam === 'home' ? 30 : -30, side: this.rng.next() < 0.5 ? 1 : -1, pan: this.goalTeam === 'home' ? -1 : 1 });
+      this.camRig.snap();
+      if (this.pitch.crowd) this.pitch.crowd.cheer(this.goalTeam === 'home' ? 5 : 2);
+      return true;
+    }
+    return false;
   }
 
   _endReplay() {
@@ -1713,8 +1807,8 @@ class Game {
 
     sm.add(S.SHOT_FLIGHT, {
       enter() {
-        g.setTimeScale(1, CONFIG.shot.unfreezeTime);
-        g.camRig.setMode('flight', { origin: g.shooting.flight ? g.shooting.flight.origin : g.ball.pos.clone() });
+        // the shot flies at full speed on the normal match camera (no ball-cam, no slow motion)
+        g.setTimeScale(1, 0);
         g.setControls(false, true);
         g.hud.setShotCharge(0);
       },
@@ -1773,24 +1867,31 @@ class Game {
           const hold = CONFIG.juice.celebrateTime * (g.celebration && g.celebration.big ? 1.5 : home ? 1 : 0.6);
           if (sm.time > hold) {
             const J = CONFIG.juice;
-            if (g.replay.start(g.goalSimTime - J.replaySeconds, g.simTime, J.replaySpeed, g.goalSimTime + J.replayTail)) {
-              g.goalPhase = 'replay';
-              g.hud.hideBig();
-              g.hud.setReplay(true);
-              g.camRig.setMode('replay', { side: g.ball.pos.z > 0 ? -1 : 1, end: home ? 1 : -1 });
-              g.replay.update(0);
-              g.camRig.snap();
-            } else g._endReplay();
+            // the TV package: the build-up from the side, the finish from behind the net,
+            // then the run to the fans from the far side, then the crowd
+            const G = g.goalSimTime, side = g.ball.pos.z > 0 ? -1 : 1, end = home ? 1 : -1;
+            g.goalClips = [
+              { from: G - J.replaySeconds, to: G + 0.9, speed: J.replaySpeed, slow: G + 0.6, cam: { side, end } },
+              { from: G - 1.6, to: G + 0.6, speed: 0.4, slow: Infinity, cam: { end, angle: 'goal' } },
+              { from: G - 2.0, to: g.simTime, speed: 0.6, slow: G + J.replayTail, cam: { side: -side, end, angle: 'reverse' }, celeb: true },
+            ];
+            g.goalClip = -1;
+            g.hud.hideBig();
+            if (!g._nextGoalClip()) g._endReplay();
           }
         } else if (g.goalPhase === 'replay') {
           const J2 = CONFIG.juice;
           g.camRig.opts.ballPos = g.replay.ballPos;
-          if (!g.replay.update(realDt)) g._endReplay();
+          if (!g.replay.update(realDt)) { if (!g._nextGoalClip()) g._endReplay(); }
           else {
             const show = g.replay.t >= g.goalSimTime;
             for (const p of g.extras) p.parts.root.visible = show;
-            if (g.replay.t > g.goalSimTime + J2.replayTail && g.camRig.mode === 'replay' && g.scorer) g.camRig.setMode('celebrate', { target: g.scorer.parts.root.position, angle: 0.6, p: g.scorer });
+            const c = g.goalClips[g.goalClip];
+            if (c && c.celeb && g.replay.t > g.goalSimTime + J2.replayTail && g.camRig.mode === 'replay' && g.scorer) g.camRig.setMode('celebrate', { target: g.scorer.parts.root.position, angle: 0.6, p: g.scorer });
           }
+        } else if (g.goalPhase === 'cut') {
+          g.goalCutT -= realDt;
+          if (g.goalCutT <= 0) g._endReplay();
         }
       },
       exit() {

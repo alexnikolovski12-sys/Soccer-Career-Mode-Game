@@ -2,7 +2,7 @@
 quickMatch();
 const out = { lost: 0, maxDist: 0, distSprint: [], stops: 0, trials: 0 };
 for (let k = 0; k < 8; k++) {
-  runUntil(() => g.sm.is('PLAYING') && !g.match.restart && !g.setPiece, 8);
+  runUntil(() => g.sm.is('PLAYING') && !g.match.restart && !g.setPiece && !g.foulRp, 30);
   if (g.sm.is('GOAL')) { g._endReplay(); runUntil(() => g.sm.is('PLAYING'), 4); }
   for (const d of g.defenders) d.place(-45 + d.slot.fx * 5, d.slot.fz * 30, 0);   // keep them out of the way
   const u = g.user; u.place(-10, 0, Math.PI / 2);

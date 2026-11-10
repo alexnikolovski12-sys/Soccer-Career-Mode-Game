@@ -20,7 +20,7 @@ for (const [name, by, victim] of [['on you', () => g.defenders[3], () => g.user]
     if (g.foulRp.on && g.match.clock !== clockOn) frozen = false;
     if (!shot && g.foulRp.age > 1.2) { shotAt(name); shot = true; }
     return false;
-  }, 15);
+  }, 40);
   const tag = document.querySelector('.replay-tag, .replaytag');
   const after = runUntil(() => g.sm.is('PLAYING') && !g.match.restart && !g.setPiece, 25);
   out.push({ name, started, ended: ok, replaySec: +(frames / 60).toFixed(1), frozen, mode: g.camRig.mode, resumed: after, body: document.body.className });

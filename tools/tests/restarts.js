@@ -12,11 +12,11 @@ const cases = [
   ['pen away', () => { g.match.startRestart('penalty', 'away', -52.5 + 11, 0); }],
 ];
 for (const [name, set] of cases) {
-  runUntil(() => g.sm.is('PLAYING') && !g.match.restart && !g.setPiece, 8);
+  runUntil(() => g.sm.is('PLAYING') && !g.match.restart && !g.setPiece && !g.foulRp, 30);
   g.ball.owner = null; g.ball.pass = null; g.ball.frozen = false;
   set();
   let saw = null;
-  const ok = runUntil(() => { if (g.match.restart) saw = saw || g.match.restart.type + '/' + g.match.restart.team; return saw && !g.match.restart; }, 12);
+  const ok = runUntil(() => { if (g.match.restart) saw = saw || g.match.restart.type + '/' + g.match.restart.team; return saw && !g.match.restart; }, 30);
   run(1.0);
   out.push({ name, saw, taken: ok, owner: g.ball.owner ? g.ball.owner.team : null, state: ['PLAYING', 'GOAL', 'KICKOFF', 'SHOT_FLIGHT'].find((s) => g.sm.is(s)), score: `${g.match.homeGoals}-${g.match.awayGoals}` });
   if (g.sm.is('GOAL')) { runUntil(() => g.sm.time > 1.6, 4); g._endReplay(); }

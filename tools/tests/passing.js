@@ -5,7 +5,7 @@ let gained = null;
 g.events.on('gain', (e) => { gained = e; });
 const res = { ok: 0, bad: 0, why: {}, fails: [] };
 for (let trial = 0; trial < 30; trial++) {
-  runUntil(() => g.sm.is('PLAYING') && !g.match.restart && !g.setPiece, 8);
+  runUntil(() => g.sm.is('PLAYING') && !g.match.restart && !g.setPiece && !g.foulRp, 30);
   if (g.sm.is('GOAL')) { g._endReplay(); runUntil(() => g.sm.is('PLAYING'), 4); }
   const u = g.user;
   g.ball.reset(u.pos.x + Math.sin(u.heading) * 0.6, u.pos.z + Math.cos(u.heading) * 0.6);

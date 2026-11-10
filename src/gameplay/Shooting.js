@@ -504,7 +504,7 @@ export class Shooting {
     f.t += dt;
     const gx = CONFIG.pitch.length / 2;
     // slow-mo for the final metres of a close call (your shots)
-    if (f.closeCall && !f.slow && f.shooter.team === 'home' && ball.pos.x > gx - CONFIG.shot.slowMoDistance && ball.lastKick?.type === 'shot') {
+    if (false && f.closeCall && !f.slow) {   // (no slow motion on shots: they fly at full speed)
       f.slow = true;
       g.setTimeScale(CONFIG.shot.slowMoSpeed, 0.12);
     }
