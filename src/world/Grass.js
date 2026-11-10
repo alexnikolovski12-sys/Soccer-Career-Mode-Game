@@ -198,7 +198,7 @@ vec3 turf() {
     float k = (1.0 - smoothstep(8.0, 45.0, dist)) * (1.0 - 0.7 * uSnow);
     float e = 0.012;
     float h0 = turfH(p), hx = turfH(p + vec2(e, 0.0)), hz = turfH(p + vec2(0.0, e));
-    vec3 nW = vec3(-(hx - h0) / e * 0.04 * k + gLay * 0.16, 1.0, -(hz - h0) / e * 0.04 * k);
+    vec3 nW = vec3(-(hx - h0) / e * 0.04 * k + gLay * 0.16 * (1.0 - uSnow), 1.0, -(hz - h0) / e * 0.04 * k);
     normal = normalize((viewMatrix * vec4(normalize(nW), 0.0)).xyz);
   }`);
   };

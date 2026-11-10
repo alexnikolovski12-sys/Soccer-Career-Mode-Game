@@ -1857,13 +1857,13 @@ class Game {
         }
         g.audio.net();
         g.camRig.addShake(CONFIG.juice.goalShake * (home ? 1 : 0.5));
-        g.camRig.setMode('goalview', { z: g.ball.pos.z, end: home ? 1 : -1 });
+        // the normal match camera stays on while he runs off to celebrate (it follows him); the replays come after
+        g.camRig.setMode('broadcast', { focus: (g.scorer || g.user).pos });
       },
       update(dt) { g.simulate(dt, 'result'); },
       frame(realDt) {
         const home = g.goalTeam === 'home';
         if (g.goalPhase === 'live') {
-          if (sm.time > 1.3 && g.camRig.mode === 'goalview') g.camRig.setMode('celebrate', { target: g.scorer ? g.scorer.pos : g.user.pos, p: g.scorer || g.user });
           const hold = CONFIG.juice.celebrateTime * (g.celebration && g.celebration.big ? 1.5 : home ? 1 : 0.6);
           if (sm.time > hold) {
             const J = CONFIG.juice;

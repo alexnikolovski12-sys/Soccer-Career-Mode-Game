@@ -3,7 +3,7 @@ g.autoplay = true;
 quickMatch('semipro', 240);
 run(6);
 const shot = (lab) => { const nr = g.renderer.render; g.renderer.render = realRender; g.renderFrame(g.camRig.camera); g.renderer.render = nr; __shots.push([lab, g.renderer.domElement.toDataURL('image/jpeg', 0.75)]); };
-g.ball.reset(50, 0); g.match.homeGoals++; g.onGoal('home', g.user);
+g.ball.reset(50, 0); g.match.homeGoals++; g.onGoal('home', g.user); run(2.5); shot('live-' + g.camRig.mode);
 const seen = []; let last = '', t = 0, shotFor = {};
 runUntil(() => {
   t += 1 / 60;

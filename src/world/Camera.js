@@ -56,7 +56,8 @@ export class CameraRig {
       const B = this.portrait ? C.broadcast.portrait : C.broadcast.landscape;
       const b = game.ball.pos, u = game.user;
       const fcs = this._bf || (this._bf = new THREE.Vector3());
-      fcs.set(b.x * 0.78 + u.pos.x * 0.22, 0, b.z * 0.8 + u.pos.z * 0.2);
+      if (this.opts.focus) fcs.set(this.opts.focus.x, 0, this.opts.focus.z);     // (a goal: follow the scorer)
+      else fcs.set(b.x * 0.78 + u.pos.x * 0.22, 0, b.z * 0.8 + u.pos.z * 0.2);
       const cz = this.chargeZoom || 0;
       if (cz > 0) fcs.lerp(u.pos, 0.35 * cz);
       const gx2 = CONFIG.pitch.length / 2 - 8;
