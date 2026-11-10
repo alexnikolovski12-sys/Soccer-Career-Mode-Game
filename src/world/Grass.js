@@ -112,6 +112,12 @@ float gn(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 
   return mix(mix(gh(i), gh(i + vec2(1.0, 0.0)), u.x), mix(gh(i + vec2(0.0, 1.0)), gh(i + vec2(1.0, 1.0)), u.x), u.y); }
 float gRoughW;
 float gWear;
+float gLay;
+// the turf's surface relief: tufts and clumps of blades (metres; read as a height 0..1)
+float turfH(vec2 p) {
+  float d1 = texture2D(uDetail, p * 0.62).r, d2 = texture2D(uDetail, vec2(p.y, -p.x) * 2.3 + 0.37).r;
+  return d1 * 0.55 + d2 * 0.3 + gn(p * 9.0) * 0.15;
+}
 vec3 turf() {
   vec2 p = vGW.xz;
   vec3 V = normalize(cameraPosition - vGW);
@@ -123,6 +129,7 @@ vec3 turf() {
   float e = fract((p.x + uHalf.x) / uStripeW);
   float edge = smoothstep(0.0, 0.06, e) * smoothstep(1.0, 0.94, e);
   float lay = sgn * mix(0.35, 1.0, clamp(-V.z * 1.25, 0.0, 1.0)) * edge * inside;
+  gLay = sgn * edge * inside;
   float s = lay * uStripe;
   vec3 c = uGrass * vec3(1.0 + s * 0.9, 1.0 + s, 1.0 + s * 0.55);
   // colour variation: big patches, mid clumps, fine
@@ -132,6 +139,8 @@ vec3 turf() {
   // blade detail (two scales, slightly rotated so it doesn't tile visibly)
   float d1 = texture2D(uDetail, p * 0.62).r, d2 = texture2D(uDetail, vec2(p.y, -p.x) * 2.3 + 0.37).r;
   c *= 0.5 + 1.0 * d1 * (0.55 + 0.9 * d2);
+  // down in the thatch between tufts it's darker (cheap ambient occlusion)
+  c *= 0.82 + 0.3 * turfH(p);
   // wear: goalmouths, penalty spots, centre circle
   float gm = exp(-(pow(abs(p.x) - (uHalf.x - 3.5), 2.0) / 14.0 + p.y * p.y / 9.0));
   float ps = exp(-(pow(abs(p.x) - (uHalf.x - 11.0), 2.0) + p.y * p.y) / 1.2);
@@ -179,9 +188,21 @@ vec3 turf() {
     diffuseColor.rgb *= 0.55 + 0.65 * vLayer;            // dark down in the thatch, bright tips
   }
 #endif`)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = gRoughW;');
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = gRoughW;')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  {
+    // a real 3D surface: the light catches the tufts and the mown grain (one way on each stripe);
+    // faded out with distance so it never shimmers
+    vec2 p = vGW.xz;
+    float dist = length(cameraPosition - vGW);
+    float k = (1.0 - smoothstep(8.0, 45.0, dist)) * (1.0 - 0.7 * uSnow);
+    float e = 0.012;
+    float h0 = turfH(p), hx = turfH(p + vec2(e, 0.0)), hz = turfH(p + vec2(0.0, e));
+    vec3 nW = vec3(-(hx - h0) / e * 0.04 * k + gLay * 0.16, 1.0, -(hz - h0) / e * 0.04 * k);
+    normal = normalize((viewMatrix * vec4(normalize(nW), 0.0)).xyz);
+  }`);
   };
-  m.customProgramCacheKey = () => (shell ? 'turf-shell-v2' : 'turf-v2');
+  m.customProgramCacheKey = () => (shell ? 'turf-shell-v3' : 'turf-v3');
   return m;
 }
 

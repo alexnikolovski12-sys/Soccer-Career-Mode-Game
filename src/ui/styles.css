@@ -541,3 +541,34 @@ html.portrait .flash { top: calc(var(--sat) + 100px); }
 
 /* foul / goal replays: the touch controls step aside */
 .in-replay .pad, .in-replay .joy { opacity: 0 !important; pointer-events: none !important; }
+
+/* ---- match loading screen */
+.mload { position: fixed; inset: 0; z-index: 60; display: none; flex-direction: column; justify-content: space-between;
+  padding: max(18px, env(safe-area-inset-top)) max(28px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(28px, env(safe-area-inset-left));
+  font-family: var(--font); color: #fff; background: #07090e; overflow: hidden; }
+.mload.show { display: flex; animation: mlIn .35s ease both; }
+.mload.out { animation: mlOut .45s ease both; }
+@keyframes mlIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mlOut { to { opacity: 0; } }
+.ml-bg { position: absolute; inset: -10%; z-index: -1;
+  background: linear-gradient(115deg, color-mix(in srgb, var(--hc) 55%, #07090e) 0 46%, #07090e 46% 54%, color-mix(in srgb, var(--ac) 55%, #07090e) 54% 100%);
+  filter: saturate(1.1); animation: mlPan 6s ease-in-out infinite alternate; }
+.ml-bg::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 120%, rgba(0,0,0,0) 20%, rgba(0,0,0,.75) 80%),
+  repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 2px, transparent 2px 14px); }
+@keyframes mlPan { from { transform: translateX(-2%); } to { transform: translateX(2%); } }
+.ml-top { display: flex; justify-content: space-between; align-items: center; font-weight: 800; letter-spacing: .14em; font-size: 15px; }
+.ml-mode { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); padding: 5px 12px; border-radius: 4px; }
+.ml-cond { opacity: .8; }
+.ml-teams { display: flex; align-items: center; justify-content: center; gap: 6vw; }
+.ml-team { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; max-width: 34vw; text-align: center; animation: mlTeam .6s cubic-bezier(.2,.9,.3,1.2) both; }
+.ml-team:last-child { animation-delay: .08s; }
+@keyframes mlTeam { from { transform: translateY(14px) scale(.92); opacity: 0; } }
+.ml-crest { width: min(22vh, 120px); height: min(22vh, 120px); filter: drop-shadow(0 8px 18px rgba(0,0,0,.55)); }
+.ml-crest text { font-family: var(--font); }
+.ml-team b { font-size: clamp(18px, 4.2vh, 30px); font-weight: 800; text-transform: uppercase; letter-spacing: .03em; line-height: 1.05; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+.ml-team span { font-size: 14px; font-weight: 700; opacity: .75; letter-spacing: .1em; }
+.ml-vs { font-size: clamp(26px, 8vh, 48px); font-weight: 800; font-style: italic; opacity: .9; text-shadow: 0 3px 14px rgba(0,0,0,.6); }
+.ml-tip { align-self: center; max-width: 70vw; text-align: center; font-size: 15px; line-height: 1.35; opacity: .9; }
+.ml-tip i { font-style: normal; font-weight: 800; letter-spacing: .14em; margin-right: 8px; padding: 2px 7px; border-radius: 3px; background: #fff; color: #07090e; font-size: 12px; }
+.ml-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.18); overflow: hidden; }
+.ml-bar span { display: block; height: 100%; background: #fff; transform-origin: left; transform: scaleX(0); }

@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../config.js';
-import { grassMaterial, grassShells, PitchWear } from './Grass.js';
+import { grassMaterial, PitchWear } from './Grass.js';
 import { Crowd } from './Crowd.js';
 
 const P = () => CONFIG.pitch;
@@ -255,9 +255,7 @@ export class Pitch {
     this.group.add(grass);
     this.grass = grass;
     this.wear = new PitchWear();
-    this.shells = grassShells(10);
-    this.shells.visible = false;
-    this.group.add(this.shells);
+    // (no individual blades: the turf is one surface with real relief shading — see Grass.js)
     // concrete / track beyond the boards
     const apron = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshStandardMaterial({ color: '#2b2f36', roughness: 0.95 }));
     apron.rotation.x = -Math.PI / 2;

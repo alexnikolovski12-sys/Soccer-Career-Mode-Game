@@ -552,7 +552,7 @@ export class UltimateTeam {
     };
     this.pending = { ...o, chem: ch.total };
     const training = o.mode === 'training';
-    this.game.startMatch(home, away, { halfSeconds: training ? 1e6 : (s.len || 150) / 2, difficulty: o.diff || 'pro', training });
+    this.game.startMatch(home, away, { halfSeconds: training ? 1e6 : (s.len || 150) / 2, difficulty: o.diff || 'pro', training, mode: o.mode });
   }
 
   _matchPlayer(c, chem, ratingOff) {

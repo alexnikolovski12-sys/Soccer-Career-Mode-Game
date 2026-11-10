@@ -1,4 +1,4 @@
-// Close-ups: grass blades, wear after play, kit stains and fabric.
+// Close-ups: turf surface, wear after play, kit stains and fabric.
 quickMatch('semipro', 150);
 g.setLook('day', 'clear');
 g.autoplay = true;
@@ -14,11 +14,12 @@ const view = (label, pos, at, fov) => {
   g.camRig.camera.position.set(...pos); g.camRig.look.set(...at); g.camRig.pos.set(...pos);
   g.frame(0, 1 / 60, 1 / 60);
   cam.position.set(...pos); cam.lookAt(...at); cam.fov = fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
-  g.pitch.shells.position.set(at[0], 0, at[2]); g.pitch.shells.visible = true; g.pitch.lines.position.y = 0.032;
   const nr = g.renderer.render; g.renderer.render = realRender; g.renderFrame(cam); g.renderer.render = nr;
   __shots.push([label, g.renderer.domElement.toDataURL('image/jpeg', 0.85)]);
 };
-view('blades-low', [1, 0.3, 2.2], [0, 0.0, -0.5], 45);
+view('turf-low', [1, 0.3, 2.2], [0, 0.0, -0.5], 45);
+view('turf-mid', [-6, 1.6, 9], [0, 0, -2], 50);
+view('broadcast', [0, 18, 34], [0, 0, 0], 40);
 view('wear', [0, 3, 6], [0, 0, 0], 50);
 const q = p.pos;
 view('dirty-kit', [q.x + 1.6, 1.0, q.z + 1.6], [q.x, 0.7, q.z], 40);

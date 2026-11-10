@@ -1405,7 +1405,66 @@ class Game {
     this.cold = wk === 'snow' || (tk === 'night' && this.rng.chance(0.35)) || (wk === 'rain' && tk !== 'day' && this.rng.chance(0.5));
     if (this.pitch.crowd) this.pitch.crowd.setColours(home.kit.kitColour, away.kit.kitColour);
     this.match.kickoffTeam = opts.training || this.rng.chance(0.5) ? 'home' : 'away';
-    this.sm.change(STATES.KICKOFF, { banner: opts.training ? 'TRAINING' : wk === 'rain' ? 'KICK OFF · RAIN' : wk === 'snow' ? 'KICK OFF · SNOW' : 'KICK OFF' });
+    // loading screen first (shaders compile behind it), then the kick-off
+    const banner = opts.training ? 'TRAINING' : wk === 'rain' ? 'KICK OFF · RAIN' : wk === 'snow' ? 'KICK OFF · SNOW' : 'KICK OFF';
+    this._showMatchLoad(home, away, opts, tk, wk, banner);
+  }
+
+  /** Match loading screen: both clubs, the conditions and a tip, with a progress bar; the scene warms up behind it. */
+  _showMatchLoad(home, away, opts, time, weather, banner) {
+    let el = this._loadEl;
+    if (!el) { el = this._loadEl = document.createElement('div'); el.className = 'mload'; document.body.appendChild(el); }
+    const esc = (t) => String(t || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const crest = (t) => {
+      const k = t.kit || {}, p = k.kitColour || '#ccc', q = k.kitColour2 || '#333';
+      const light = (h) => { const x = parseInt(String(h).slice(1), 16); return ((x >> 16) & 255) * 0.3 + ((x >> 8) & 255) * 0.59 + (x & 255) * 0.11 > 170; };
+      return `<svg viewBox="0 0 40 40" class="ml-crest"><path d="M20 2 L36 7 L34 24 Q30 34 20 38 Q10 34 6 24 L4 7 Z" fill="${p}" stroke="${q}" stroke-width="3"/>
+        <text x="20" y="25" text-anchor="middle" font-size="10" font-weight="800" fill="${light(p) ? '#14161c' : '#fff'}">${esc((t.short || t.name || '').slice(0, 3).toUpperCase())}</text></svg>`;
+    };
+    const mode = { sb: 'SQUAD BATTLES', rivals: 'DIVISION RIVALS', friendly: 'FRIENDLY', training: 'TRAINING' }[opts.mode] || (opts.training ? 'TRAINING' : 'MATCH');
+    const tips = [
+      'Swipe on SPRINT to do a skill move: up rainbow, down drag-back, left roulette, right stepovers.',
+      'Hold CROSS on a corner: a longer press sends it higher — a short tap plays it low for a shot.',
+      'Defending switches you to the nearest man automatically — just close them down.',
+      'Change direction sharply on the ball for a short burst of pace.',
+      'Press SLIDE to go to ground — time it or you\'ll give away a foul.',
+      'Chemistry counts: players from the same club, league and nation play better together.',
+    ];
+    const tip = tips[Math.floor(this.rng.next() * tips.length)];
+    const cond = `${{ night: 'Night', dusk: 'Dusk', day: 'Day' }[time] || ''} · ${{ clear: 'Clear', rain: 'Rain', snow: 'Snow' }[weather] || ''}`;
+    const hc = home.kit?.kitColour || '#2a5bd7', ac = away.kit?.kitColour || '#c8283a';
+    el.style.setProperty('--hc', hc); el.style.setProperty('--ac', ac);
+    el.innerHTML = `<div class="ml-bg"></div>
+      <div class="ml-top"><span class="ml-mode">${mode}</span><span class="ml-cond">${cond}</span></div>
+      <div class="ml-teams">
+        <div class="ml-team">${crest(home)}<b>${esc(home.name)}</b><span>${home.rating ? 'OVR ' + home.rating : ''}</span></div>
+        <div class="ml-vs">VS</div>
+        <div class="ml-team">${crest(away)}<b>${esc(away.name)}</b><span>${away.rating ? 'OVR ' + away.rating : ''}</span></div>
+      </div>
+      <div class="ml-tip"><i>TIP</i>${esc(tip)}</div>
+      <div class="ml-bar"><span></span></div>`;
+    el.classList.remove('out'); el.classList.add('show');
+    this.matchLoad = { t: 0, dur: opts.training ? 1.6 : 2.8, banner, compiled: false };
+    this.setControls(false);
+  }
+
+  _matchLoadFrame(realDt) {
+    const L = this.matchLoad;
+    L.t += realDt;
+    // warm the shaders up under the loading screen so the first seconds of the match don't stutter
+    if (!L.compiled && L.t > 0.15) {
+      L.compiled = true;
+      try { this.renderer.compile(this.scene, this.camRig.camera); } catch (_) { /* fine: compiles on first draw */ }
+    }
+    const k = Math.min(1, L.t / L.dur);
+    const bar = this._loadEl && this._loadEl.querySelector('.ml-bar span');
+    if (bar) bar.style.transform = `scaleX(${(1 - Math.pow(1 - k, 2.2)).toFixed(3)})`;
+    if (k >= 1) {
+      this.matchLoad = null;
+      this._loadEl.classList.add('out');
+      setTimeout(() => this._loadEl && this._loadEl.classList.remove('show', 'out'), 450);
+      this.sm.change(STATES.KICKOFF, { banner: L.banner });
+    }
   }
 
   _setupSide(team, side, squad) {
@@ -1795,6 +1854,7 @@ class Game {
       this.loop.timeScale = t.from + (t.to - t.from) * easeInOut(k);
       if (k >= 1) this.ts = null;
     }
+    if (this.matchLoad) this._matchLoadFrame(realDt);
     if (this.foulRp) this._foulReplayFrame(realDt);
     if (!(this.foulRp && this.foulRp.on)) this.sm.frame(realDt);
     if (this.input.consume('pause')) { if (this.sm.is(STATES.PAUSED)) this.resume(); else this.pause(); }
@@ -1821,20 +1881,7 @@ class Game {
     this.weather.update(paused ? 0 : realDt, this.camRig.pos, this.realTime || 0, this.camRig.look);
     this.pitch.updateStadium(paused ? 0 : realDt, this.realTime, this.camRig.camera.position);
     if (this.pitch.crowd) this.pitch.crowd.setBall(this.ball.pos);
-    // grass blades when the camera is in close (celebrations, set pieces, replays)
-    {
-      const cp = this.camRig.camera.position, lk = this.camRig.look;
-      const sh = this.pitch.shells;
-      sh.visible = this.post.enabled && cp.y < 9;   // only when the camera's close enough to see blades
-      if (sh.visible) {
-        // the patch of real blades sits between the camera and what it's looking at
-        const fx = lk.x - cp.x, fz = lk.z - cp.z, fl = Math.hypot(fx, fz) || 1;
-        const k = Math.min(fl, 8);
-        sh.position.set(cp.x + (fx / fl) * k, 0, cp.z + (fz / fl) * k);
-      }
-      this.pitch.lines.position.y = sh.visible ? 0.076 : 0.006;
-      GRASS.uTime.value = this.realTime % 1000;
-    }
+    GRASS.uTime.value = this.realTime % 1000;
     // the pitch wears where they run (and badly where they slide)
     if (!paused && this.sm.is(STATES.PLAYING, STATES.SHOT_FLIGHT)) {
       for (const p of this.players) {
